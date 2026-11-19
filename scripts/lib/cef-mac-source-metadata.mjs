@@ -287,32 +287,32 @@ export const MAC_CLANG_LITERAL_EVIDENCE = Object.freeze({
 // This record is code-owned. Caller JSON, environment and reports never select it.
 export const MAC_SOURCE_SCOPE_QUALIFICATION = Object.freeze({
   kind: "sorng-native-mac-source-scope-qualification-v1",
-  runId: 43652853463,
+  runId: 44578143604,
   attempt: 1,
-  head: "4dbcb84855ea9cd9ee632657bafd265a6491fc69",
+  head: "136c2fd55af5c105ca0b0d98be7e995085811a12",
   sourceWitnessSha256:
-    "ae10f59eb0837ef0009e6817412e1eb8428384db54207597dc0eb932a19577cf",
+    "58063893794857dd47a71f26eae88dd0e21991925b8a53482410b58949b951ff",
   evidencePath:
-    "native/cef-source-qualifications/mac-43652853463/qualification.json",
+    "native/cef-source-qualifications/mac-44578143604/qualification.json",
   evidenceSha256:
-    "18656debf9e0385026c2339578e540c0d2b7ade91287bd132a284707c0e02a31",
-  metadataArtifactId: 14136269303,
-  metadataZipBytes: 1926,
+    "5ceb2ededa48b32d7e6e61969f9345e54f683b3eab2b0d8ff44dcd6360660ab2",
+  metadataArtifactId: 14556978412,
+  metadataZipBytes: 1930,
   metadataZipSha256:
-    "256283e98efeeac56aa8047843cbe17a7f0db16b1a04ebee73fd7fe13ad8c4b3",
+    "762d29d38a0278bc87cd13e42b165b869c1e6de22501e757460724f7598a06ca",
   metadataRawProofBytes: 5137,
   metadataRawProofSha256:
-    "4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf",
+    "9d69984736514767a75156b1110cb44233669c922871e64c0e3ea432837bf092",
   metadataRawCarrierBytes: 708,
   metadataRawCarrierSha256:
-    "d67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8",
-  supervisorArtifactId: 14136926168,
-  supervisorZipBytes: 5876,
+    "97409909905af7e3b30794e3bd537827007f476f5b4e3cb7061cad8735c05b5e",
+  supervisorArtifactId: 14556074264,
+  supervisorZipBytes: 5953,
   supervisorZipSha256:
-    "2a3962147f92359a5da0241345f3c4e0c732ac48c2725739fdf99a401a1b817c",
-  supervisorScopeBytes: 25131,
+    "46dc1f0130a5d2c7dfafd97570b57ad2bcc1664d39ac6ab51091ba8f7afef982",
+  supervisorScopeBytes: 25713,
   supervisorScopeSha256:
-    "bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3",
+    "9b69d10cd60653a9442f4baa919389598534476e450954806beeb2221160efbe",
   image: "20260824.0482.1",
   sources: Object.freeze({
     "aarch64-apple-darwin":
@@ -321,9 +321,9 @@ export const MAC_SOURCE_SCOPE_QUALIFICATION = Object.freeze({
       "15af3ea9142658464a5227f365bbcc92e4ab52675d5ed6f81cbb4faa3afc91b4",
   }),
   candidateSourceFreezeSha256:
-    "fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33",
+    "b6d7f38c6025713b8162657d7417b9ce060ddb88800a09d66ef7294d039d902c",
   candidateProducerAtProof:
-    "119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10",
+    "ae70fdfa2b2bb06a631e7f8a55ff91bd5dd5ad919f1e5d543911143cca0b8fa9",
 });
 export function macSourceScopeQualified(policy) {
   return (

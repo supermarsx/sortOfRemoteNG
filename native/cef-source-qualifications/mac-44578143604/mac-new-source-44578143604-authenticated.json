@@ -1,0 +1,219 @@
+{
+  "kind": "authenticated-new-mac-source-native-scratch-proof",
+  "observedAt": "2026-11-19T17:39:44.023Z",
+  "run": 44578143604,
+  "attempt": 1,
+  "head": "136c2fd55af5c105ca0b0d98be7e995085811a12",
+  "branch": "codex/mac-source-scope-proof-20261119",
+  "workflow": ".github/workflows/cef-mac-clang-resource-proof.yml",
+  "terminal": "success",
+  "jobs": [
+    {
+      "id": 135751153212,
+      "name": "proof",
+      "status": "completed",
+      "conclusion": "success",
+      "completedAt": "2026-11-19T17:36:59Z"
+    },
+    {
+      "id": 135751154252,
+      "name": "supervisor-scope",
+      "status": "completed",
+      "conclusion": "success",
+      "completedAt": "2026-11-19T17:37:44Z"
+    }
+  ],
+  "sourceWitness": {
+    "files": 86,
+    "sha256": "58063893794857dd47a71f26eae88dd0e21991925b8a53482410b58949b951ff",
+    "selectedRows": 132,
+    "nativeInputRows": 62,
+    "proofProducer": "5cea4e0fb317fed18e5b216c5647daed6146894ae6f8efee415d56ee1d7c03a9",
+    "candidateOriginalProducer": "ae70fdfa2b2bb06a631e7f8a55ff91bd5dd5ad919f1e5d543911143cca0b8fa9",
+    "candidateOriginalFreezeSha256": "b6d7f38c6025713b8162657d7417b9ce060ddb88800a09d66ef7294d039d902c",
+    "all82RawGitPathsModesBlobsMatched": true,
+    "all7And62FrozenCandidateBodiesMatchedThroughExactInverse": true
+  },
+  "sourceScopes": {
+    "x86_64-apple-darwin": "15af3ea9142658464a5227f365bbcc92e4ab52675d5ed6f81cbb4faa3afc91b4",
+    "aarch64-apple-darwin": "cb334e9c4146dfe82c9be3f5a4ec043ea56986c66d69c5a84486ac8db43d5fd5"
+  },
+  "metadata": {
+    "artifactId": 14556978412,
+    "artifactZipSha256": "762d29d38a0278bc87cd13e42b165b869c1e6de22501e757460724f7598a06ca",
+    "rawProofBytes": 5137,
+    "rawProofSha256": "9d69984736514767a75156b1110cb44233669c922871e64c0e3ea432837bf092",
+    "rawCarrierBytes": 708,
+    "rawCarrierSha256": "97409909905af7e3b30794e3bd537827007f476f5b4e3cb7061cad8735c05b5e",
+    "targets": [
+      {
+        "target": "aarch64-apple-darwin",
+        "source": "cb334e9c4146dfe82c9be3f5a4ec043ea56986c66d69c5a84486ac8db43d5fd5",
+        "complete": true,
+        "negativeCases": 26,
+        "allNegativeCasesPassed": true
+      },
+      {
+        "target": "x86_64-apple-darwin",
+        "source": "15af3ea9142658464a5227f365bbcc92e4ab52675d5ed6f81cbb4faa3afc91b4",
+        "complete": true,
+        "negativeCases": 26,
+        "allNegativeCasesPassed": true
+      }
+    ],
+    "bothActualPrivateV3CodecsPassed": true,
+    "fullByteAndTimestampReadbackVerified": true,
+    "sidecarsUnchanged": true,
+    "creationOwnedProofReceiptsClosedAndRetired": true,
+    "oldNewWrongPublicSourcesAllThreeModesDeniedBeforeAfter": true,
+    "cleanupConfirmed": true
+  },
+  "supervisor": {
+    "artifactId": 14556074264,
+    "artifactZipSha256": "46f1dc0130a5d2c7dfafd97570b57ad2bcc1664d39ac6ab51091ba8f7afef982",
+    "scopeCarrierBytes": 25713,
+    "scopeCarrierSha256": "9b69d10cd60653a9442f4baa919389598534476e450954806beeb2221160efbe",
+    "innerProofBytes": 3156,
+    "innerProofSha256": "43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c",
+    "innerProofDeterministicAndIdenticalHistoricalBytes": true,
+    "newScopeAuthorityMustUseFreshOuterCarrierAndApi": true,
+    "allSixIntegrationCasesPassed": true,
+    "positiveNewSourceIntegrationCoverage": {
+      "aarch64-apple-darwin": {
+        "source": "cb334e9c4146dfe82c9be3f5a4ec043ea56986c66d69c5a84486ac8db43d5fd5",
+        "cases": [
+          "foreign"
+        ],
+        "actualFactoryAndWorker": true,
+        "normalTerminal": true,
+        "foreignUntouched": true,
+        "helperRootJoined": true
+      },
+      "x86_64-apple-darwin": {
+        "source": "15af3ea9142658464a5227f365bbcc92e4ab52675d5ed6f81cbb4faa3afc91b4",
+        "cases": [
+          "normal",
+          "slice-stop",
+          "cancel",
+          "reparent",
+          "worker-timeout"
+        ],
+        "actualFactoryAndWorker": true
+      }
+    },
+    "armCancellationTimeoutVariantsIndependentlyRepeated": false,
+    "oldNewWrongProductionFactoriesAndPythonContextsDeniedBeforeAfter": true,
+    "proofMutationDenied": true,
+    "cleanupConfirmed": true
+  },
+  "actualHost": {
+    "platform": "darwin",
+    "architecture": "x64",
+    "imageOS": "macos15",
+    "image": "20260824.0482.1",
+    "githubHosted": true
+  },
+  "productionAdmission": false,
+  "productionWrites": false,
+  "productionFlagsPromoted": false,
+  "sourceAcquisition": false,
+  "fullCompilerOrSDKBuild": false,
+  "SDK": false,
+  "nativeAcceptance": false,
+  "runtimeReady": false,
+  "priorReceiptsRelabeled": false,
+  "qualificationScope": "Exact new-source scratch metadata IO and proof-only supervisor contexts; root independent review required before static production admission. Does not qualify CEF compilation or native ARM runtime behavior.",
+  "artifacts": [
+    {
+      "kind": "metadata",
+      "id": 14556978412,
+      "name": "cef-mac-clang-resource-proof-44578143604-1",
+      "bytes": 1930,
+      "sha256": "762d29d38a0278bc87cd13e42b165b869c1e6de22501e757460724f7598a06ca"
+    },
+    {
+      "kind": "supervisor",
+      "id": 14556074264,
+      "name": "cef-mac-new-source-supervisor-proof-44578143604-1",
+      "bytes": 5953,
+      "sha256": "46f1dc0130a5d2c7dfafd97570b57ad2bcc1664d39ac6ab51091ba8f7afef982"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "mac-new-source-44578143604-run-before-auth.json",
+      "bytes": 12921,
+      "sha256": "8392abff6f54af2206b9f9bea0b45a4721081a939a898dd0004c7e78ce851490"
+    },
+    {
+      "path": "mac-new-source-44578143604-jobs-before-auth.json",
+      "bytes": 5370,
+      "sha256": "7e432913325aa3ca855735683f9650a759a14f97a43fe07ea07be0e60cd98bf8"
+    },
+    {
+      "path": "mac-new-source-44578143604-artifacts-before-auth.json",
+      "bytes": 1542,
+      "sha256": "2792836e62e80195271a77a4cba9c2035c6b5aa5a295e3c0d802c392c939ff4c"
+    },
+    {
+      "path": "mac-new-source-44578143604-run-after-auth.json",
+      "bytes": 12921,
+      "sha256": "8392abff6f54af2206b9f9bea0b45a4721081a939a898dd0004c7e78ce851490"
+    },
+    {
+      "path": "mac-new-source-44578143604-jobs-after-auth.json",
+      "bytes": 5370,
+      "sha256": "7e432913325aa3ca855735683f9650a759a14f97a43fe07ea07be0e60cd98bf8"
+    },
+    {
+      "path": "mac-new-source-44578143604-artifacts-after-auth.json",
+      "bytes": 1542,
+      "sha256": "2792836e62e80195271a77a4cba9c2035c6b5aa5a295e3c0d802c392c939ff4c"
+    },
+    {
+      "path": "mac-new-source-44578143604-metadata.zip",
+      "bytes": 1930,
+      "sha256": "762d29d38a0278bc87cd13e42b165b869c1e6de22501e757460724f7598a06ca"
+    },
+    {
+      "path": "mac-new-source-44578143604-supervisor.zip",
+      "bytes": 5953,
+      "sha256": "46f1dc0130a5d2c7dfafd97570b57ad2bcc1664d39ac6ab51091ba8f7afef982"
+    },
+    {
+      "path": "mac-new-source-44578143604-archive-materialization.json",
+      "bytes": 904,
+      "sha256": "394095867003c6469bc5359b4d33ae1cdf9448e221e66b1f09881eb04b845539"
+    },
+    {
+      "path": "mac-new-source-44578143604-metadata-proof.json",
+      "bytes": 5137,
+      "sha256": "9d69984736514767a75156b1110cb44233669c922871e64c0e3ea432837bf092"
+    },
+    {
+      "path": "mac-new-source-44578143604-metadata-carrier.json",
+      "bytes": 708,
+      "sha256": "97409909905af7e3b30794e3bd537827007f476f5b4e3cb7061cad8735c05b5e"
+    },
+    {
+      "path": "mac-new-source-44578143604-supervisor-proof.json",
+      "bytes": 3156,
+      "sha256": "43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c"
+    },
+    {
+      "path": "mac-new-source-44578143604-supervisor-scope-carrier.json",
+      "bytes": 25713,
+      "sha256": "9b69d10cd60653a9442f4baa919389598534476e450954806beeb2221160efbe"
+    },
+    {
+      "path": "mac-new-source-44578143604-terminal.log",
+      "bytes": 86721,
+      "sha256": "402634738b6604d716471a92bedd75bb41b91070931da34d95d911d722ff7c01"
+    }
+  ],
+  "authenticationProgram": {
+    "path": "authenticate-mac-new-source-44578143604.mjs",
+    "bytes": 15022,
+    "sha256": "dbdb1f38b2243cec0a10dbbded6b4b50ef9640a2481d5f53deaf398577625965"
+  }
+}

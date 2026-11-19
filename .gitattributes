@@ -102,3 +102,5 @@ tests/fixtures/cef/linux370_fresh_inverse.json -text
 native/cef-build-inputs/20261119-r5-owned-http3-macintel-sdk26-2-avfoundation-compat/** -text -whitespace
 
 native/cef-build-inputs/20261119-r5-owned-http3-macarm-sdk26-2-avfoundation-compat/** -text -whitespace
+
+native/cef-source-qualifications/mac-44578143604/** -text -whitespace

@@ -29,8 +29,8 @@ class Qualification(unittest.TestCase):
         census.MAC_SOURCE_SCOPE_QUALIFICATION=census._MAC_SOURCE_SCOPE_QUALIFICATION_PIN
     def test_actual_archive_and_census_records_are_identical_and_use_fresh_outer(self):
         self.assertEqual(PIN,census.MAC_SOURCE_SCOPE_QUALIFICATION)
-        self.assertEqual(len(PIN),23);self.assertEqual(PIN[1:4],(43652853463,1,'4dbcb84855ea9cd9ee632657bafd265a6491fc69'))
-        self.assertEqual(PIN[18],'bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3')
+        self.assertEqual(len(PIN),23);self.assertEqual(PIN[1:4],(44578143604,1,'136c2fd55af5c105ca0b0d98be7e995085811a12'))
+        self.assertEqual(PIN[18],'9b69d10cd60653a9442f4baa919389598534476e450954806beeb2221160efbe')
         self.assertNotEqual(PIN[18],census.NATIVE_SUPERVISOR_QUALIFICATION['sha256'])
     def test_only_the_two_fresh_exact_source_image_pairs_qualify(self):
         for target,source in SOURCES.items():
@@ -38,7 +38,7 @@ class Qualification(unittest.TestCase):
                 self.assertTrue(check(target,source,PIN[19]))
                 self.assertFalse(check(target,OLD[target],PIN[19]));self.assertFalse(check(target,'0'*64,PIN[19]));self.assertFalse(check(target,source,'latest'))
     def test_missing_or_forged_qualification_cannot_be_replaced_by_report_data(self):
-        for value in [None,{},dict(runId=43652853463,complete=True),tuple(list(PIN)[:18]+['0'*64]+list(PIN)[19:])]:
+        for value in [None,{},dict(runId=44578143604,complete=True),tuple(list(PIN)[:18]+['0'*64]+list(PIN)[19:])]:
             archive.MAC_SOURCE_SCOPE_QUALIFICATION=value;census.MAC_SOURCE_SCOPE_QUALIFICATION=value
             for target,source in SOURCES.items():
                 self.assertFalse(archive.source_mac_scope_qualified(target,source,PIN[19]));self.assertFalse(census.native_scope_qualified(target,source,PIN[19]))

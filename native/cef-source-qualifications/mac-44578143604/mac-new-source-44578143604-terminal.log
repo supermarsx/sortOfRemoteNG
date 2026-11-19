@@ -1,0 +1,576 @@
+proof	Set up job	﻿2026-11-19T17:36:22.5514770Z Current runner version: '2.338.2'
+proof	Set up job	2026-11-19T17:36:22.5581210Z ##[group]Runner Image Provisioner
+proof	Set up job	2026-11-19T17:36:22.5583000Z Hosted Compute Agent
+proof	Set up job	2026-11-19T17:36:22.5584220Z Version: 20260819.586
+proof	Set up job	2026-11-19T17:36:22.5585740Z Commit: 3cc4a88dfa507ef76119ad1bb3eccc6378bb2b76
+proof	Set up job	2026-11-19T17:36:22.5587540Z Build Date: 2026-08-18T23:20:18Z
+proof	Set up job	2026-11-19T17:36:22.5589480Z Worker ID: {ff37f731-da97-4496-8d51-46a2361a58f0}
+proof	Set up job	2026-11-19T17:36:22.5591320Z Azure Region: westus
+proof	Set up job	2026-11-19T17:36:22.5593510Z ##[endgroup]
+proof	Set up job	2026-11-19T17:36:22.5598360Z ##[group]Operating System
+proof	Set up job	2026-11-19T17:36:22.5599830Z macOS
+proof	Set up job	2026-11-19T17:36:22.5601060Z 15.7.9
+proof	Set up job	2026-11-19T17:36:22.5602270Z 24G830
+proof	Set up job	2026-11-19T17:36:22.5603470Z ##[endgroup]
+proof	Set up job	2026-11-19T17:36:22.5605060Z ##[group]Runner Image
+proof	Set up job	2026-11-19T17:36:22.5606610Z Image: macos-15
+proof	Set up job	2026-11-19T17:36:22.5607990Z Version: 20260824.0482.1
+proof	Set up job	2026-11-19T17:36:22.5614250Z Included Software: https://github.com/actions/runner-images/blob/macos-15/20260824.0482/images/macos/macos-15-Readme.md
+proof	Set up job	2026-11-19T17:36:22.5619520Z Image Release: https://github.com/actions/runner-images/releases/tag/macos-15%2F20260824.0482
+proof	Set up job	2026-11-19T17:36:22.5622990Z ##[endgroup]
+proof	Set up job	2026-11-19T17:36:22.5626480Z ##[group]GITHUB_TOKEN Permissions
+proof	Set up job	2026-11-19T17:36:22.5631940Z Contents: read
+proof	Set up job	2026-11-19T17:36:22.5633550Z Metadata: read
+proof	Set up job	2026-11-19T17:36:22.5634980Z ##[endgroup]
+proof	Set up job	2026-11-19T17:36:22.5639480Z Secret source: Actions
+proof	Set up job	2026-11-19T17:36:22.5641410Z Cache mode: write
+proof	Set up job	2026-11-19T17:36:22.5643910Z Prepare workflow directory
+proof	Set up job	2026-11-19T17:36:22.6693770Z Prepare all required actions
+proof	Set up job	2026-11-19T17:36:22.6770200Z Getting action download info
+proof	Set up job	2026-11-19T17:36:22.9081100Z Download action repository 'actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09' (SHA:fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09)
+proof	Set up job	2026-11-19T17:36:23.4146890Z Download action repository 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020' (SHA:820762786026740c76f36085b0efc47a31fe5020)
+proof	Set up job	2026-11-19T17:36:23.9721110Z Download action repository 'actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f' (SHA:b7c566a772e6b6bfb58ed0dc250532a479d7789f)
+proof	Set up job	2026-11-19T17:36:24.4406230Z Complete job name: proof
+proof	Start the original whole-job proof clock	﻿2026-11-19T17:36:24.5798640Z ##[group]Run echo "CEF_MAC_CLANG_JOB_STARTED_MS=$(($(date +%s) * 1000))" >> "$GITHUB_ENV"
+proof	Start the original whole-job proof clock	2026-11-19T17:36:24.5801860Z ^[[36;1mecho "CEF_MAC_CLANG_JOB_STARTED_MS=$(($(date +%s) * 1000))" >> "$GITHUB_ENV"^[[0m
+proof	Start the original whole-job proof clock	2026-11-19T17:36:24.5937560Z shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+proof	Start the original whole-job proof clock	2026-11-19T17:36:24.5939930Z env:
+proof	Start the original whole-job proof clock	2026-11-19T17:36:24.5941130Z   GITHUB_REPOSITORY_VISIBILITY: public
+proof	Start the original whole-job proof clock	2026-11-19T17:36:24.5942580Z ##[endgroup]
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	﻿2026-11-19T17:36:24.7245170Z ##[group]Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7248550Z with:
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7250020Z   ref: 136c2fd55af5c105ca0b0d98be7e995085811a12
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7251860Z   persist-credentials: false
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7253330Z   repository: supermarsx/sortOfRemoteNG
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7265490Z   token: ***
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7266960Z   ssh-strict: true
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7268470Z   ssh-user: git
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7269770Z   clean: true
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7271550Z   sparse-checkout-cone-mode: true
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7273180Z   fetch-depth: 1
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7274510Z   fetch-tags: false
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7275930Z   show-progress: true
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7277240Z   lfs: false
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7278420Z   submodules: false
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7279670Z   set-safe-directory: true
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7281040Z   allow-unsafe-pr-checkout: false
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7282420Z env:
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7283560Z   GITHUB_REPOSITORY_VISIBILITY: public
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7285280Z   CEF_MAC_CLANG_JOB_STARTED_MS: 1795109784000
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:24.7286890Z ##[endgroup]
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.3990030Z Syncing repository: supermarsx/sortOfRemoteNG
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.3994970Z ##[group]Getting Git version info
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.3997440Z Working directory is '/Users/runner/work/sortOfRemoteNG/sortOfRemoteNG'
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.4001040Z [command]/usr/local/bin/git version
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.4502490Z git version 2.55.0
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.4547860Z ##[endgroup]
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.4565090Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/58ec1f44-4681-4a74-abc8-56c475a63526/.gitconfig'
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.4586820Z Temporarily overriding HOME='/Users/runner/work/_temp/58ec1f44-4681-4a74-abc8-56c475a63526' before making global git config changes
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.4590500Z Adding repository directory to the temporary git global config as a safe directory
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.4597310Z [command]/usr/local/bin/git config --global --add safe.directory /Users/runner/work/sortOfRemoteNG/sortOfRemoteNG
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.4775650Z Deleting the contents of '/Users/runner/work/sortOfRemoteNG/sortOfRemoteNG'
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.4783540Z ##[group]Initializing the repository
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.4793710Z [command]/usr/local/bin/git init /Users/runner/work/sortOfRemoteNG/sortOfRemoteNG
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5286630Z hint: Using 'master' as the name for the initial branch. This default branch name
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5289660Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5292350Z hint: to use in all of your new repositories, which will suppress this warning,
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5294480Z hint: call:
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5295750Z hint:
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5297180Z hint: 	git config --global init.defaultBranch <name>
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5299830Z hint:
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5301500Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5304320Z hint: 'development'. The just-created branch can be renamed via this command:
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5306640Z hint:
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5307890Z hint: 	git branch -m <name>
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5309240Z hint:
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5310990Z hint: Disable this message with "git config set advice.defaultBranchName false"
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5314080Z Initialized empty Git repository in /Users/runner/work/sortOfRemoteNG/sortOfRemoteNG/.git/
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5319280Z [command]/usr/local/bin/git remote add origin https://github.com/supermarsx/sortOfRemoteNG
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5486900Z ##[endgroup]
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5489140Z ##[group]Disabling automatic garbage collection
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5493210Z [command]/usr/local/bin/git config --local gc.auto 0
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5641480Z ##[endgroup]
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5643040Z ##[group]Setting up auth
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5655990Z [command]/usr/local/bin/git config --local --name-only --get-regexp core\.sshCommand
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.5819470Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.7893560Z [command]/usr/local/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:25.8035480Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:26.0307670Z [command]/usr/local/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:26.0495530Z [command]/usr/local/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:26.3051720Z [command]/usr/local/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:26.3273600Z ##[endgroup]
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:26.3284460Z ##[group]Fetching the repository
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:26.3337070Z [command]/usr/local/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin 136c2fd55af5c105ca0b0d98be7e995085811a12
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:31.7970610Z From https://github.com/supermarsx/sortOfRemoteNG
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:31.7972560Z  * branch            136c2fd55af5c105ca0b0d98be7e995085811a12 -> FETCH_HEAD
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:31.7988190Z ##[endgroup]
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:31.7989820Z ##[group]Determining the checkout info
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:31.7991560Z ##[endgroup]
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:31.8001890Z [command]/usr/local/bin/git sparse-checkout disable
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:31.8184150Z [command]/usr/local/bin/git config --local --unset-all extensions.worktreeConfig
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:31.8312050Z ##[group]Checking out the ref
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:31.8329460Z [command]/usr/local/bin/git checkout --progress --force 136c2fd55af5c105ca0b0d98be7e995085811a12
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:32.9059330Z Updating files:  13% (1570/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.0060750Z Updating files:  14% (1585/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.0609400Z Updating files:  15% (1698/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.1355530Z Updating files:  16% (1811/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.2638890Z Updating files:  17% (1924/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.3302040Z Updating files:  18% (2038/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.3975470Z Updating files:  19% (2151/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.4550020Z Updating files:  20% (2264/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.5024850Z Updating files:  21% (2377/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.5788130Z Updating files:  22% (2490/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.6505430Z Updating files:  23% (2603/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.7116660Z Updating files:  24% (2717/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.7785580Z Updating files:  25% (2830/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.8475960Z Updating files:  26% (2943/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.8710690Z Updating files:  27% (3056/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.9086800Z Updating files:  27% (3109/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.9416070Z Updating files:  28% (3169/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:33.9905280Z Updating files:  29% (3282/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.0379900Z Updating files:  30% (3396/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.1600790Z Updating files:  31% (3509/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.2175040Z Updating files:  32% (3622/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.2655410Z Updating files:  33% (3735/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.3121880Z Updating files:  34% (3848/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.3575690Z Updating files:  35% (3961/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.4109640Z Updating files:  36% (4075/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.4738840Z Updating files:  37% (4188/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.6271740Z Updating files:  38% (4301/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.7278980Z Updating files:  39% (4414/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.7498530Z Updating files:  40% (4527/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.7922510Z Updating files:  41% (4640/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.8925150Z Updating files:  42% (4754/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.9178350Z Updating files:  43% (4867/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.9650650Z Updating files:  44% (4980/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:34.9664200Z Updating files:  44% (4986/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.0144190Z Updating files:  45% (5093/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.1139950Z Updating files:  46% (5206/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.1634710Z Updating files:  47% (5319/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.2218470Z Updating files:  48% (5433/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.2785680Z Updating files:  49% (5546/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.3328990Z Updating files:  50% (5659/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.3831780Z Updating files:  51% (5772/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.4311120Z Updating files:  52% (5885/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.4738570Z Updating files:  53% (5999/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.5293150Z Updating files:  54% (6112/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.5720440Z Updating files:  55% (6225/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.6196010Z Updating files:  56% (6338/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.7781820Z Updating files:  57% (6451/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.8131890Z Updating files:  58% (6564/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.8717920Z Updating files:  59% (6678/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:35.9716670Z Updating files:  59% (6702/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.0725820Z Updating files:  60% (6791/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.1231500Z Updating files:  61% (6904/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.1345300Z Updating files:  62% (7017/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.2347830Z Updating files:  63% (7130/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.3127080Z Updating files:  64% (7243/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.3235820Z Updating files:  65% (7357/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.3276340Z Updating files:  66% (7470/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.3656660Z Updating files:  67% (7583/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.4121880Z Updating files:  68% (7696/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.4561480Z Updating files:  69% (7809/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.4951130Z Updating files:  70% (7922/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.6442730Z Updating files:  71% (8036/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.6928840Z Updating files:  72% (8149/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.7390950Z Updating files:  73% (8262/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.7925950Z Updating files:  74% (8375/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.8568580Z Updating files:  75% (8488/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.8764000Z Updating files:  76% (8601/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:36.9862720Z Updating files:  76% (8607/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.0312180Z Updating files:  77% (8715/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.1670700Z Updating files:  78% (8828/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.2163750Z Updating files:  79% (8941/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.2650850Z Updating files:  80% (9054/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.3286940Z Updating files:  81% (9167/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.4034520Z Updating files:  82% (9280/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.4619190Z Updating files:  83% (9394/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.5108510Z Updating files:  84% (9507/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.5704090Z Updating files:  85% (9620/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.6408150Z Updating files:  86% (9733/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.7050960Z Updating files:  87% (9846/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.7579340Z Updating files:  88% (9959/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.8139760Z Updating files:  89% (10073/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.8693350Z Updating files:  90% (10186/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.8707920Z Updating files:  91% (10299/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.9344690Z Updating files:  91% (10302/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:37.9813080Z Updating files:  92% (10412/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.0951030Z Updating files:  93% (10525/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.1424070Z Updating files:  94% (10638/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.2009780Z Updating files:  95% (10752/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.2599940Z Updating files:  96% (10865/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.3170950Z Updating files:  97% (10978/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.4465830Z Updating files:  98% (11091/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.5046000Z Updating files:  99% (11204/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.5216000Z Updating files: 100% (11317/11317)
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.5314870Z Updating files: 100% (11317/11317), done.
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.5472420Z HEAD is now at 136c2fd proof(cef): bind AVFoundation Mac source scopes without production admission
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.5647870Z ##[endgroup]
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.6023710Z [command]/usr/local/bin/git log -1 --format=%H
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.7026370Z 136c2fd55af5c105ca0b0d98be7e995085811a12
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.7406400Z ##[group]Removing auth
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.7573970Z [command]/usr/local/bin/git config --local --name-only --get-regexp core\.sshCommand
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.7860910Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.8589920Z [command]/usr/local/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.8670090Z http.https://github.com/.extraheader
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.8851450Z [command]/usr/local/bin/git config --local --unset-all http.https://github.com/.extraheader
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:38.8890470Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:39.2299580Z [command]/usr/local/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:39.2460850Z [command]/usr/local/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+proof	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:39.5453320Z ##[endgroup]
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	﻿2026-11-19T17:36:39.5967290Z ##[group]Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:39.5968380Z with:
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:39.5969680Z   node-version-file: .node-version
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:39.5970490Z   package-manager-cache: false
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:39.5971560Z   check-latest: false
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:39.5983650Z   token: ***
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:39.5984880Z env:
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:39.5985540Z   GITHUB_REPOSITORY_VISIBILITY: public
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:39.5986470Z   CEF_MAC_CLANG_JOB_STARTED_MS: 1795109784000
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:39.5988630Z ##[endgroup]
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:39.9858490Z Node version file is not JSON file
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:40.0004650Z Resolved .node-version as 24.19.0
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:40.0263040Z Found in cache @ /Users/runner/hostedtoolcache/node/24.19.0/x64
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:40.0293750Z ##[group]Environment details
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:41.3003890Z node: v24.19.0
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:41.3005980Z npm: 11.17.0
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:41.3006750Z yarn: 1.22.22
+proof	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:36:41.3008120Z ##[endgroup]
+proof	Prove only creation-owned Clang resource metadata	﻿2026-11-19T17:36:41.3239930Z ##[group]Run node tests/fixtures/cef/mac_clang_resource_carrier.mjs
+proof	Prove only creation-owned Clang resource metadata	2026-11-19T17:36:41.3241400Z ^[[36;1mnode tests/fixtures/cef/mac_clang_resource_carrier.mjs^[[0m
+proof	Prove only creation-owned Clang resource metadata	2026-11-19T17:36:41.3366810Z shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+proof	Prove only creation-owned Clang resource metadata	2026-11-19T17:36:41.3367680Z env:
+proof	Prove only creation-owned Clang resource metadata	2026-11-19T17:36:41.3368310Z   GITHUB_REPOSITORY_VISIBILITY: public
+proof	Prove only creation-owned Clang resource metadata	2026-11-19T17:36:41.3369290Z   CEF_MAC_CLANG_JOB_STARTED_MS: 1795109784000
+proof	Prove only creation-owned Clang resource metadata	2026-11-19T17:36:41.3369990Z ##[endgroup]
+proof	Retain only the closed proof reports	﻿2026-11-19T17:36:53.9700020Z ##[group]Run actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+proof	Retain only the closed proof reports	2026-11-19T17:36:53.9701510Z with:
+proof	Retain only the closed proof reports	2026-11-19T17:36:53.9702310Z   name: cef-mac-clang-resource-proof-44578143604-1
+proof	Retain only the closed proof reports	2026-11-19T17:36:53.9705630Z   path: /Users/runner/work/_temp/cef-mac-clang-report-5d7f1d91-d710-4773-a590-0440a9ea79ec/proof.json
+proof	Retain only the closed proof reports	/Users/runner/work/_temp/cef-mac-clang-report-5d7f1d91-d710-4773-a590-0440a9ea79ec/carrier.json
+proof	Retain only the closed proof reports	
+proof	Retain only the closed proof reports	2026-11-19T17:36:53.9708840Z   if-no-files-found: warn
+proof	Retain only the closed proof reports	2026-11-19T17:36:53.9709700Z   retention-days: 14
+proof	Retain only the closed proof reports	2026-11-19T17:36:53.9710480Z   compression-level: 6
+proof	Retain only the closed proof reports	2026-11-19T17:36:53.9711260Z   overwrite: false
+proof	Retain only the closed proof reports	2026-11-19T17:36:53.9712110Z   include-hidden-files: false
+proof	Retain only the closed proof reports	2026-11-19T17:36:53.9712950Z env:
+proof	Retain only the closed proof reports	2026-11-19T17:36:53.9714290Z   GITHUB_REPOSITORY_VISIBILITY: public
+proof	Retain only the closed proof reports	2026-11-19T17:36:53.9715360Z   CEF_MAC_CLANG_JOB_STARTED_MS: 1795109784000
+proof	Retain only the closed proof reports	2026-11-19T17:36:53.9716610Z ##[endgroup]
+proof	Retain only the closed proof reports	2026-11-19T17:36:54.5848750Z Multiple search paths detected. Calculating the least common ancestor of all paths
+proof	Retain only the closed proof reports	2026-11-19T17:36:54.5911800Z The least common ancestor is /Users/runner/work/_temp/cef-mac-clang-report-5d7f1d91-d710-4773-a590-0440a9ea79ec. This will be the root directory of the artifact
+proof	Retain only the closed proof reports	2026-11-19T17:36:54.5945900Z With the provided path, there will be 2 files uploaded
+proof	Retain only the closed proof reports	2026-11-19T17:36:54.5967590Z Artifact name is valid!
+proof	Retain only the closed proof reports	2026-11-19T17:36:54.5975810Z Root directory input is valid!
+proof	Retain only the closed proof reports	2026-11-19T17:36:54.7223980Z Beginning upload of artifact content to blob storage
+proof	Retain only the closed proof reports	2026-11-19T17:36:54.7888020Z Uploaded bytes 1930
+proof	Retain only the closed proof reports	2026-11-19T17:36:54.8099520Z Finished uploading artifact content to blob storage!
+proof	Retain only the closed proof reports	2026-11-19T17:36:54.8122680Z SHA256 digest of uploaded artifact zip is 762d29d38a0278bc87cd13e42b165b869c1e6de22501e757460724f7598a06ca
+proof	Retain only the closed proof reports	2026-11-19T17:36:54.8142740Z Finalizing artifact upload
+proof	Retain only the closed proof reports	2026-11-19T17:36:55.1871460Z Artifact cef-mac-clang-resource-proof-44578143604-1.zip successfully finalized. Artifact ID 14556978412
+proof	Retain only the closed proof reports	2026-11-19T17:36:55.1898690Z Artifact cef-mac-clang-resource-proof-44578143604-1 has been successfully uploaded! Final size is 1930 bytes. Artifact ID is 14556978412
+proof	Retain only the closed proof reports	2026-11-19T17:36:55.1928760Z Artifact download URL: https://github.com/supermarsx/sortOfRemoteNG/actions/runs/44578143604/artifacts/14556978412
+proof	Post Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	﻿2026-11-19T17:36:55.2189010Z Post job cleanup.
+proof	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	﻿2026-11-19T17:36:55.5542180Z Post job cleanup.
+proof	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:55.8761000Z [command]/usr/local/bin/git version
+proof	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:55.8804790Z git version 2.55.0
+proof	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:55.8988180Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/ef43008b-1b8d-4e12-8bc0-2d3c136bdb13/.gitconfig'
+proof	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:55.9020310Z Temporarily overriding HOME='/Users/runner/work/_temp/ef43008b-1b8d-4e12-8bc0-2d3c136bdb13' before making global git config changes
+proof	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:55.9025440Z Adding repository directory to the temporary git global config as a safe directory
+proof	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:55.9039130Z [command]/usr/local/bin/git config --global --add safe.directory /Users/runner/work/sortOfRemoteNG/sortOfRemoteNG
+proof	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:55.9124330Z [command]/usr/local/bin/git config --local --name-only --get-regexp core\.sshCommand
+proof	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:55.9160880Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+proof	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:56.1472010Z [command]/usr/local/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+proof	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:56.2198210Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+proof	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:56.4747780Z [command]/usr/local/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+proof	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:36:56.5052280Z [command]/usr/local/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+proof	Complete job	﻿2026-11-19T17:36:56.8401100Z Cleaning up orphan processes
+supervisor-scope	Set up job	﻿2026-11-19T17:37:03.8047360Z Current runner version: '2.338.2'
+supervisor-scope	Set up job	2026-11-19T17:37:03.8080430Z ##[group]Runner Image Provisioner
+supervisor-scope	Set up job	2026-11-19T17:37:03.8081590Z Hosted Compute Agent
+supervisor-scope	Set up job	2026-11-19T17:37:03.8082340Z Version: 20260819.586
+supervisor-scope	Set up job	2026-11-19T17:37:03.8083150Z Commit: 3cc4a88dfa507ef76119ad1bb3eccc6378bb2b76
+supervisor-scope	Set up job	2026-11-19T17:37:03.8084120Z Build Date: 2026-08-18T23:20:18Z
+supervisor-scope	Set up job	2026-11-19T17:37:03.8085020Z Worker ID: {adeb9b2b-845f-4474-b3d6-0ea3fae74f2e}
+supervisor-scope	Set up job	2026-11-19T17:37:03.8085990Z Azure Region: westus
+supervisor-scope	Set up job	2026-11-19T17:37:03.8086710Z ##[endgroup]
+supervisor-scope	Set up job	2026-11-19T17:37:03.8088810Z ##[group]Operating System
+supervisor-scope	Set up job	2026-11-19T17:37:03.8089610Z macOS
+supervisor-scope	Set up job	2026-11-19T17:37:03.8090240Z 15.7.9
+supervisor-scope	Set up job	2026-11-19T17:37:03.8090870Z 24G830
+supervisor-scope	Set up job	2026-11-19T17:37:03.8091510Z ##[endgroup]
+supervisor-scope	Set up job	2026-11-19T17:37:03.8092200Z ##[group]Runner Image
+supervisor-scope	Set up job	2026-11-19T17:37:03.8092940Z Image: macos-15
+supervisor-scope	Set up job	2026-11-19T17:37:03.8093640Z Version: 20260824.0482.1
+supervisor-scope	Set up job	2026-11-19T17:37:03.8095200Z Included Software: https://github.com/actions/runner-images/blob/macos-15/20260824.0482/images/macos/macos-15-Readme.md
+supervisor-scope	Set up job	2026-11-19T17:37:03.8097590Z Image Release: https://github.com/actions/runner-images/releases/tag/macos-15%2F20260824.0482
+supervisor-scope	Set up job	2026-11-19T17:37:03.8099000Z ##[endgroup]
+supervisor-scope	Set up job	2026-11-19T17:37:03.8100520Z ##[group]GITHUB_TOKEN Permissions
+supervisor-scope	Set up job	2026-11-19T17:37:03.8102690Z Contents: read
+supervisor-scope	Set up job	2026-11-19T17:37:03.8103430Z Metadata: read
+supervisor-scope	Set up job	2026-11-19T17:37:03.8104130Z ##[endgroup]
+supervisor-scope	Set up job	2026-11-19T17:37:03.8106660Z Secret source: Actions
+supervisor-scope	Set up job	2026-11-19T17:37:03.8107830Z Cache mode: write
+supervisor-scope	Set up job	2026-11-19T17:37:03.8108750Z Prepare workflow directory
+supervisor-scope	Set up job	2026-11-19T17:37:03.8814420Z Prepare all required actions
+supervisor-scope	Set up job	2026-11-19T17:37:03.8877150Z Getting action download info
+supervisor-scope	Set up job	2026-11-19T17:37:04.3707300Z Download action repository 'actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09' (SHA:fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09)
+supervisor-scope	Set up job	2026-11-19T17:37:04.6572040Z Download action repository 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020' (SHA:820762786026740c76f36085b0efc47a31fe5020)
+supervisor-scope	Set up job	2026-11-19T17:37:04.8740160Z Download action repository 'actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f' (SHA:b7c566a772e6b6bfb58ed0dc250532a479d7789f)
+supervisor-scope	Set up job	2026-11-19T17:37:05.2252800Z Complete job name: supervisor-scope
+supervisor-scope	Start the original whole-job proof clock	﻿2026-11-19T17:37:05.3036460Z ##[group]Run echo "CEF_MAC_CLANG_JOB_STARTED_MS=$(($(date +%s) * 1000))" >> "$GITHUB_ENV"
+supervisor-scope	Start the original whole-job proof clock	2026-11-19T17:37:05.3038270Z ^[[36;1mecho "CEF_MAC_CLANG_JOB_STARTED_MS=$(($(date +%s) * 1000))" >> "$GITHUB_ENV"^[[0m
+supervisor-scope	Start the original whole-job proof clock	2026-11-19T17:37:05.3110080Z shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+supervisor-scope	Start the original whole-job proof clock	2026-11-19T17:37:05.3112300Z env:
+supervisor-scope	Start the original whole-job proof clock	2026-11-19T17:37:05.3113390Z   GITHUB_REPOSITORY_VISIBILITY: public
+supervisor-scope	Start the original whole-job proof clock	2026-11-19T17:37:05.3114630Z ##[endgroup]
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	﻿2026-11-19T17:37:05.3805250Z ##[group]Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3806650Z with:
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3807410Z   ref: 136c2fd55af5c105ca0b0d98be7e995085811a12
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3808390Z   persist-credentials: false
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3809290Z   repository: supermarsx/sortOfRemoteNG
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3816200Z   token: ***
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3816990Z   ssh-strict: true
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3817720Z   ssh-user: git
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3818420Z   clean: true
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3819160Z   sparse-checkout-cone-mode: true
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3820060Z   fetch-depth: 1
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3820730Z   fetch-tags: false
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3821410Z   show-progress: true
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3822090Z   lfs: false
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3822720Z   submodules: false
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3823410Z   set-safe-directory: true
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3824270Z   allow-unsafe-pr-checkout: false
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3825220Z env:
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3825960Z   GITHUB_REPOSITORY_VISIBILITY: public
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3827430Z   CEF_MAC_CLANG_JOB_STARTED_MS: 1795109825000
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.3828440Z ##[endgroup]
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.6922120Z Syncing repository: supermarsx/sortOfRemoteNG
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.6925070Z ##[group]Getting Git version info
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.6926370Z Working directory is '/Users/runner/work/sortOfRemoteNG/sortOfRemoteNG'
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.6928150Z [command]/usr/local/bin/git version
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7279180Z git version 2.55.0
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7309050Z ##[endgroup]
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7325060Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/3365f373-6fca-448e-9a5b-3f32559ccf38/.gitconfig'
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7342500Z Temporarily overriding HOME='/Users/runner/work/_temp/3365f373-6fca-448e-9a5b-3f32559ccf38' before making global git config changes
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7346060Z Adding repository directory to the temporary git global config as a safe directory
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7350700Z [command]/usr/local/bin/git config --global --add safe.directory /Users/runner/work/sortOfRemoteNG/sortOfRemoteNG
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7549690Z Deleting the contents of '/Users/runner/work/sortOfRemoteNG/sortOfRemoteNG'
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7559070Z ##[group]Initializing the repository
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7567190Z [command]/usr/local/bin/git init /Users/runner/work/sortOfRemoteNG/sortOfRemoteNG
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7969320Z hint: Using 'master' as the name for the initial branch. This default branch name
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7972170Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7974580Z hint: to use in all of your new repositories, which will suppress this warning,
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7976400Z hint: call:
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7977500Z hint:
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7978990Z hint: 	git config --global init.defaultBranch <name>
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7980050Z hint:
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7981490Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7983740Z hint: 'development'. The just-created branch can be renamed via this command:
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7985880Z hint:
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7986950Z hint: 	git branch -m <name>
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7987950Z hint:
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7989060Z hint: Disable this message with "git config set advice.defaultBranchName false"
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7990860Z Initialized empty Git repository in /Users/runner/work/sortOfRemoteNG/sortOfRemoteNG/.git/
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.7994970Z [command]/usr/local/bin/git remote add origin https://github.com/supermarsx/sortOfRemoteNG
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.8113830Z ##[endgroup]
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.8116050Z ##[group]Disabling automatic garbage collection
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.8118340Z [command]/usr/local/bin/git config --local gc.auto 0
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.8218430Z ##[endgroup]
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.8220290Z ##[group]Setting up auth
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.8226670Z [command]/usr/local/bin/git config --local --name-only --get-regexp core\.sshCommand
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.8362780Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:05.9998460Z [command]/usr/local/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:06.0133020Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:06.1618600Z [command]/usr/local/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:06.2026400Z [command]/usr/local/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:06.3456090Z [command]/usr/local/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:06.3603340Z ##[endgroup]
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:06.3605810Z ##[group]Fetching the repository
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:06.3613990Z [command]/usr/local/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin 136c2fd55af5c105ca0b0d98be7e995085811a12
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:11.6731620Z From https://github.com/supermarsx/sortOfRemoteNG
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:11.6741550Z  * branch            136c2fd55af5c105ca0b0d98be7e995085811a12 -> FETCH_HEAD
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:11.7026270Z ##[endgroup]
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:11.7028950Z ##[group]Determining the checkout info
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:11.7031640Z ##[endgroup]
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:11.7033290Z [command]/usr/local/bin/git sparse-checkout disable
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:11.7037980Z [command]/usr/local/bin/git config --local --unset-all extensions.worktreeConfig
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:11.8146000Z ##[group]Checking out the ref
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:11.8166460Z [command]/usr/local/bin/git checkout --progress --force 136c2fd55af5c105ca0b0d98be7e995085811a12
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:12.8206290Z Updating files:  19% (2167/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:12.9697960Z Updating files:  20% (2264/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:12.9847610Z Updating files:  21% (2377/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.0642290Z Updating files:  22% (2490/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.1224490Z Updating files:  23% (2603/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.1826500Z Updating files:  24% (2717/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.1869100Z Updating files:  25% (2830/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.2703240Z Updating files:  26% (2943/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.3995120Z Updating files:  27% (3056/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.4308580Z Updating files:  28% (3169/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.5220230Z Updating files:  29% (3282/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.6224080Z Updating files:  30% (3396/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.6452650Z Updating files:  31% (3509/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.6867890Z Updating files:  32% (3622/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.7717020Z Updating files:  33% (3735/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.8714910Z Updating files:  33% (3804/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.9264070Z Updating files:  34% (3848/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.9293920Z Updating files:  35% (3961/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.9420230Z Updating files:  36% (4075/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:13.9883350Z Updating files:  37% (4188/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.0369320Z Updating files:  38% (4301/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.0847870Z Updating files:  39% (4414/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.1348130Z Updating files:  40% (4527/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.1810010Z Updating files:  41% (4640/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.2265490Z Updating files:  42% (4754/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.2899330Z Updating files:  43% (4867/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.3404480Z Updating files:  44% (4980/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.3863970Z Updating files:  45% (5093/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.4318290Z Updating files:  46% (5206/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.4814310Z Updating files:  47% (5319/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.5322540Z Updating files:  48% (5433/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.6496050Z Updating files:  49% (5546/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.7310740Z Updating files:  50% (5659/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.7432160Z Updating files:  51% (5772/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.7540380Z Updating files:  52% (5885/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.7954550Z Updating files:  52% (5896/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.8316210Z Updating files:  53% (5999/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.8734030Z Updating files:  54% (6112/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.9161370Z Updating files:  55% (6225/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:14.9601350Z Updating files:  56% (6338/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.0096980Z Updating files:  57% (6451/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.0510550Z Updating files:  58% (6564/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.0932310Z Updating files:  59% (6678/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.1403460Z Updating files:  60% (6791/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.2174700Z Updating files:  61% (6904/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.3180400Z Updating files:  62% (7017/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.4190680Z Updating files:  63% (7130/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.4575910Z Updating files:  64% (7243/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.4577610Z Updating files:  65% (7357/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.4849570Z Updating files:  66% (7470/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.5799870Z Updating files:  67% (7583/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.6235670Z Updating files:  68% (7696/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.6672380Z Updating files:  69% (7809/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.7788280Z Updating files:  70% (7922/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.8119870Z Updating files:  71% (8036/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.8289950Z Updating files:  71% (8127/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.8449700Z Updating files:  72% (8149/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.8546940Z Updating files:  73% (8262/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.8949130Z Updating files:  74% (8375/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.9418990Z Updating files:  75% (8488/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:15.9990970Z Updating files:  76% (8601/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.0404260Z Updating files:  77% (8715/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.1258430Z Updating files:  78% (8828/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.1717670Z Updating files:  79% (8941/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.1825540Z Updating files:  80% (9054/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.2197140Z Updating files:  81% (9167/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.2826530Z Updating files:  82% (9280/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.3761190Z Updating files:  83% (9394/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.4155040Z Updating files:  84% (9507/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.4651060Z Updating files:  85% (9620/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.5113410Z Updating files:  86% (9733/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.5550780Z Updating files:  87% (9846/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.5980890Z Updating files:  88% (9959/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.6419000Z Updating files:  89% (10073/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.6820440Z Updating files:  90% (10186/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.7300780Z Updating files:  91% (10299/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.7521440Z Updating files:  92% (10412/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.7697220Z Updating files:  92% (10473/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.8914010Z Updating files:  93% (10525/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:16.9916470Z Updating files:  94% (10638/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.0884880Z Updating files:  95% (10752/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.1889840Z Updating files:  96% (10865/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.2772580Z Updating files:  97% (10978/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.2877270Z Updating files:  98% (11091/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.4396180Z Updating files:  99% (11204/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.5333960Z Updating files: 100% (11317/11317)
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.5338240Z Updating files: 100% (11317/11317), done.
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.5340880Z HEAD is now at 136c2fd proof(cef): bind AVFoundation Mac source scopes without production admission
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.5379520Z ##[endgroup]
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.5399670Z [command]/usr/local/bin/git log -1 --format=%H
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.5401520Z 136c2fd55af5c105ca0b0d98be7e995085811a12
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.5793760Z ##[group]Removing auth
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.5808010Z [command]/usr/local/bin/git config --local --name-only --get-regexp core\.sshCommand
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.5862000Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.6979920Z [command]/usr/local/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.7072290Z http.https://github.com/.extraheader
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.7086620Z [command]/usr/local/bin/git config --local --unset-all http.https://github.com/.extraheader
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.7208890Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.8693380Z [command]/usr/local/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:17.8805320Z [command]/usr/local/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+supervisor-scope	Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:18.0282730Z ##[endgroup]
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	﻿2026-11-19T17:37:18.0592790Z ##[group]Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:18.0593600Z with:
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:18.0593980Z   node-version-file: .node-version
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:18.0594510Z   package-manager-cache: false
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:18.0594990Z   check-latest: false
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:18.0601260Z   token: ***
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:18.0601710Z env:
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:18.0602090Z   GITHUB_REPOSITORY_VISIBILITY: public
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:18.0602660Z   CEF_MAC_CLANG_JOB_STARTED_MS: 1795109825000
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:18.0603250Z ##[endgroup]
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:18.3707120Z Node version file is not JSON file
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:18.3712620Z Resolved .node-version as 24.19.0
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:18.3938810Z Found in cache @ /Users/runner/hostedtoolcache/node/24.19.0/x64
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:18.3942070Z ##[group]Environment details
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:20.6235950Z node: v24.19.0
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:20.6250860Z npm: 11.17.0
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:20.6273130Z yarn: 1.22.22
+supervisor-scope	Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	2026-11-19T17:37:20.6284160Z ##[endgroup]
+supervisor-scope	Prove only current-source integration and production refusals	﻿2026-11-19T17:37:20.6501060Z ##[group]Run node tests/fixtures/cef/mac_source_scope_supervisor_carrier.mjs
+supervisor-scope	Prove only current-source integration and production refusals	2026-11-19T17:37:20.6502320Z ^[[36;1mnode tests/fixtures/cef/mac_source_scope_supervisor_carrier.mjs^[[0m
+supervisor-scope	Prove only current-source integration and production refusals	2026-11-19T17:37:20.6574720Z shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+supervisor-scope	Prove only current-source integration and production refusals	2026-11-19T17:37:20.6575450Z env:
+supervisor-scope	Prove only current-source integration and production refusals	2026-11-19T17:37:20.6575900Z   GITHUB_REPOSITORY_VISIBILITY: public
+supervisor-scope	Prove only current-source integration and production refusals	2026-11-19T17:37:20.6576560Z   CEF_MAC_CLANG_JOB_STARTED_MS: 1795109825000
+supervisor-scope	Prove only current-source integration and production refusals	2026-11-19T17:37:20.6577180Z ##[endgroup]
+supervisor-scope	Prove only current-source integration and production refusals	2026-11-19T17:37:23.9552780Z [cef-engineering-checkpoint] compile-supervision={"census":{"code":"CENSUS_UNAVAILABLE","exitCode":0,"joined":true,"stderrBytes":0},"cleanupElapsedMs":129,"cohortQuiet":true,"failure":"NONE","failureStage":"none","firstFailure":null,"monitorFailure":null,"monitorJoined":true,"monitorResult":"resolved","monitorSettled":true,"observedProcesses":1,"outputHandlesClosed":true,"outputsJoined":true,"outputsSettled":true,"ownTimerExpired":false,"phase":"complete","pipeClosed":true,"probesJoined":true,"rootExited":true}
+supervisor-scope	Prove only current-source integration and production refusals	2026-11-19T17:37:26.4299420Z [cef-engineering-checkpoint] compile-supervision={"census":{"code":"CENSUS_UNAVAILABLE","exitCode":0,"joined":true,"stderrBytes":0},"cleanupElapsedMs":835,"cohortQuiet":true,"failure":"NONE","failureStage":"none","firstFailure":null,"monitorFailure":null,"monitorJoined":true,"monitorResult":"resolved","monitorSettled":true,"observedProcesses":1,"outputHandlesClosed":true,"outputsJoined":true,"outputsSettled":true,"ownTimerExpired":true,"phase":"complete","pipeClosed":true,"probesJoined":true,"rootExited":true}
+supervisor-scope	Prove only current-source integration and production refusals	2026-11-19T17:37:27.5159190Z [cef-engineering-checkpoint] compile-supervision={"census":{"code":"CENSUS_UNAVAILABLE","exitCode":0,"joined":true,"stderrBytes":0},"cleanupElapsedMs":931,"cohortQuiet":true,"failure":"UNCONFIRMED","failureStage":"cancel","firstFailure":{"code":"UNKNOWN","errorCode":"UNKNOWN","lastSnapshot":{"code":"NONE","snapshotElapsedMs":9,"snapshotOrdinal":1,"snapshotRows":440},"snapshotOrdinal":1},"monitorFailure":null,"monitorJoined":true,"monitorResult":"resolved","monitorSettled":true,"observedProcesses":1,"outputHandlesClosed":true,"outputsJoined":true,"outputsSettled":true,"ownTimerExpired":false,"phase":"denied","pipeClosed":true,"probesJoined":true,"rootExited":true}
+supervisor-scope	Prove only current-source integration and production refusals	2026-11-19T17:37:32.7319180Z [cef-engineering-checkpoint] compile-supervision={"census":{"code":"CENSUS_UNAVAILABLE","exitCode":0,"joined":true,"stderrBytes":0},"cleanupElapsedMs":697,"cohortQuiet":true,"failure":"NONE","failureStage":"none","firstFailure":null,"monitorFailure":null,"monitorJoined":true,"monitorResult":"resolved","monitorSettled":true,"observedProcesses":3,"outputHandlesClosed":true,"outputsJoined":true,"outputsSettled":true,"ownTimerExpired":true,"phase":"complete","pipeClosed":true,"probesJoined":true,"rootExited":true}
+supervisor-scope	Prove only current-source integration and production refusals	2026-11-19T17:37:35.3176000Z [cef-engineering-checkpoint] compile-supervision={"census":{"code":"CENSUS_UNAVAILABLE","exitCode":0,"joined":true,"stderrBytes":0},"cleanupElapsedMs":852,"cohortQuiet":true,"failure":"NONE","failureStage":"none","firstFailure":null,"monitorFailure":null,"monitorJoined":true,"monitorResult":"resolved","monitorSettled":true,"observedProcesses":1,"outputHandlesClosed":true,"outputsJoined":true,"outputsSettled":true,"ownTimerExpired":true,"phase":"complete","pipeClosed":true,"probesJoined":true,"rootExited":true}
+supervisor-scope	Prove only current-source integration and production refusals	2026-11-19T17:37:37.6556650Z [cef-engineering-checkpoint] compile-supervision={"census":{"code":"CENSUS_UNAVAILABLE","exitCode":null,"failureWitness":{"currentOrigin":"child-close","end":16915.285536,"events":[{"atMs":14653.482,"kind":"chunk","values":[383,0,0]},{"atMs":14653.513,"kind":"frame-start","values":[382,0,0]},{"atMs":14656.901,"kind":"request","values":[1,16656.901,0]},{"atMs":14657.055,"kind":"write-callback","values":[1,0,0]},{"atMs":14663.091,"kind":"chunk","values":[32384,0,0]},{"atMs":14663.13,"kind":"frame-start","values":[32383,0,0]},{"atMs":14664.264,"kind":"rows-valid","values":[1,4532,16656.901]},{"atMs":14915.285,"kind":"request","values":[2,16915.285,0]},{"atMs":14915.44,"kind":"write-callback","values":[2,0,0]},{"atMs":16916.384,"kind":"timer","values":[0,0,0]},{"atMs":16916.488,"kind":"deny","values":[0,0,0]},{"atMs":16921.055,"kind":"child-close","values":[0,0,0]},{"atMs":16921.107,"kind":"close-finally","values":[1,0,0]}],"first":{"atMs":16916.488,"code":"CENSUS_DEADLINE","endMs":16915.285,"lastFrame":{"atMs":14663.13,"bytes":32383,"collectMicros":4532,"endMs":16656.901,"request":1},"origin":"timer","request":2,"requestAtMs":14915.285,"timerDriftMs":1.202,"writeCallbackAtMs":14915.44},"helperCode":"CENSUS_UNAVAILABLE","lastFrame":{"atMs":14663.13,"bytes":32383,"collectMicros":4532,"endMs":16656.901,"request":1},"lateBytes":0,"lateFrames":0,"lateLast":null,"lateTruncated":false,"observerFaults":0,"request":2,"requestAt":14915.285536,"rowsValid":false,"writeCallbackAt":14915.440387},"joined":true,"stderrBytes":0},"cleanupElapsedMs":8,"cohortQuiet":false,"failure":"UNCONFIRMED","failureStage":"monitor","firstFailure":{"code":"CENSUS_DEADLINE","errorCode":"CENSUS_DEADLINE","lastSnapshot":{"code":"NONE","snapshotElapsedMs":7,"snapshotOrdinal":1,"snapshotRows":442},"snapshotOrdinal":2},"monitorFailure":{"code":"CENSUS_DEADLINE","lastSnapshot":{"code":"NONE","snapshotElapsedMs":7,"snapshotOrdinal":1,"snapshotRows":442},"snapshotOrdinal":2},"monitorJoined":true,"monitorResult":"rejected","monitorSettled":true,"observedProcesses":1,"outputHandlesClosed":true,"outputsJoined":true,"outputsSettled":true,"ownTimerExpired":false,"phase":"denied","pipeClosed":true,"probesJoined":false,"rootExited":true}
+supervisor-scope	Prove only current-source integration and production refusals	2026-11-19T17:37:38.1389890Z {"kind":"fixed-new-source-supervisor-scope-proof","complete":true,"productionAdmitted":false,"nativeAcceptance":false,"runtimeReady":false}
+supervisor-scope	Retain only the bounded current-source scratch evidence	﻿2026-11-19T17:37:38.1724730Z ##[group]Run actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.1726110Z with:
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.1726800Z   name: cef-mac-new-source-supervisor-proof-44578143604-1
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.1730170Z   path: /Users/runner/work/_temp/cef-mac-census-supervisor-proof-8c677367-b5b4-496a-a122-3f635577d21c/proof.json
+supervisor-scope	Retain only the bounded current-source scratch evidence	/Users/runner/work/_temp/cef-mac-census-supervisor-proof-8c677367-b5b4-496a-a122-3f635577d21c/scope-carrier.json
+supervisor-scope	Retain only the bounded current-source scratch evidence	
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.1733220Z   if-no-files-found: error
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.1733990Z   retention-days: 14
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.1734580Z   compression-level: 6
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.1735150Z   overwrite: false
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.1735630Z   include-hidden-files: false
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.1736180Z env:
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.1736620Z   GITHUB_REPOSITORY_VISIBILITY: public
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.1737460Z   CEF_MAC_CLANG_JOB_STARTED_MS: 1795109825000
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.1738360Z ##[endgroup]
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.4419890Z Multiple search paths detected. Calculating the least common ancestor of all paths
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.4449070Z The least common ancestor is /Users/runner/work/_temp/cef-mac-census-supervisor-proof-8c677367-b5b4-496a-a122-3f635577d21c. This will be the root directory of the artifact
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.4451290Z With the provided path, there will be 2 files uploaded
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.4452450Z Artifact name is valid!
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.4453090Z Root directory input is valid!
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:38.8877590Z Beginning upload of artifact content to blob storage
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:39.2596930Z Uploaded bytes 5953
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:39.3415690Z Finished uploading artifact content to blob storage!
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:39.3418700Z SHA256 digest of uploaded artifact zip is 46f1dc0130a5d2c7dfafd97570b57ad2bcc1664d39ac6ab51091ba8f7afef982
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:39.3420800Z Finalizing artifact upload
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:39.8994150Z Artifact cef-mac-new-source-supervisor-proof-44578143604-1.zip successfully finalized. Artifact ID 14556074264
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:39.8998970Z Artifact cef-mac-new-source-supervisor-proof-44578143604-1 has been successfully uploaded! Final size is 5953 bytes. Artifact ID is 14556074264
+supervisor-scope	Retain only the bounded current-source scratch evidence	2026-11-19T17:37:39.9107460Z Artifact download URL: https://github.com/supermarsx/sortOfRemoteNG/actions/runs/44578143604/artifacts/14556074264
+supervisor-scope	Post Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020	﻿2026-11-19T17:37:39.9296340Z Post job cleanup.
+supervisor-scope	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	﻿2026-11-19T17:37:40.1528570Z Post job cleanup.
+supervisor-scope	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:40.3156600Z [command]/usr/local/bin/git version
+supervisor-scope	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:40.3265720Z git version 2.55.0
+supervisor-scope	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:40.3320010Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/58b35a92-a1d4-42da-bfcc-6456d80f92d2/.gitconfig'
+supervisor-scope	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:40.3341930Z Temporarily overriding HOME='/Users/runner/work/_temp/58b35a92-a1d4-42da-bfcc-6456d80f92d2' before making global git config changes
+supervisor-scope	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:40.3344820Z Adding repository directory to the temporary git global config as a safe directory
+supervisor-scope	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:40.3352490Z [command]/usr/local/bin/git config --global --add safe.directory /Users/runner/work/sortOfRemoteNG/sortOfRemoteNG
+supervisor-scope	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:40.3484550Z [command]/usr/local/bin/git config --local --name-only --get-regexp core\.sshCommand
+supervisor-scope	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:40.3596850Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+supervisor-scope	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:40.5124660Z [command]/usr/local/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+supervisor-scope	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:40.5250130Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+supervisor-scope	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:40.6943420Z [command]/usr/local/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+supervisor-scope	Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09	2026-11-19T17:37:40.7086470Z [command]/usr/local/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+supervisor-scope	Complete job	﻿2026-11-19T17:37:40.8853110Z Cleaning up orphan processes

@@ -85,7 +85,7 @@ test("current-source qualification binds raw native artifacts and explicit limit
   );
   assert.equal(
     q.supervisorScopeSha256,
-    "bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3",
+    "9b69d10cd60653a9442f4baa919389598534476e450954806beeb2221160efbe",
   );
 });
 test("current-source qualification refuses data clones missing proof and scope literal drift", () => {
