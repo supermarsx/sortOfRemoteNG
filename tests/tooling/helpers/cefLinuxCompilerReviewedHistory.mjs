@@ -1,6 +1,7 @@
 import {
   beforeAvfCompatRowsForHistory,
   beforeAvfCompatDataForHistory,
+  beforeAvfCompatFileForHistory,
 } from "./cefAvfCompatibilityReviewedHistory.mjs";
 import {
   beforeCompositeLinuxFileForHistory,
@@ -130,8 +131,9 @@ export function beforeCompilerCompatRowsForHistory(rows, root) {
     assert(matched);
     const bytes = Number(matched[2]);
     offset = end + 1;
-    const body = raw.subarray(offset, offset + bytes);
-    assert.equal(blob(body), matched[1]);
+    const headBody = raw.subarray(offset, offset + bytes);
+    assert.equal(blob(headBody), matched[1]);
+    const body = beforeAvfCompatFileForHistory(headBody, spec.path);
     inverseCompilerCompatFile(
       spec.path === CORE
         ? Buffer.from(beforeSisoWriterCoreForHistory(body.toString("utf8")))
