@@ -1,0 +1,89 @@
+diff --git a/net/socket/ssl_client_socket_impl.cc b/net/socket/ssl_client_socket_impl.cc
+--- a/net/socket/ssl_client_socket_impl.cc
++++ b/net/socket/ssl_client_socket_impl.cc
+@@ -692,7 +692,12 @@
+       return ERR_BLOCKED_BY_CLIENT;
+     }
+     ssl_config_.early_data_enabled = false;
+-    ssl_config_.alpn_protos = {NextProto::kProtoHTTP11};
++    // Permit multiplexing only within the admitted native authority. Preserve
++    // a caller's H1-only retry (including WebSocket fallback) and never add an
++    // ALPN protocol the caller excluded.
++    std::erase_if(ssl_config_.alpn_protos, [](NextProto proto) {
++      return proto != NextProto::kProtoHTTP2 && proto != NextProto::kProtoHTTP11;
++    });
+   }
+ 
+   SSLContext* context = SSLContext::GetInstance();
+diff --git a/services/network/network_context.cc b/services/network/network_context.cc
+--- a/services/network/network_context.cc
++++ b/services/network/network_context.cc
+@@ -3332,9 +3332,9 @@
+       params_->split_auth_cache_by_network_anonymization_key;
+ 
+   if (params_->sorng_tls_client) {
+-    // This bridge makes no cross-authority pooling/QUIC admission claim. Do not let
+-    // command-line flags or field trials re-enable these bypass paths.
+-    session_params.enable_http2 = false;
++    // H2 is limited to an exact SpdySessionKey by the protected session pool.
++    // Alt-Svc, QUIC and early data have no admission contract here.
++    session_params.enable_http2 = true;
+     session_params.enable_http2_alternative_service = false;
+     session_params.enable_quic = false;
+     session_params.enable_early_data = false;
+diff --git a/net/spdy/spdy_session_pool.cc b/net/spdy/spdy_session_pool.cc
+--- a/net/spdy/spdy_session_pool.cc
++++ b/net/spdy/spdy_session_pool.cc
+@@ -210,6 +210,8 @@
+     const NetLogWithSource& net_log) {
+   auto it = LookupAvailableSessionByKey(key);
+   if (it == available_sessions_.end() ||
++      (ssl_client_context_ && ssl_client_context_->tls_admission_delegate() &&
++       key != it->second->spdy_session_key()) ||
+       (is_websocket && !it->second->support_websocket())) {
+     return base::WeakPtr<SpdySession>();
+   }
+@@ -262,6 +264,11 @@
+     return false;
+   }
+ 
++  // A certificate covering another authority is not app admission for it.
++  // Exact keys retain port, proxy chain, privacy and network-anonymization scope.
++  if (ssl_client_context_ && ssl_client_context_->tls_admission_delegate()) {
++    return key == it->second->spdy_session_key();
++  }
+   return enable_ip_based_pooling_for_h2 ? true
+                                         : key == it->second->spdy_session_key();
+ }
+@@ -725,7 +732,9 @@
+ 
+ void SpdySessionPool::UpdatePendingRequests(const SpdySessionKey& key) {
+   auto it = LookupAvailableSessionByKey(key);
+-  if (it != available_sessions_.end()) {
++  if (it != available_sessions_.end() &&
++      (!ssl_client_context_ || !ssl_client_context_->tls_admission_delegate() ||
++       key == it->second->spdy_session_key())) {
+     base::WeakPtr<SpdySession> new_session = it->second->GetWeakPtr();
+     bool is_pooled = (key != new_session->spdy_session_key());
+     while (new_session && new_session->IsAvailable()) {
+@@ -809,6 +818,10 @@
+     const SpdySessionKey& key,
+     const std::vector<IPEndPoint>& ip_endpoints,
+     const std::set<std::string>& dns_aliases) {
++  // Do not create aliases for protected H2 sessions, even on matching IP/SAN.
++  if (ssl_client_context_ && ssl_client_context_->tls_admission_delegate()) {
++    return nullptr;
++  }
+   for (const auto& endpoint : ip_endpoints) {
+     auto range = aliases_.equal_range(endpoint);
+     for (auto alias_it = range.first; alias_it != range.second; ++alias_it) {
+@@ -902,6 +915,9 @@
+     const ConnectionEndpointMetadata& metadata,
+     base::span<const IPEndPoint> ip_endpoints,
+     const std::set<std::string>& aliases) {
++  if (ssl_client_context_ && ssl_client_context_->tls_admission_delegate()) {
++    return false;
++  }
+   // If there are no associated ALPN protocols, it is TCP-based and thus would
+   // have been eligible for connecting with HTTP/2.
+   if (!metadata.supported_protocol_alpns.empty() &&

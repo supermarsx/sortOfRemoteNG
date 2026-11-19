@@ -1,0 +1,492 @@
+diff --git a/include/cef_sorng_tls_bridge.h b/include/cef_sorng_tls_bridge.h
+--- a/include/cef_sorng_tls_bridge.h
++++ b/include/cef_sorng_tls_bridge.h
+@@ -31,6 +31,8 @@
+ #define CEF_SORNG_TLS_CAP_SAME_AUTHORITY_HTTP2 (1ull << 6)
+ // Bit 7 remains reserved for a separately reviewed HTTP/3 contract.
+ #define CEF_SORNG_TLS_CAP_PROXY_APPLIED (1ull << 8)
++// Revision 4: monotonic token replay fence and bounded live registration state.
++#define CEF_SORNG_TLS_CAP_BOUNDED_CONTEXT_RETIREMENT (1ull << 9)
+ #define CEF_SORNG_TLS_CA_SYSTEM 0u
+ #define CEF_SORNG_TLS_CA_SYSTEM_PLUS_CUSTOM 1u
+ #define CEF_SORNG_TLS_CA_CUSTOM_ONLY 2u
+@@ -109,6 +111,19 @@
+   const char* patch_id;
+ } cef_sorng_tls_api_v2;
+ 
++// UI-thread read-only counters. No pointers, certificate bytes or endpoints.
++typedef struct cef_sorng_tls_registry_stats_v2_t {
++  uint32_t size;
++  uint32_t abi_version;
++  uint64_t registrations;  // Includes attached revoked and retiring entries.
++  uint64_t retiring;
++  uint64_t root_bytes;
++  uint64_t token_high_water;
++} cef_sorng_tls_registry_stats_v2_t;
++
++SORNG_TLS_EXPORT int SORNG_TLS_CALL
++cef_sorng_tls_registry_stats_v2(cef_sorng_tls_registry_stats_v2_t* stats);
++
+ SORNG_TLS_EXPORT const cef_sorng_tls_api_v2* SORNG_TLS_CALL
+ cef_sorng_tls_get_api_v2(void);
+ struct _cef_request_context_t;
+@@ -118,6 +133,11 @@
+ // context; nonempty cache_path or persistent-session-cookies settings rejected.
+ // Token is installed on the actual native context BEFORE its initialization.
+ // Returns one owned CEF reference (release via base.release); NULL on failure.
++// With BOUNDED_CONTEXT_RETIREMENT, every accepted token must be strictly larger
++// than all previously accepted tokens in this process (no wrap/reuse, even with
++// a different generation). NULL is callback-quiescent when that capability is
++// present: after the call returns NULL, no application callback can occur for
++// that descriptor. Older revisions retain their existing conservative lifetime.
+ // Handler is borrowed for the call; bridge retains its own reference as needed.
+ // Await state(1) AND normal OnRequestContextInitialized; return is not readiness.
+ SORNG_TLS_EXPORT struct _cef_request_context_t* SORNG_TLS_CALL
+@@ -135,7 +155,7 @@
+ cef_sorng_tls_complete_v2(uint64_t context_token, uint64_t generation,
+                           uint64_t challenge, uint32_t decision,
+                           uint32_t exception_mask);
+-// UI thread only. Tombstones the token; cannot subsequently rearm it.
++// UI thread only. Permanently rejects token replay; cannot subsequently rearm it.
+ // Keep callback user_data alive until on_state(2), or until CefShutdown returns
+ // if shutdown prevents delivery. Main must also revoke proxy/credential leases.
+ SORNG_TLS_EXPORT int SORNG_TLS_CALL
+diff --git a/libcef/browser/net_service/sorng_tls_registration_policy.h b/libcef/browser/net_service/sorng_tls_registration_policy.h
+new file mode 100644
+--- /dev/null
++++ b/libcef/browser/net_service/sorng_tls_registration_policy.h
+@@ -0,0 +1,110 @@
++// Copyright 2026 The sorng Authors. BSD-3-Clause.
++// Shared by the actual CEF registration bridge and its standalone unit test.
++#ifndef SORNG_TLS_REGISTRATION_POLICY_H_
++#define SORNG_TLS_REGISTRATION_POLICY_H_
++
++#include <array>
++#include <cstddef>
++#include <cstdint>
++
++namespace sorng_tls {
++inline constexpr size_t kMaxLiveRegistrations = 1024;
++inline constexpr size_t kMaxRegistrationControls = 64;
++
++class TokenHighWater {
++ public:
++  bool Reserve(uint64_t token, uint64_t generation, size_t live_count) {
++    if (!token || !generation || token <= maximum_ ||
++        live_count >= kMaxLiveRegistrations)
++      return false;
++    maximum_ = token;
++    return true;
++  }
++  uint64_t maximum() const { return maximum_; }
++
++ private:
++  uint64_t maximum_ = 0;
++};
++
++class RegistrationLifetime {
++ public:
++  void Attach() { attached_ = true; }
++  void Detach() { attached_ = false; released_ = true; }
++  // A failed factory may not call the application after returning NULL. If it
++  // partially attached a context, retain its denying delegate until Detach.
++  void Abandon() { released_ = true; callbacks_quiescent_ = true; }
++  void TerminalCallbackReturned() { terminal_callback_returned_ = true; }
++  bool callbacks_quiescent() const { return callbacks_quiescent_; }
++  bool CanRetire(bool all_controls_settled) const {
++    return released_ && !attached_ && callback_depth_ == 0 && all_controls_settled &&
++           (terminal_callback_returned_ || callbacks_quiescent_);
++  }
++
++ private:
++  friend class RegistrationCallbackScope;
++  size_t callback_depth_ = 0;
++  bool attached_ = false;
++  bool released_ = false;
++  bool terminal_callback_returned_ = false;
++  bool callbacks_quiescent_ = false;
++};
++
++class RegistrationCallbackScope {
++ public:
++  explicit RegistrationCallbackScope(RegistrationLifetime& lifetime)
++      : lifetime_(lifetime) { ++lifetime_.callback_depth_; }
++  ~RegistrationCallbackScope() { --lifetime_.callback_depth_; }
++  RegistrationCallbackScope(const RegistrationCallbackScope&) = delete;
++  RegistrationCallbackScope& operator=(const RegistrationCallbackScope&) = delete;
++ private:
++  RegistrationLifetime& lifetime_;
++};
++
++// IDs are stable slot+1 values, never reused within a registration. A control
++// disconnect and its queued revoke callback may both arrive: settle once.
++class ControlRevocations {
++ public:
++  uint64_t Add() {
++    if (used_ == controls_.size()) return 0;
++    controls_[used_].requested = revoking_;
++    return ++used_;
++  }
++  void RequestAll() {
++    revoking_ = true;
++    for (size_t i = 0; i < used_; ++i) controls_[i].requested = true;
++  }
++  bool TakeRevoke(uint64_t id) {
++    auto* control = Find(id);
++    if (!control || !control->requested || control->settled || control->sent)
++      return false;
++    control->sent = true;
++    return true;
++  }
++  bool Acknowledge(uint64_t id) {
++    auto* control = Find(id);
++    return control && control->requested && control->sent && Settle(control);
++  }
++  bool Disconnect(uint64_t id) { return Settle(Find(id)); }
++  bool AllSettled() const {
++    if (!revoking_) return false;
++    for (size_t i = 0; i < used_; ++i)
++      if (!controls_[i].settled) return false;
++    return true;
++  }
++
++ private:
++  struct Control { bool requested = false; bool sent = false; bool settled = false; };
++  Control* Find(uint64_t id) {
++    return id && id <= used_ ? &controls_[static_cast<size_t>(id - 1)] : nullptr;
++  }
++  static bool Settle(Control* control) {
++    if (!control || control->settled) return false;
++    control->settled = true;
++    return true;
++  }
++  bool revoking_ = false;
++  size_t used_ = 0;
++  std::array<Control, kMaxRegistrationControls> controls_{};
++};
++}  // namespace sorng_tls
++#endif
+diff --git a/libcef/browser/net_service/sorng_tls_bridge.cc b/libcef/browser/net_service/sorng_tls_bridge.cc
+--- a/libcef/browser/net_service/sorng_tls_bridge.cc
++++ b/libcef/browser/net_service/sorng_tls_bridge.cc
+@@ -2,6 +2,7 @@
+ #include "cef/libcef/browser/net_service/sorng_tls_bridge.h"
+ #include "cef/libcef/browser/browser_context.h"
+ #include "cef/libcef/browser/request_context_impl.h"
++#include "cef/libcef/browser/net_service/sorng_tls_registration_policy.h"
+ #define SORNG_TLS_IMPLEMENTATION
+ #include "cef/include/cef_sorng_tls_bridge.h"
+ 
+@@ -70,6 +71,8 @@
+   return result;
+ }
+ 
++bool ScheduleRegistrationRetirement(uint64_t token, uint64_t generation);
++
+ class Registration final : public network::mojom::SorngTlsClient,
+                            public network::mojom::ProxyLookupClient {
+  public:
+@@ -81,10 +84,38 @@
+     receivers_.set_disconnect_handler(
+         base::BindRepeating(&Registration::Fail, weak_factory_.GetWeakPtr()));
+   }
+-  void Attach(CefBrowserContext* context) { CHECK(!context_); context_ = context; }
++  void Attach(CefBrowserContext* context) {
++    CHECK(!context_);
++    context_ = context;
++    lifetime_.Attach();
++  }
+   bool Matches(CefBrowserContext* context) const { return context && context_ == context; }
+-  void Detach() { context_ = nullptr; Revoke(); }
+-  void Abandon() { terminal_reported_ = true; Revoke(); }
++  void Detach() {
++    context_ = nullptr;
++    lifetime_.Detach();
++    Revoke();
++  }
++  void Abandon() {
++    // Revision 4: NULL never leaves borrowed application callbacks live.
++    // Internal control ACKs still complete before the registration is retired.
++    app_weak_factory_.InvalidateWeakPtrs();
++    lifetime_.Abandon();
++    input_.user_data = nullptr;
++    input_.on_evidence = nullptr;
++    input_.on_state = nullptr;
++    terminal_reported_ = true;
++    Revoke();
++  }
++  bool RetirementTaskReady() {
++    retirement_scheduled_ = false;
++    return lifetime_.CanRetire(control_revocations_.AllSettled());
++  }
++  bool retiring() const { return revoked_; }
++  size_t root_bytes() const {
++    size_t total = 0;
++    for (const auto& root : roots_) total += root.size();
++    return total;
++  }
+   void ConfigureRoots(cert_verifier::mojom::CertVerifierCreationParams* params) {
+     params->sorng_ca_mode = input_.ca_mode;
+     if (input_.ca_mode != CEF_SORNG_TLS_CA_SYSTEM) {
+@@ -108,11 +139,11 @@
+       mojo::PendingRemote<network::mojom::SorngTlsControl> control) override {
+     // A new NetworkContext is a new proof boundary. Never inherit an ACK from
+     // another partition or a crashed/replaced NetworkService receiver.
+-    if (proxy_pending_ || proxy_applied_) {
++    if (!revoked_ && (proxy_pending_ || proxy_applied_)) {
+       ProxyFail();
+       return;
+     }
+-    if (controls_.size() >= 64) {
++    if (!control.is_valid() || controls_.size() >= sorng_tls::kMaxRegistrationControls) {
+       Fail();
+       return;
+     }
+@@ -121,11 +152,14 @@
+     auto endpoint =
+         std::make_unique<mojo::Remote<network::mojom::SorngTlsControl>>(
+             std::move(control));
+-    endpoint->set_disconnect_handler(
+-        base::BindOnce(&Registration::Fail, weak_factory_.GetWeakPtr()));
++    const auto id = control_revocations_.Add();
++    CHECK_EQ(id, controls_.size() + 1);
++    endpoint->set_disconnect_handler(base::BindOnce(
++        &Registration::ControlDisconnected, weak_factory_.GetWeakPtr(), id));
+     controls_.push_back(std::move(endpoint));
+     if (revoked_) {
+-      controls_.back()->get()->Revoke(input_.generation, base::DoNothing());
++      SendControlRevoke(id);
++      MaybeCompleteRevocation();
+       return;
+     }
+     Report(kReady);
+@@ -151,11 +185,11 @@
+     proxy_port_ = port;
+     base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+         FROM_HERE,
+-        base::BindOnce(&Registration::ExpireProxy, weak_factory_.GetWeakPtr()),
++        base::BindOnce(&Registration::ExpireProxy, app_weak_factory_.GetWeakPtr()),
+         base::Seconds(10));
+     service->ConfirmSorngFixedProxy(port,
+                                     base::BindOnce(&Registration::ProxyFlushed,
+-                                                   weak_factory_.GetWeakPtr()));
++                                                   app_weak_factory_.GetWeakPtr()));
+     return true;
+   }
+   void OnProxyLookupComplete(
+@@ -227,10 +261,14 @@
+     evidence.allowed_exception_mask = mask;
+     base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+         FROM_HERE,
+-        base::BindOnce(&Registration::Expire, weak_factory_.GetWeakPtr(),
++        base::BindOnce(&Registration::Expire, app_weak_factory_.GetWeakPtr(),
+                        challenge),
+         base::Seconds(300));
+-    input_.on_evidence(input_.user_data, &evidence);
++    {
++      sorng_tls::RegistrationCallbackScope callback_scope(lifetime_);
++      input_.on_evidence(input_.user_data, &evidence);
++    }
++    MaybeRetire();
+   }
+   bool Complete(uint64_t challenge, uint32_t decision, uint32_t mask) {
+     auto it = pending_.find(challenge);
+@@ -245,10 +283,12 @@
+     return true;
+   }
+   void Revoke() {
+-    if (revoked_)
+-      return;
++    if (revoked_) {
++      MaybeCompleteRevocation();
++      return;
++    }
+     revoked_ = true;
+-    // Registrations retain tombstones after profile destruction.
++    app_weak_factory_.InvalidateWeakPtrs();
+     proxy_partition_.reset();
+     proxy_pending_ = false;
+     proxy_lookup_.reset();
+@@ -256,15 +296,9 @@
+     pending_.clear();
+     for (auto& [id, pending_item] : pending)
+       std::move(pending_item.callback).Run(0, 0);
+-    remaining_revokes_ = controls_.size();
+-    if (remaining_revokes_ == 0) {
+-      Report(kRevoked);
+-      return;
+-    }
+-    for (const auto& control : controls_)
+-      control->get()->Revoke(
+-          input_.generation,
+-          base::BindOnce(&Registration::OnRevoked, weak_factory_.GetWeakPtr()));
++    control_revocations_.RequestAll();
++    for (size_t i = 0; i < controls_.size(); ++i) SendControlRevoke(i + 1);
++    MaybeCompleteRevocation();
+   }
+ 
+  private:
+@@ -291,7 +325,7 @@
+     }
+     auto remote = proxy_lookup_.BindNewPipeAndPassRemote();
+     proxy_lookup_.set_disconnect_handler(
+-        base::BindOnce(&Registration::ProxyFail, weak_factory_.GetWeakPtr()));
++        base::BindOnce(&Registration::ProxyFail, app_weak_factory_.GetWeakPtr()));
+     // The preceding SAME-PIPE ACK fenced an exact fixed proxy: no PAC, DNS,
+     // socket, TLS or website request is performed by this lookup.
+     // The dedicated NetworkService operation revalidates its actual fixed
+@@ -301,9 +335,30 @@
+         proxy_port_, std::move(remote));
+   }
+   void Expire(uint64_t challenge) { Complete(challenge, 0, 0); }
+-  void OnRevoked() {
+-    if (remaining_revokes_ && --remaining_revokes_ == 0)
+-      Report(kRevoked);
++  void SendControlRevoke(uint64_t id) {
++    if (control_revocations_.TakeRevoke(id))
++      controls_[id - 1]->get()->Revoke(input_.generation,
++          base::BindOnce(&Registration::ControlAcknowledged,
++                         weak_factory_.GetWeakPtr(), id));
++  }
++  void ControlAcknowledged(uint64_t id) {
++    if (control_revocations_.Acknowledge(id)) MaybeCompleteRevocation();
++  }
++  void ControlDisconnected(uint64_t id) {
++    if (!control_revocations_.Disconnect(id)) return;
++    if (!revoked_) Fail();
++    else MaybeCompleteRevocation();
++  }
++  void MaybeCompleteRevocation() {
++    if (revoked_ && control_revocations_.AllSettled()) Report(kRevoked);
++    MaybeRetire();
++  }
++  void MaybeRetire() {
++    if (!retirement_scheduled_ && lifetime_.CanRetire(control_revocations_.AllSettled())) {
++      retirement_scheduled_ = true;
++      if (!ScheduleRegistrationRetirement(input_.context_token, input_.generation))
++        retirement_scheduled_ = false;
++    }
+   }
+   void Fail() {
+     if (!faulted_) {
+@@ -324,9 +379,15 @@
+       return;
+     if (state == kRevoked)
+       terminal_reported_ = true;
+-    if (input_.on_state)
++    if (input_.on_state) {
++      sorng_tls::RegistrationCallbackScope callback_scope(lifetime_);
+       input_.on_state(input_.user_data, input_.context_token, input_.generation,
+                       state);
++    }
++    // A callback may synchronously drop the last request-context reference.
++    // Only after it returns may a deferred task reclaim its registration.
++    if (state == kRevoked) lifetime_.TerminalCallbackReturned();
++    MaybeRetire();
+   }
+   cef_sorng_tls_context_v2 input_;
+   CefBrowserContext* context_ = nullptr;
+@@ -341,19 +402,36 @@
+   base::WeakPtr<content::StoragePartition> proxy_partition_;
+   mojo::Receiver<network::mojom::ProxyLookupClient> proxy_lookup_{this};
+   uint64_t next_challenge_ = 0;
+-  size_t remaining_revokes_ = 0;
++  sorng_tls::RegistrationLifetime lifetime_;
++  sorng_tls::ControlRevocations control_revocations_;
++  bool retirement_scheduled_ = false;
+   struct Pending { EvaluateCallback callback; int error; uint32_t status; bool fatal; };
+   std::map<uint64_t, Pending> pending_;
+   mojo::ReceiverSet<network::mojom::SorngTlsClient> receivers_;
+   std::vector<std::unique_ptr<mojo::Remote<network::mojom::SorngTlsControl>>>
+       controls_;
++  base::WeakPtrFactory<Registration> app_weak_factory_{this};
+   base::WeakPtrFactory<Registration> weak_factory_{this};
+ };
+ using Registry = std::map<uint64_t, std::unique_ptr<Registration>>;
+ Registry& Registrations() {
+-  // Retain tombstones; never let a recycled token gain an old grant.
++  // Live/retiring entries only. The O(1) high-water fence rejects old tokens.
+   static base::NoDestructor<Registry> registrations;
+   return *registrations;
++}
++sorng_tls::TokenHighWater& RegistrationTokens() {
++  static sorng_tls::TokenHighWater tokens;
++  return tokens;
++}
++bool ScheduleRegistrationRetirement(uint64_t token, uint64_t generation) {
++  return base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE, base::BindOnce([](uint64_t token, uint64_t generation) {
++        CHECK(OnUi());
++        auto it = Registrations().find(token);
++        if (it != Registrations().end() &&
++            it->second->generation() == generation && it->second->RetirementTaskReady())
++          Registrations().erase(it);
++      }, token, generation));
+ }
+ Registration* Find(uint64_t token, uint64_t generation) {
+   auto it = Registrations().find(token);
+@@ -396,7 +474,7 @@
+       input->abi_version != CEF_SORNG_TLS_ABI_V2 || !input->context_token ||
+       !input->generation || !input->on_evidence || !input->on_state ||
+       input->reserved || input->ca_mode > 2 || input->trust_anchor_count > 64 ||
+-      Registrations().size() >= 1024 || Registrations().contains(input->context_token) ||
++      Registrations().contains(input->context_token) ||
+       !CefString(&settings.cache_path).empty() || settings.persist_session_cookies)
+     return nullptr;
+   if ((input->ca_mode == 0) != (input->trust_anchor_count == 0) ||
+@@ -417,6 +495,8 @@
+     if (!parsed || !parsed->has_basic_constraints() ||
+         !parsed->basic_constraints().is_ca) return nullptr;
+   }
++  if (!RegistrationTokens().Reserve(input->context_token, input->generation,
++                                     Registrations().size())) return nullptr;
+   auto registration = std::make_unique<Registration>(*input, std::move(roots));
+   auto* registered = registration.get();
+   Registrations().emplace(input->context_token, std::move(registration));
+@@ -432,14 +512,15 @@
+       CEF_SORNG_TLS_ABI_V2,
+       CEF_SORNG_TLS_CAP_SOCKET_ADMISSION | CEF_SORNG_TLS_CAP_CONTEXT_REVOKE |
+           CEF_SORNG_TLS_CAP_SAME_AUTHORITY_HTTP2 | CEF_SORNG_TLS_CAP_SCOPED_EXCEPTIONS |
+-          CEF_SORNG_TLS_CAP_PRIVATE_CONTEXT | CEF_SORNG_TLS_CAP_PROXY_APPLIED
++          CEF_SORNG_TLS_CAP_PRIVATE_CONTEXT | CEF_SORNG_TLS_CAP_PROXY_APPLIED |
++          CEF_SORNG_TLS_CAP_BOUNDED_CONTEXT_RETIREMENT
+ #if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+           | CEF_SORNG_TLS_CAP_CUSTOM_CA
+ #endif
+           ,
+       "682c378d70d5780061e96644dca16ddd8fd157a9",
+       "154.0.8037.58",
+-      "sorng-tls-v2-682c378-3"};
++      "sorng-tls-v2-682c378-4"};
+   return &api;
+ }
+ int SORNG_TLS_CALL cef_sorng_tls_complete_v2(uint64_t token,
+@@ -469,4 +550,17 @@
+   auto* registration = Find(token, generation);
+   return registration && registration->ApplyProxy(port);
+ }
++int SORNG_TLS_CALL cef_sorng_tls_registry_stats_v2(cef_sorng_tls_registry_stats_v2_t* stats) {
++  if (!OnUi() || !stats || stats->size != sizeof(*stats) ||
++      stats->abi_version != CEF_SORNG_TLS_ABI_V2) return 0;
++  stats->registrations = Registrations().size();
++  stats->retiring = 0;
++  stats->root_bytes = 0;
++  stats->token_high_water = RegistrationTokens().maximum();
++  for (const auto& [token, registration] : Registrations()) {
++    stats->retiring += registration->retiring() ? 1 : 0;
++    stats->root_bytes += registration->root_bytes();
++  }
++  return 1;
++}
+ }  // extern "C"
+diff --git a/BUILD.gn b/BUILD.gn
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -677,6 +677,7 @@
+     "include/cef_sorng_tls_bridge.h",
+     "libcef/browser/net_service/sorng_tls_bridge.cc",
+     "libcef/browser/net_service/sorng_tls_bridge.h",
++      "libcef/browser/net_service/sorng_tls_registration_policy.h",
+     "libcef/browser/net_service/proxy_url_loader_factory.cc",
+     "libcef/browser/net_service/proxy_url_loader_factory.h",
+     "libcef/browser/net_service/resource_handler_wrapper.cc",

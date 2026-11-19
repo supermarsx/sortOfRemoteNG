@@ -98,3 +98,7 @@ tests/fixtures/cef/composite_source_inverse.json -text
 # Fresh Linux370 namespace and its authenticated observations retain exact raw bytes.
 native/cef-build-inputs/20261114-r5-linuxarm-cross-sysroot-external-webview-char-20261111-370-1/** -text -whitespace
 tests/fixtures/cef/linux370_fresh_inverse.json -text
+
+native/cef-build-inputs/20261119-r5-owned-http3-macintel-sdk26-2-avfoundation-compat/** -text -whitespace
+
+native/cef-build-inputs/20261119-r5-owned-http3-macarm-sdk26-2-avfoundation-compat/** -text -whitespace

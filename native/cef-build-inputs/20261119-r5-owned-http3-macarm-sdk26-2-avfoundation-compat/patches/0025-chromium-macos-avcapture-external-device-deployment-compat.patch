@@ -1,0 +1,16 @@
+diff --git a/media/base/mac/video_capture_device_avfoundation_helpers.mm b/media/base/mac/video_capture_device_avfoundation_helpers.mm
+--- a/media/base/mac/video_capture_device_avfoundation_helpers.mm
++++ b/media/base/mac/video_capture_device_avfoundation_helpers.mm
+@@ -33,9 +33,12 @@ NSArray<AVCaptureDevice*>* GetVideoCaptureDevices() {
+       captureDeviceTypes = [captureDeviceTypes
+           arrayByAddingObject:AVCaptureDeviceTypeContinuityCamera];
+     }
++#if __MAC_OS_X_VERSION_MIN_REQUIRED < 140000
+   } else {
++    // Only pre-Sonoma deployments need the deprecated external device type.
+     captureDeviceTypes = [captureDeviceTypes
+         arrayByAddingObject:AVCaptureDeviceTypeExternalUnknown];
++#endif
+   }
+ #endif  // BUILDFLAG(IS_MAC)
+ 

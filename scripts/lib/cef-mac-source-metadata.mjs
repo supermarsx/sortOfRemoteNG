@@ -316,9 +316,9 @@ export const MAC_SOURCE_SCOPE_QUALIFICATION = Object.freeze({
   image: "20260824.0482.1",
   sources: Object.freeze({
     "aarch64-apple-darwin":
-      "3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212",
+      "cb334e9c4146dfe82c9be3f5a4ec043ea56986c66d69c5a84486ac8db43d5fd5",
     "x86_64-apple-darwin":
-      "c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f",
+      "15af3ea9142658464a5227f365bbcc92e4ab52675d5ed6f81cbb4faa3afc91b4",
   }),
   candidateSourceFreezeSha256:
     "fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33",
@@ -337,7 +337,7 @@ export function macSourceScopeQualified(policy) {
 
 export const MAC_SOURCE_POLICY = Object.freeze({
   target: "aarch64-apple-darwin",
-  source: "3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212",
+  source: "cb334e9c4146dfe82c9be3f5a4ec043ea56986c66d69c5a84486ac8db43d5fd5",
   platform: "darwin",
   architecture: "x64",
   imageOS: "macos15",
@@ -358,7 +358,7 @@ export const MAC_SOURCE_POLICY = Object.freeze({
 });
 export const MAC_INTEL_SOURCE_POLICY = Object.freeze({
   target: "x86_64-apple-darwin",
-  source: "c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f",
+  source: "15af3ea9142658464a5227f365bbcc92e4ab52675d5ed6f81cbb4faa3afc91b4",
   platform: "darwin",
   architecture: "x64",
   imageOS: "macos15",

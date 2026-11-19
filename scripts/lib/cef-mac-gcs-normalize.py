@@ -23,8 +23,8 @@ WRITER = ('depot_tools/gclient_scm.py', 105463,
           'b20ddbd39c6ae1f52386775a4fdc6493e7d5d5dc857b294ef50f79e06226b121')
 DEPOT_COMMIT = 'c101dcbe0489c455fce7c2247bfee19680b116c3'
 SOURCES = {
-    'x86_64-apple-darwin': 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f',
-    'aarch64-apple-darwin': '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212',
+    'x86_64-apple-darwin': '15af3ea9142658464a5227f365bbcc92e4ab52675d5ed6f81cbb4faa3afc91b4',
+    'aarch64-apple-darwin': 'cb334e9c4146dfe82c9be3f5a4ec043ea56986c66d69c5a84486ac8db43d5fd5',
 }
 
 

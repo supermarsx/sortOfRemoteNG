@@ -66,10 +66,10 @@ export const LIMITS = Object.freeze({
   hostMs: 300 * 60_000,
 });
 export const INPUTS =
-  "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat";
+  "native/cef-build-inputs/20261119-r5-owned-http3-macintel-sdk26-2-avfoundation-compat";
 export const TARGET = "x86_64-apple-darwin";
 export const SOURCE_ID =
-  "c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f";
+  "15af3ea9142658464a5227f365bbcc92e4ab52675d5ed6f81cbb4faa3afc91b4";
 // Cross compilation never changes the native acceptance host. Adding a profile
 // changes the producer code digest; checkpoints from older code cannot migrate.
 const PROFILES = Object.freeze({
@@ -88,9 +88,9 @@ const PROFILES = Object.freeze({
   }),
   "aarch64-apple-darwin": Object.freeze({
     target: "aarch64-apple-darwin",
-    source: "3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212",
+    source: "cb334e9c4146dfe82c9be3f5a4ec043ea56986c66d69c5a84486ac8db43d5fd5",
     inputs:
-      "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat",
+      "native/cef-build-inputs/20261119-r5-owned-http3-macarm-sdk26-2-avfoundation-compat",
     platform: "darwin",
     architecture: "x64",
     runner: "macos-15-intel",
@@ -2951,9 +2951,9 @@ export const MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION =
   MAC_SOURCE_SCOPE_QUALIFICATION;
 const MAC_CENSUS_SOURCES = Object.freeze({
   "x86_64-apple-darwin":
-    "c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f",
+    "15af3ea9142658464a5227f365bbcc92e4ab52675d5ed6f81cbb4faa3afc91b4",
   "aarch64-apple-darwin":
-    "3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212",
+    "cb334e9c4146dfe82c9be3f5a4ec043ea56986c66d69c5a84486ac8db43d5fd5",
 });
 const MAC_CENSUS_PYTHON =
   "/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14";

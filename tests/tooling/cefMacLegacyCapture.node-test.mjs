@@ -570,3 +570,114 @@ test(
     });
   },
 );
+
+const avfPatch =
+  "patches/0025-chromium-macos-avcapture-external-device-deployment-compat.patch";
+const avfOriginalSha =
+  "20b378879818ba1d3e08e461763965c6b3b0f06291a854d5b4f71e7c2887155d";
+const avfOriginal = await readFile(
+  path.join(
+    root,
+    "tests/fixtures/cef/minimal-sdk-upstream/video_capture_device_avfoundation_helpers.mm",
+  ),
+);
+assert.equal(sha(avfOriginal), avfOriginalSha);
+
+for (const [arch, target] of permissionsProfiles)
+  test(`Mac ${arch} AVFoundation compatibility preserves all inherited payloads and warning flags`, async () => {
+    const parent = `native/cef-build-inputs/20261114-r5-owned-http3-mac${arch}-sdk26-2-permissions-compat`;
+    const inputs = `native/cef-build-inputs/20261119-r5-owned-http3-mac${arch}-sdk26-2-avfoundation-compat`;
+    const old = validateSourceLock(await json(`${parent}/source-lock.json`));
+    const current = validateSourceLock(
+      await json(`${inputs}/source-lock.json`),
+    );
+    assert.deepEqual(current.upstream, old.upstream);
+    assert.deepEqual(current.bridge, old.bridge);
+    assert.deepEqual(current.builds, old.builds);
+    assert.deepEqual(current.patches.slice(0, -1), old.patches);
+    assert.equal(current.patches.length, old.patches.length + 1);
+    const added = current.patches.at(-1);
+    assert.equal(added.repository, "chromium");
+    assert.equal(added.path, avfPatch);
+    const patch = await readFile(path.join(root, inputs, avfPatch));
+    assert.equal(sha(patch), added.sha256);
+    assert.doesNotMatch(patch.toString(), /Wno|BUILD\.gn|ScreenCaptureKit\.h/);
+    const receipt = await json(`${inputs}/review-receipt.json`);
+    assert.equal(receipt.parentSourceLockIdentity, identitySha256(old));
+    assert.equal(receipt.sourceLockIdentity, identitySha256(current));
+    assert.equal(receipt.upstreamSha256, avfOriginalSha);
+    assert.equal(receipt.engineBuilt, false);
+    assert.equal(receipt.nativeAcceptancePassed, false);
+    assert.equal(receipt.published, false);
+    assert.equal(receipt.originalFailure.runId, 44480792227);
+    for (const pin of [
+      ...old.patches,
+      old.bridge.header,
+      ...old.builds.flatMap((build) => [build.gnArgs, build.toolchainLock]),
+      { path: `cef-ci-runner-${target}.json` },
+    ]) {
+      const inherited = await readFile(path.join(root, parent, pin.path));
+      const actual = await readFile(path.join(root, inputs, pin.path));
+      assert.deepEqual(actual, inherited, pin.path);
+      const evidence = receipt.inheritedPayloads.find(
+        (row) => row.path === pin.path,
+      );
+      assert(evidence);
+      assert.equal(evidence.bytes, inherited.length);
+      assert.equal(evidence.sha256, sha(inherited));
+    }
+    const actual = await plan({
+      inputs,
+      target,
+      checkout: root,
+      runnerMode: "hosted",
+    });
+    assert(JSON.stringify(actual).includes(identitySha256(current)));
+  });
+
+async function appliedAvfSource(owned) {
+  const destination = path.join(
+    owned,
+    "media/base/mac/video_capture_device_avfoundation_helpers.mm",
+  );
+  await mkdir(path.dirname(destination), { recursive: true });
+  await writeFile(destination, avfOriginal);
+  await exec("git", ["init", "--quiet"], { cwd: owned, windowsHide: true });
+  const patch = path.join(
+    root,
+    "native/cef-build-inputs/20261119-r5-owned-http3-macintel-sdk26-2-avfoundation-compat",
+    avfPatch,
+  );
+  await exec("git", ["apply", "--check", patch], {
+    cwd: owned,
+    windowsHide: true,
+  });
+  await exec("git", ["apply", patch], { cwd: owned, windowsHide: true });
+  return (await readFile(destination, "utf8")).replaceAll("\r\n", "\n");
+}
+
+test("actual pinned AVFoundation source patch only guards the pre14 external device fallback", async () => {
+  await scratch(async (owned) => {
+    const after = await appliedAvfSource(owned);
+    const before = avfOriginal.toString("utf8");
+    const guarded =
+      "#if __MAC_OS_X_VERSION_MIN_REQUIRED < 140000\n  } else {\n" +
+      "    // Only pre-Sonoma deployments need the deprecated external device type.\n";
+    assert.equal(after.split(guarded).length, 2);
+    const restored = after
+      .replace(guarded, "  } else {\n")
+      .replace(
+        "AVCaptureDeviceTypeExternalUnknown];\n#endif\n",
+        "AVCaptureDeviceTypeExternalUnknown];\n",
+      );
+    assert.equal(restored, before);
+    assert(after.includes("AVCaptureDeviceTypeExternal];"));
+    assert(after.includes("AVCaptureDeviceTypeContinuityCamera];"));
+    for (const [arch] of permissionsProfiles) {
+      const receipt = await json(
+        `native/cef-build-inputs/20261119-r5-owned-http3-mac${arch}-sdk26-2-avfoundation-compat/review-receipt.json`,
+      );
+      assert.equal(sha(Buffer.from(after)), receipt.patchedSha256);
+    }
+  });
+});

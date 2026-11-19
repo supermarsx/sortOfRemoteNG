@@ -1,0 +1,11 @@
+diff --git a/base/BUILD.gn b/base/BUILD.gn
+--- a/base/BUILD.gn
++++ b/base/BUILD.gn
+@@ -4122,6 +4122,7 @@
+     "//base/test:task_environment",
+     "//base/test:test_proto",
+     "//base/test:test_support",
++    "//base/test:test_trace_processor",
+     "//build:blink_buildflags",
+     "//build:branding_buildflags",
+     "//build:chromecast_buildflags",

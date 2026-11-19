@@ -1,0 +1,17 @@
+diff --git a/ui/base/cocoa/permissions_utils.mm b/ui/base/cocoa/permissions_utils.mm
+--- a/ui/base/cocoa/permissions_utils.mm
++++ b/ui/base/cocoa/permissions_utils.mm
+@@ -93,10 +93,13 @@
+         getShareableContentExcludingDesktopWindows:true
+                                onScreenWindowsOnly:true
+                                  completionHandler:shareable_content_handler];
++#if __MAC_OS_X_VERSION_MIN_REQUIRED < 140000
+   } else {
++    // Only pre-Sonoma deployments need the legacy screenshot fallback.
+     base::apple::ScopedCFTypeRef<CGImageRef>(
+         CGWindowListCreateImage(CGRectInfinite, kCGWindowListOptionOnScreenOnly,
+                                 kCGNullWindowID, kCGWindowImageDefault));
++#endif
+   }
+ }
+ 

@@ -1895,11 +1895,11 @@ MAC_SOURCE_METADATA_POLICY = 'sorng-macarm-owned-source-metadata-intel-20260824-
 # Source-controlled scope, supported by the reviewed native scratch proof only.
 # No report, caller flag or environment toggle can broaden this identity.
 MAC_SOURCE_WRITE_ADMITTED = True
-MAC_SOURCE = '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'
+MAC_SOURCE = 'cb334e9c4146dfe82c9be3f5a4ec043ea56986c66d69c5a84486ac8db43d5fd5'
 MAC_SOURCE_IMAGE = '20260824.0482.1'
 MAC_SOURCE_PROOF = (41328841230, 13092905128,
                     'fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90')
-MAC_INTEL_SOURCE = 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f'
+MAC_INTEL_SOURCE = '15af3ea9142658464a5227f365bbcc92e4ab52675d5ed6f81cbb4faa3afc91b4'
 MAC_INTEL_SOURCE_METADATA_POLICY = 'sorng-macintel-owned-source-metadata-intel-20260824-v1'
 MAC_INTEL_SOURCE_IMAGE = '20260824.0482.1'
 # run, artifact, reviewed source, RAW proof bytes/SHA, then artifact ZIP SHA.
@@ -3387,7 +3387,7 @@ _MAC_SOURCE_SCOPE_QUALIFICATION_PIN = (
     25131,  # supervisorScopeBytes
     'bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3',  # supervisorScopeSha256
     '20260824.0482.1',  # image
-    (('aarch64-apple-darwin', '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'), ('x86_64-apple-darwin', 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f')),  # sources
+    (('aarch64-apple-darwin', 'cb334e9c4146dfe82c9be3f5a4ec043ea56986c66d69c5a84486ac8db43d5fd5'), ('x86_64-apple-darwin', '15af3ea9142658464a5227f365bbcc92e4ab52675d5ed6f81cbb4faa3afc91b4')),  # sources
     'fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33',  # candidateSourceFreezeSha256
     '119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10',  # candidateProducerAtProof
 )

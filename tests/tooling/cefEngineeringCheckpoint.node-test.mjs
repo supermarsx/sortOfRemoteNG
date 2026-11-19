@@ -4976,7 +4976,7 @@ test("closed Unix profiles bind ARM outputs to reviewed x64 builders and distinc
   assert.equal(checkpointProfile().source, SOURCE_ID);
   assert.equal(
     checkpointProfile().inputs,
-    "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat",
+    "native/cef-build-inputs/20261119-r5-owned-http3-macintel-sdk26-2-avfoundation-compat",
   );
   for (const target of ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu"]) {
     const p = checkpointProfile(target);
@@ -5191,7 +5191,7 @@ test("historical Linux ARM image namespace retains fifteen raw payloads and four
   assert.equal(checkpointProfile().source, SOURCE_ID);
   assert.equal(
     checkpointProfile("aarch64-apple-darwin").source,
-    "3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212",
+    "cb334e9c4146dfe82c9be3f5a4ec043ea56986c66d69c5a84486ac8db43d5fd5",
   );
 });
 
@@ -14395,7 +14395,7 @@ test("Intel metadata exact current source policy accepts its freshly qualified n
   assert.match(policy.name, /v3-nearby-clang-literals$/);
   assert.equal(
     policy.source,
-    "c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f",
+    "15af3ea9142658464a5227f365bbcc92e4ab52675d5ed6f81cbb4faa3afc91b4",
   );
   assert.equal(policy.darwinWriteAdmitted, true);
   assert.notEqual(policy.kind, mac.MAC_SOURCE_POLICY.kind);
