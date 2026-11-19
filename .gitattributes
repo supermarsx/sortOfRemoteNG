@@ -104,3 +104,4 @@ native/cef-build-inputs/20261119-r5-owned-http3-macintel-sdk26-2-avfoundation-co
 native/cef-build-inputs/20261119-r5-owned-http3-macarm-sdk26-2-avfoundation-compat/** -text -whitespace
 
 native/cef-source-qualifications/mac-44578143604/** -text -whitespace
+tests/fixtures/cef/avf_compat_inverse.json -text

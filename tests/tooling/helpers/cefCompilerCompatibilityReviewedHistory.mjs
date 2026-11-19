@@ -8,6 +8,11 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { codeTreeDigest } from "../../../scripts/lib/cef-engineering-checkpoint.mjs";
+import {
+  beforeAvfCompatDataForHistory,
+  beforeAvfCompatFileForHistory,
+  beforeAvfCompatRowsForHistory,
+} from "./cefAvfCompatibilityReviewedHistory.mjs";
 
 // Closed test DATA only: no source, process, graph, SDK or native authority.
 const RAW = readFileSync(
@@ -47,6 +52,7 @@ export function inverseCompilerCompatFile(raw, file) {
   return previous;
 }
 export function beforeCompilerCompatFileForHistory(raw, file) {
+  raw = beforeAvfCompatFileForHistory(raw, file);
   raw = beforeCompositeMacFileForHistory(raw, file);
   const spec = DATA.files.find((row) => row.path === file);
   return spec &&
@@ -75,6 +81,7 @@ function rewindRows(rows) {
   return result;
 }
 export function beforeCompilerCompatDataForHistory(rows, files) {
+  ({ rows, files } = beforeAvfCompatDataForHistory(rows, files));
   ({ rows, files } = beforeCompositeMacDataForHistory(rows, files));
   if (digest(rows) !== CURRENT_COMPILER_COMPAT_PRODUCER) return { rows, files };
   assert(files instanceof Map && files.size === rows.length);
@@ -92,6 +99,7 @@ export function beforeCompilerCompatDataForHistory(rows, files) {
   return { rows: previousRows, files: previous };
 }
 export function beforeCompilerCompatRowsForHistory(rows, root) {
+  rows = beforeAvfCompatRowsForHistory(rows, root);
   const subject = compositeMacDataFromGit(rows, root);
   if (subject)
     return beforeCompilerCompatDataForHistory(subject.rows, subject.files).rows;
