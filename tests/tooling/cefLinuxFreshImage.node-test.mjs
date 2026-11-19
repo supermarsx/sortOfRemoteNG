@@ -1,4 +1,8 @@
 import { CURRENT_CENSUS_RESTART_PRODUCER } from "./helpers/cefCensusRestartReviewedHistory.mjs";
+import {
+  CURRENT_AVF_COMPAT_PRODUCER,
+  beforeAvfCompatDataForHistory,
+} from "./helpers/cefAvfCompatibilityReviewedHistory.mjs";
 import { beforeCompositeFreshDataForHistory } from "./helpers/cefCompositeReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -268,7 +272,7 @@ test("historical Linux370 closed history rewinds both complete source files and 
         [mode, type, sha] = left.split(" ");
       return { mode, type, sha, path };
     });
-  assert.equal(codeTreeDigest(currentRows), CURRENT_CENSUS_RESTART_PRODUCER);
+  assert.equal(codeTreeDigest(currentRows), CURRENT_AVF_COMPAT_PRODUCER);
   const batch = git(["cat-file", "--batch"], {
     input: currentRows.map((r) => `HEAD:${r.path}\n`).join(""),
   });
@@ -288,9 +292,11 @@ test("historical Linux370 closed history rewinds both complete source files and 
     assert.equal(batch[at++], 10);
   }
   assert.equal(at, batch.length);
+  const avfBefore = beforeAvfCompatDataForHistory(currentRows, currentFiles);
+  assert.equal(codeTreeDigest(avfBefore.rows), CURRENT_CENSUS_RESTART_PRODUCER);
   const { rows, files } = beforeCompositeFreshDataForHistory(
-    currentRows,
-    currentFiles,
+    avfBefore.rows,
+    avfBefore.files,
   );
   assert.equal(codeTreeDigest(rows), data.currentProducer);
   const before = beforeLinuxFreshDataForHistory(rows, files);

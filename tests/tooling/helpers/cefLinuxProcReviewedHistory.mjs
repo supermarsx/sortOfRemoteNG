@@ -1,4 +1,8 @@
 import {
+  beforeAvfCompatRowsForHistory,
+  beforeAvfCompatDataForHistory,
+} from "./cefAvfCompatibilityReviewedHistory.mjs";
+import {
   beforeCompositeLinuxFileForHistory,
   beforeCompositeLinuxDataForHistory,
   beforeCompositeLinuxRowsForHistory,
@@ -89,6 +93,7 @@ function rewindRows(rows) {
   return result;
 }
 export function beforeLinuxProcDataForHistory(rows, files) {
+  ({ rows, files } = beforeAvfCompatDataForHistory(rows, files));
   ({ rows, files } = beforeCompositeLinuxDataForHistory(rows, files));
   ({ rows, files } = beforeLinuxFreshDataForHistory(rows, files));
   if (digest(rows) !== CURRENT_LINUX_PROC_PRODUCER) return { rows, files };
@@ -112,6 +117,7 @@ export function inverseLinuxProcData(rows, files) {
   return { rows: previous, files: result };
 }
 export function beforeLinuxProcRowsForHistory(rows, root) {
+  rows = beforeAvfCompatRowsForHistory(rows, root);
   rows = beforeCompositeLinuxRowsForHistory(rows, root);
   rows = beforeLinuxFreshRowsForHistory(rows, root);
   if (digest(rows) !== CURRENT_LINUX_PROC_PRODUCER) return rows;

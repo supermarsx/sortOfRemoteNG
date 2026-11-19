@@ -1,3 +1,4 @@
+import { beforeAvfCompatRowsForHistory } from "./cefAvfCompatibilityReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -36,6 +37,7 @@ export function withoutWindowsImageOrigin(raw) {
 }
 
 export function withoutWindowsImageRows(rows, root) {
+  rows = beforeAvfCompatRowsForHistory(rows, root);
   assert.equal(rows.length, 132);
   assert.equal(new Set(rows.map((row) => row.path)).size, 132);
   const digest = (value) =>

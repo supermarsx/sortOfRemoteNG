@@ -1,3 +1,7 @@
+import {
+  beforeAvfCompatRowsForHistory,
+  beforeAvfCompatDataForHistory,
+} from "./cefAvfCompatibilityReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -79,6 +83,7 @@ function rewindRows(rows) {
   return result;
 }
 export function beforeLinuxKernelDataForHistory(rows, files) {
+  ({ rows, files } = beforeAvfCompatDataForHistory(rows, files));
   ({ rows, files } = beforeLinuxProcDataForHistory(rows, files));
   if (digest(rows) !== CURRENT_LINUX_KERNEL_PRODUCER) return { rows, files };
   return inverseLinuxKernelData(rows, files);
@@ -101,6 +106,7 @@ export function inverseLinuxKernelData(rows, files) {
   return { rows: previous, files: result };
 }
 export function beforeLinuxKernelRowsForHistory(rows, root) {
+  rows = beforeAvfCompatRowsForHistory(rows, root);
   rows = beforeLinuxProcRowsForHistory(rows, root);
   if (digest(rows) !== CURRENT_LINUX_KERNEL_PRODUCER) return rows;
   return inverseLinuxKernelRows(rows, root);

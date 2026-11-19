@@ -21,8 +21,27 @@ _FRAMEWORK = json.loads((_HERE / 'mac_framework_partial_inverse.json').read_text
 _REUSE = json.loads((_HERE / 'mac_source_reuse_inverse.json').read_text(encoding='utf8'))['archive']
 
 
+def before_avf_compatibility(raw, filename):
+    """Closed whole-file test DATA rewind of the AVFoundation source-scope layer."""
+    import json as _json
+    avf_raw = (_HERE / 'avf_compat_inverse.json').read_bytes()
+    avf = _json.loads(avf_raw)
+    spec = next((row for row in avf['files'] if row['path'] == filename), None)
+    value = raw.encode() if isinstance(raw, str) else raw
+    if spec is None or len(value) != spec['after']['bytes'] or hashlib.sha256(value).hexdigest() != spec['after']['sha256']:
+        return raw
+    text = value.decode()
+    for pair in reversed(spec['pairs']):
+        assert text.count(pair['current']) == 1
+        text = text.replace(pair['current'], pair['previous'], 1)
+    value = text.encode()
+    assert len(value) == spec['before']['bytes'] and hashlib.sha256(value).hexdigest() == spec['before']['sha256']
+    return value.decode() if isinstance(raw, str) else value
+
+
 def before_compiler_compatibility(raw, filename):
     """Closed whole-file test DATA rewind; never production/source authority."""
+    raw = before_avf_compatibility(raw, filename)
     data_raw = (_HERE / 'compiler_compat_inverse.json').read_bytes()
     assert len(data_raw) == 30210 and hashlib.sha256(data_raw).hexdigest() == 'b69d5e1f82821f4dbf6e7e894eb83cecf9f696a08ffa9c984e1f68149836c6da'
     data = json.loads(data_raw)

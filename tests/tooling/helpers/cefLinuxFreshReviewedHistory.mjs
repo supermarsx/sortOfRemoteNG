@@ -1,4 +1,8 @@
 import {
+  beforeAvfCompatRowsForHistory,
+  beforeAvfCompatDataForHistory,
+} from "./cefAvfCompatibilityReviewedHistory.mjs";
+import {
   beforeCompositeFreshFileForHistory,
   beforeCompositeFreshDataForHistory,
   compositeFreshDataFromGit,
@@ -75,6 +79,7 @@ function rewindRows(rows) {
   return result;
 }
 export function beforeLinuxFreshDataForHistory(rows, files) {
+  ({ rows, files } = beforeAvfCompatDataForHistory(rows, files));
   ({ rows, files } = beforeCompositeFreshDataForHistory(rows, files));
   if (digest(rows) !== CURRENT_LINUX_FRESH_PRODUCER) return { rows, files };
   assert(files instanceof Map && files.size === rows.length);
@@ -92,6 +97,7 @@ export function beforeLinuxFreshDataForHistory(rows, files) {
   return { rows: previousRows, files: previous };
 }
 export function beforeLinuxFreshRowsForHistory(rows, root) {
+  rows = beforeAvfCompatRowsForHistory(rows, root);
   const subject = compositeFreshDataFromGit(rows, root);
   if (subject)
     return beforeLinuxFreshDataForHistory(subject.rows, subject.files).rows;

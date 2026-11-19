@@ -1,5 +1,10 @@
+import {
+  beforeAvfCompatRowsForHistory,
+  beforeAvfCompatDataForHistory,
+} from "./cefAvfCompatibilityReviewedHistory.mjs";
 import { CURRENT_COMPOSITE_PRODUCER } from "./cefCompositeReviewedHistory.mjs";
 import { CURRENT_SLOW_SNAPSHOT_PRODUCER } from "./cefSlowSnapshotReviewedHistory.mjs";
+import { CURRENT_AVF_COMPAT_PRODUCER } from "./cefAvfCompatibilityReviewedHistory.mjs";
 import { CURRENT_CENSUS_RESTART_PRODUCER } from "./cefCensusRestartReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -85,6 +90,7 @@ function sourceShape(rows) {
       CURRENT_COMPOSITE_PRODUCER,
       CURRENT_SLOW_SNAPSHOT_PRODUCER,
       CURRENT_CENSUS_RESTART_PRODUCER,
+      CURRENT_AVF_COMPAT_PRODUCER,
     ].includes(digest),
   );
   return digest;
@@ -101,6 +107,7 @@ function oldRows(rows) {
   return previous;
 }
 export function beforeCensusRowsForHistory(rows, root) {
+  rows = beforeAvfCompatRowsForHistory(rows, root);
   if (sourceShape(rows) === BEFORE_CENSUS_PRODUCER) return rows;
   rows = beforeCensusWitnessRowsForHistory(rows, root);
   const raw = execFileSync("git", ["cat-file", "blob", "HEAD:" + CORE], {
@@ -115,6 +122,7 @@ export function beforeCensusRowsForHistory(rows, root) {
   return oldRows(rows);
 }
 export function beforeCensusDataForHistory(rows, files) {
+  ({ rows, files } = beforeAvfCompatDataForHistory(rows, files));
   const digest = sourceShape(rows);
   assert(files instanceof Map);
   assert.equal(files.size, rows.length);

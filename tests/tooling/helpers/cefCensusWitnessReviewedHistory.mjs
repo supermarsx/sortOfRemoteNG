@@ -1,3 +1,7 @@
+import {
+  beforeAvfCompatRowsForHistory,
+  beforeAvfCompatDataForHistory,
+} from "./cefAvfCompatibilityReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -168,6 +172,7 @@ function rewindRows(rows) {
   return before;
 }
 export function beforeCensusWitnessRowsForHistory(rows, root) {
+  rows = beforeAvfCompatRowsForHistory(rows, root);
   rows = beforeCompilerCompatRowsForHistory(rows, root);
   if (shape(rows) === BEFORE_WITNESS_PRODUCER) return rows;
   const raw = execFileSync("git", ["cat-file", "blob", "HEAD:" + CORE], {
@@ -182,6 +187,7 @@ export function beforeCensusWitnessRowsForHistory(rows, root) {
   return rewindRows(rows);
 }
 export function beforeCensusWitnessDataForHistory(rows, files) {
+  ({ rows, files } = beforeAvfCompatDataForHistory(rows, files));
   ({ rows, files } = beforeCompilerCompatDataForHistory(rows, files));
   const value = shape(rows);
   assert(files instanceof Map && files.size === rows.length);

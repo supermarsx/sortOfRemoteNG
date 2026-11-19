@@ -1,3 +1,7 @@
+import {
+  beforeAvfCompatRowsForHistory,
+  beforeAvfCompatDataForHistory,
+} from "./cefAvfCompatibilityReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -67,6 +71,7 @@ function rewindRows(rows) {
   return result;
 }
 export function beforeSisoWriterDataForHistory(rows, files) {
+  ({ rows, files } = beforeAvfCompatDataForHistory(rows, files));
   ({ rows, files } = beforeLinuxKernelDataForHistory(rows, files));
   if (digest(rows) !== CURRENT_SISO_WRITER_PRODUCER) return { rows, files };
   assert(files instanceof Map && files.size === rows.length);
@@ -83,6 +88,7 @@ export function beforeSisoWriterDataForHistory(rows, files) {
   return { rows: previousRows, files: previous };
 }
 export function beforeSisoWriterRowsForHistory(rows, root) {
+  rows = beforeAvfCompatRowsForHistory(rows, root);
   rows = beforeLinuxKernelRowsForHistory(rows, root);
   if (digest(rows) !== CURRENT_SISO_WRITER_PRODUCER) return rows;
   const headRaw = execFileSync(

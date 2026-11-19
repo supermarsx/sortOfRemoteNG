@@ -1,3 +1,7 @@
+import {
+  CURRENT_AVF_COMPAT_PRODUCER,
+  beforeAvfCompatDataForHistory,
+} from "./cefAvfCompatibilityReviewedHistory.mjs";
 import { CURRENT_COMPOSITE_PRODUCER } from "./cefCompositeReviewedHistory.mjs";
 import { CURRENT_SLOW_SNAPSHOT_PRODUCER } from "./cefSlowSnapshotReviewedHistory.mjs";
 import { CURRENT_CENSUS_RESTART_PRODUCER } from "./cefCensusRestartReviewedHistory.mjs";
@@ -136,7 +140,7 @@ export const reconstructPreviousFeatureData = (rows, files) => {
 };
 
 export function actualFeatureSource(root) {
-  const rows = git(root, ["ls-tree", "-r", "HEAD", "--", ...SELECTED])
+  let rows = git(root, ["ls-tree", "-r", "HEAD", "--", ...SELECTED])
     .toString()
     .trim()
     .split("\n")
@@ -145,9 +149,10 @@ export function actualFeatureSource(root) {
         [mode, type, hash] = left.split(" ");
       return { mode, type, sha: hash, path: file };
     });
-  const producer = codeTreeDigest(rows);
+  let producer = codeTreeDigest(rows);
   assert(
     [
+      CURRENT_AVF_COMPAT_PRODUCER,
       PREVIOUS_FEATURE_PRODUCER,
       CURRENT_FEATURE_PRODUCER,
       CURRENT_CENSUS_PRODUCER,
@@ -164,7 +169,7 @@ export function actualFeatureSource(root) {
   const output = git(root, ["cat-file", "--batch"], {
     input: rows.map((row) => `HEAD:${row.path}\n`).join(""),
   });
-  const files = new Map();
+  let files = new Map();
   let offset = 0;
   for (const row of rows) {
     const end = output.indexOf(10, offset);
@@ -181,6 +186,12 @@ export function actualFeatureSource(root) {
     assert.equal(output[offset++], 10);
   }
   assert.equal(offset, output.length);
+  // The newest reviewed layer is rewound here so every older layer keeps its
+  // own "current producer" contract.
+  if (producer === CURRENT_AVF_COMPAT_PRODUCER) {
+    ({ rows, files } = beforeAvfCompatDataForHistory(rows, files));
+    producer = codeTreeDigest(rows);
+  }
   validateData(
     rows,
     files,

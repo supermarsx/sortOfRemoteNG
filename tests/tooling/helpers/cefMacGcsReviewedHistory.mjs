@@ -1,3 +1,4 @@
+import { beforeAvfCompatRowsForHistory } from "./cefAvfCompatibilityReviewedHistory.mjs";
 import { beforeCompilerCompatFileForHistory } from "./cefCompilerCompatibilityReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -40,6 +41,7 @@ export function withoutMacGcsPreparationRuntime(text) {
 // Prove all132 actual producer rows first; remove only the two whole-pinned Mac
 // preparation deltas to recover the unchanged131-row historical producer.
 export function withoutMacGcsPreparationRows(rows, root) {
+  rows = beforeAvfCompatRowsForHistory(rows, root);
   rows = beforeCensusRowsForHistory(rows, root);
   rows = withoutWindowsImageRows(rows, root);
   const runtimePath = "scripts/cef-runtime-ci.mjs";

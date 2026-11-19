@@ -1,3 +1,4 @@
+import { beforeAvfCompatDataForHistory } from "./cefAvfCompatibilityReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { codeTreeDigest } from "../../../scripts/lib/cef-engineering-checkpoint.mjs";
@@ -110,6 +111,7 @@ export function rewindCensusRestartRows(rows) {
 }
 // Rows and complete file bytes together; any other producer passes unchanged.
 export function beforeCensusRestartDataForHistory(rows, files) {
+  ({ rows, files } = beforeAvfCompatDataForHistory(rows, files));
   if (!isCensusRestartProducer(rows)) return { rows, files };
   assert(files instanceof Map && files.size === rows.length);
   for (const row of rows)
