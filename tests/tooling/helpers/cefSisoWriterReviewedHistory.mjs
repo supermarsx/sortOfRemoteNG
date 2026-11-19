@@ -1,6 +1,7 @@
 import {
   beforeAvfCompatRowsForHistory,
   beforeAvfCompatDataForHistory,
+  beforeAvfCompatFileForHistory,
 } from "./cefAvfCompatibilityReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -102,7 +103,9 @@ export function beforeSisoWriterRowsForHistory(rows, root) {
     },
   );
   const raw = Buffer.from(
-    beforeLinuxKernelCoreForHistory(headRaw.toString("utf8")),
+    beforeLinuxKernelCoreForHistory(
+      beforeAvfCompatFileForHistory(headRaw, DATA.path).toString("utf8"),
+    ),
   );
   pin(raw, DATA.after);
   inverseSisoWriterCore(raw.toString("utf8"));

@@ -1,3 +1,4 @@
+import { beforeAvfCompatDataForHistory } from "./cefAvfCompatibilityReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -106,7 +107,7 @@ function actualData(root) {
       maxBuffer: 16 << 20,
       ...options,
     });
-  const rows = git([
+  const headRows = git([
     "ls-tree",
     "-r",
     "HEAD",
@@ -125,15 +126,12 @@ function actualData(root) {
       assert(matched);
       return { mode: matched[1], sha: matched[2], path: matched[3] };
     });
-  const slow = isSlowSnapshotProducer(rows);
-  if (!slow && digest(rows) !== CURRENT_COMPOSITE_PRODUCER) return null;
-  if (!slow) current(rows);
   const output = git(["cat-file", "--batch"], {
-    input: rows.map((row) => `HEAD:${row.path}\n`).join(""),
+    input: headRows.map((row) => `HEAD:${row.path}\n`).join(""),
   });
-  const files = new Map();
+  const headFiles = new Map();
   let offset = 0;
-  for (const row of rows) {
+  for (const row of headRows) {
     const end = output.indexOf(10, offset);
     assert(end >= offset);
     const matched = /^([a-f0-9]{40}) blob (0|[1-9][0-9]{0,7})$/.exec(
@@ -143,11 +141,17 @@ function actualData(root) {
     offset = end + 1;
     const length = Number(matched[2]);
     assert(length <= 16 << 20 && offset + length < output.length);
-    files.set(row.path, output.subarray(offset, offset + length));
+    headFiles.set(row.path, output.subarray(offset, offset + length));
     offset += length;
     assert.equal(output[offset++], 10);
   }
   assert.equal(offset, output.length);
+  // The newest reviewed layer is rewound first; every older layer keeps its
+  // own current-producer contract.
+  const { rows, files } = beforeAvfCompatDataForHistory(headRows, headFiles);
+  const slow = isSlowSnapshotProducer(rows);
+  if (!slow && digest(rows) !== CURRENT_COMPOSITE_PRODUCER) return null;
+  if (!slow) current(rows);
   if (!slow) return { rows, files };
   const previous = beforeSlowSnapshotDataForHistory(rows, files);
   current(previous.rows);

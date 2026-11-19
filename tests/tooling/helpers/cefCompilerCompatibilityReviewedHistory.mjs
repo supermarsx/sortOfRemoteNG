@@ -119,10 +119,14 @@ export function beforeCompilerCompatRowsForHistory(rows, root) {
       raw.subarray(offset, end).toString(),
     );
     assert(matched);
-    assert.equal(matched[1], spec.after.blob);
     const bytes = Number(matched[2]);
     offset = end + 1;
-    inverseCompilerCompatFile(raw.subarray(offset, offset + bytes), spec.path);
+    const body = beforeAvfCompatFileForHistory(
+      raw.subarray(offset, offset + bytes),
+      spec.path,
+    );
+    assert.equal(blob(body), spec.after.blob);
+    inverseCompilerCompatFile(body, spec.path);
     offset += bytes;
     assert.equal(raw[offset++], 10);
   }

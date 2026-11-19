@@ -1,6 +1,7 @@
 import {
   beforeAvfCompatRowsForHistory,
   beforeAvfCompatDataForHistory,
+  beforeAvfCompatFileForHistory,
 } from "./cefAvfCompatibilityReviewedHistory.mjs";
 import {
   beforeCompositeFreshFileForHistory,
@@ -121,7 +122,10 @@ export function beforeLinuxFreshRowsForHistory(rows, root) {
     offset = end + 1;
     const body = raw.subarray(offset, offset + bytes);
     assert.equal(blob(body), matched[1]);
-    inverseLinuxFreshFile(body, spec.path);
+    inverseLinuxFreshFile(
+      beforeAvfCompatFileForHistory(body, spec.path),
+      spec.path,
+    );
     offset += bytes;
     assert.equal(raw[offset++], 10);
   }
