@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-engineering-sdk-publication-review",
+  "target": "aarch64-unknown-linux-gnu",
+  "sourceLockIdentity": "5690461b26b848671a80fcbf68c6974e569f9789476baf106a181b10cd5eb20e",
+  "producerCodeSha256": "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",
+  "descriptorSha256": "4a44eab1bfc849995401951f2db339a96065e85497ad872f38faefb726fd7958",
+  "producer": {
+    "target": "aarch64-unknown-linux-gnu",
+    "runId": 44265831643,
+    "headSha": "cc60f0d3b4fa4fe99922c547253a715da8ded433",
+    "artifactId": 14421742726,
+    "artifactSha256": "1b315d5aa4e65c9dab7635b9039be32667f42297f74404a881c85c9be5a2ce02",
+    "descriptorSha256": "4a44eab1bfc849995401951f2db339a96065e85497ad872f38faefb726fd7958",
+    "producer": "engineering-sdk",
+    "runAttempt": 1,
+    "completionSha256": "45a05a2356df2643b777dac6fbc78186271bfc753624e77b8ffef1578ae7962f"
+  },
+  "acceptance": {
+    "runId": 44561348538,
+    "runAttempt": 1,
+    "headSha": "e5a3e3c4161971c88dab57075ced26bceb22798b",
+    "sourceTree": "2eda44afe794f916a167a81a8e42420854d85580",
+    "codeSha256": "88dbb35bdca5f56a003483af1f6bb2bf2429fe1a6d9a75e8eb27611e9183e683",
+    "artifactId": 14554375591,
+    "artifactSha256": "6b7fc1321952bedb940f1d8652b0e8737542975533443f43ac17b0e5abcaae37",
+    "sealSha256": "dbd804115dda3171a5b8f10cab1cc16f5630c24af7751875b7cacc580049e80a",
+    "nativeReportSha256": "4187bb4866681ee5d92e46b821d2732b6d25bc58a807a5bb902e15ce8bd21d8c"
+  }
+}
