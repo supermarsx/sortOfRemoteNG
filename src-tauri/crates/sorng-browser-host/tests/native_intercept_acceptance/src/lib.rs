@@ -74,7 +74,7 @@ pub(crate) type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Erro
 
 const ORIGIN: &str = "https://intercept.sorng.test";
 const SELF_ORIGIN: &str = "https://selfsigned.sorng.test";
-const ERROR_TITLE_PREFIX: &str = "Secure connection failed";
+const ERROR_TITLE_PREFIX: &str = "The website certificate was not admitted";
 const CACHE_MAX_BYTES: u64 = 64 * 1024 * 1024;
 /// Plan M3: the per-socket TLS fast path must stay under 5 ms at p95.
 const TLS_P95_LIMIT_US: u64 = 5_000;
