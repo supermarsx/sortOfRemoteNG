@@ -2918,7 +2918,7 @@ export function processRows(text) {
 
 // Exact Intel-image/source scope is qualified by the immutable records below.
 // Integration and ABI proofs never mint live compile receipts.
-export const MAC_NATIVE_CENSUS_ADMITTED = true;
+export const MAC_NATIVE_CENSUS_ADMITTED = false;
 export const MAC_CENSUS_ABI = Object.freeze({
   recordBytes: 648,
   pidOffset: 40,

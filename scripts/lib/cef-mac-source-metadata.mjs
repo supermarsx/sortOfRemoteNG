@@ -348,7 +348,7 @@ export const MAC_SOURCE_POLICY = Object.freeze({
   legacyPrivatePolicy: "sorng-macarm-owned-source-metadata-intel-20260824-v1",
   nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,
   compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,
-  darwinWriteAdmitted: true,
+  darwinWriteAdmitted: false,
   sourceScopeQualification: MAC_SOURCE_SCOPE_QUALIFICATION,
   evidence: Object.freeze({
     runId: 41328841230,
@@ -369,7 +369,7 @@ export const MAC_INTEL_SOURCE_POLICY = Object.freeze({
   legacyPrivatePolicy: "sorng-macintel-owned-source-metadata-intel-20260824-v1",
   nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,
   compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,
-  darwinWriteAdmitted: true,
+  darwinWriteAdmitted: false,
   sourceScopeQualification: MAC_SOURCE_SCOPE_QUALIFICATION,
   evidence: Object.freeze({
     runId: 41348226366,

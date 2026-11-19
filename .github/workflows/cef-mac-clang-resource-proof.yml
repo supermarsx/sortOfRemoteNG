@@ -12,7 +12,7 @@ defaults:
     shell: bash
 jobs:
   proof:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/mac-clang-resource-metadata-20261102' && github.repository_id == '1010282954' && github.repository == 'supermarsx/sortOfRemoteNG' && github.event.repository.visibility == 'public'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/mac-source-scope-proof-20261119' && github.repository_id == '1010282954' && github.repository == 'supermarsx/sortOfRemoteNG' && github.event.repository.visibility == 'public'
     runs-on: macos-15-intel
     timeout-minutes: 5
     env:
@@ -41,4 +41,36 @@ jobs:
             ${{ steps.proof.outputs.root }}/proof.json
             ${{ steps.proof.outputs.root }}/carrier.json
           if-no-files-found: warn
+          retention-days: 14
+
+  supervisor-scope:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/mac-source-scope-proof-20261119' && github.repository_id == '1010282954' && github.repository == 'supermarsx/sortOfRemoteNG' && github.event.repository.visibility == 'public'
+    runs-on: macos-15-intel
+    timeout-minutes: 5
+    env:
+      GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+    steps:
+      - name: Start the original whole-job proof clock
+        run: echo "CEF_MAC_CLANG_JOB_STARTED_MS=$(($(date +%s) * 1000))" >> "$GITHUB_ENV"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+      - name: Prove only current-source integration and production refusals
+        id: proof
+        timeout-minutes: 4
+        run: node tests/fixtures/cef/mac_source_scope_supervisor_carrier.mjs
+      - name: Retain only the bounded current-source scratch evidence
+        if: always() && steps.proof.outputs.root != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-mac-new-source-supervisor-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.proof.outputs.root }}/proof.json
+            ${{ steps.proof.outputs.root }}/scope-carrier.json
+          if-no-files-found: error
           retention-days: 14

@@ -25,10 +25,10 @@ const HELPER = fileURLToPath(
 );
 const TARGET = "x86_64-apple-darwin";
 const SOURCE =
-  "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef";
+  "15af3ea9142658464a5227f365bbcc92e4ab52675d5ed6f81cbb4faa3afc91b4";
 const ARM_TARGET = "aarch64-apple-darwin";
 const ARM_SOURCE =
-  "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54";
+  "cb334e9c4146dfe82c9be3f5a4ec043ea56986c66d69c5a84486ac8db43d5fd5";
 const CASES = Object.freeze([
   "normal",
   "slice-stop",

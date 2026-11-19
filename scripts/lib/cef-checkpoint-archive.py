@@ -1380,7 +1380,7 @@ def _mac_nearby_legacy_private_namespace(identity):
 # BEGIN INACTIVE MAC CLANG PROOF SCOPE
 # A separate, creation-owned proof class. The existing Nearby v2 evidence and
 # public selection are unchanged; neither JSON nor the new policy grants v3.
-MAC_CLANG_LITERAL_PRODUCTION_ADMITTED = True
+MAC_CLANG_LITERAL_PRODUCTION_ADMITTED = False
 MAC_CLANG_LITERAL_POLICY = 'sorng-mac-pinned-clang-runtime-literals-v1'
 MAC_ARM_CLANG_METADATA_POLICY = 'sorng-macarm-owned-source-metadata-intel-20260824-v3-nearby-clang-literals'
 MAC_INTEL_CLANG_METADATA_POLICY = 'sorng-macintel-owned-source-metadata-intel-20260824-v3-nearby-clang-literals'
@@ -1454,7 +1454,7 @@ def _mac_clang_proof_current(record):
 def _mac_clang_owned_proof_tree(output,budget):
     """Exclusive proof root only; never an issuer for production source paths."""
     import sys
-    branch='refs/heads/codex/mac-clang-resource-metadata-20261102'
+    branch='refs/heads/codex/mac-source-scope-proof-20261119'
     require(sys.platform=='darwin' and platform.machine()=='x86_64' and
             os.environ.get('ImageOS')=='macos15' and os.environ.get('ImageVersion')==MAC_SOURCE_IMAGE and
             os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and
@@ -1894,7 +1894,7 @@ SOURCE_MAX_FILE = 8 * 1024**3
 MAC_SOURCE_METADATA_POLICY = 'sorng-macarm-owned-source-metadata-intel-20260824-v1'
 # Source-controlled scope, supported by the reviewed native scratch proof only.
 # No report, caller flag or environment toggle can broaden this identity.
-MAC_SOURCE_WRITE_ADMITTED = True
+MAC_SOURCE_WRITE_ADMITTED = False
 MAC_SOURCE = 'cb334e9c4146dfe82c9be3f5a4ec043ea56986c66d69c5a84486ac8db43d5fd5'
 MAC_SOURCE_IMAGE = '20260824.0482.1'
 MAC_SOURCE_PROOF = (41328841230, 13092905128,
@@ -1906,7 +1906,7 @@ MAC_INTEL_SOURCE_IMAGE = '20260824.0482.1'
 MAC_INTEL_SOURCE_PROOF = (41348226366,13099539006,'499ade0595d3e3d90fa15aea1ffb8499e297bf3f',16278,
     '2e56488f480ed75dc479569d5214914b4b2ed0e73732e2a1723156d85a0ca249',
     'c34dde53d28645ddb78c0ac7b97b40df48d6acce10ff260462bb7178c6f9aab5')
-MAC_INTEL_SOURCE_WRITE_ADMITTED = True
+MAC_INTEL_SOURCE_WRITE_ADMITTED = False
 MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED = True
 # run, artifact, reviewed source, RAW proof bytes/SHA, ZIP bytes/SHA. These are
 # code-owned qualification facts; no report is loaded as admission authority.

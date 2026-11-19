@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 
-PRODUCTION_CENSUS_ADMITTED = True
+PRODUCTION_CENSUS_ADMITTED = False
 ACTIVE_NATIVE_MODE = None
 IMAGE = '20260824.0482.1'
 PYTHON = '/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14'
