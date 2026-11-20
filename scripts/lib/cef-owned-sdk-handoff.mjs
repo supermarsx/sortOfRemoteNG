@@ -52,7 +52,7 @@ const origins = {
   "owned-windows-capsule-lifetime-operation2": "x86_64-pc-windows-msvc",
 };
 export const WINDOWS_ARM_FULLSDK_IDENTITIES = Object.freeze([
-  "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+  "e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d",
   "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
 ]);
 async function requireWindowsArmPolicy() {

@@ -3053,7 +3053,7 @@ function fixture() {
     GITHUB_RUN_ATTEMPT: "2",
     GITHUB_SHA: "1".repeat(40),
     GITHUB_WORKFLOW_SHA: "1".repeat(40),
-    ImageVersion: "20261103.298.1",
+    ImageVersion: "20261116.315.1",
   };
   const value = {
     schemaVersion: 1,

@@ -440,11 +440,11 @@ async function hold(relative, head, expected) {
   }
 }
 const SOURCES = Object.freeze({
-  "20261103.298.1": Object.freeze({
+  "20261116.315.1": Object.freeze({
     sourceLockIdentity:
-      "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+      "e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d",
     sourceProfileSha256:
-      "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
+      "218e300d66ff17e08a894547fb9cdb0c9ab4c751aabef6687c93ff37fbb67b1c",
   }),
   "20261021.278.1": Object.freeze({
     sourceLockIdentity:
@@ -1063,6 +1063,9 @@ function rawRoot(image, sourceId) {
     ].join("-")
   );
 }
+// Job CPU hard caps, 1/100 percent: the source stages stay at 25 %, the engine roles run at 75 %.
+const SOURCE_CPU_RATE = 2500;
+const ENGINE_CPU_RATE = 7500;
 function rawJob(value, cap) {
   const observed = job(
     {
@@ -1074,7 +1077,7 @@ function rawJob(value, cap) {
       activeAtEnd: 0,
       processLimit: 64,
       memoryBytes: 8 * 1024 ** 3,
-      cpuRate: 2500,
+      cpuRate: cap === 131072 ? SOURCE_CPU_RATE : ENGINE_CPU_RATE,
       workMs: 21600000 - 150000,
       cleanupMs: 30000,
       elapsedMs: value.value.elapsedMs,
@@ -1083,6 +1086,7 @@ function rawJob(value, cap) {
     {
       policy: { jobPolicy: { maxWorkMs: 21600000 - 150000, cleanupMs: 30000 } },
     },
+    cap === 131072 ? SOURCE_CPU_RATE : ENGINE_CPU_RATE,
   );
   need(value.value.outputCapBytes === cap, "RAW_JOB_CAP");
   return observed;
@@ -1800,7 +1804,7 @@ function rawDetails(seal, state) {
   );
   const prefix =
     "native/cef-build-inputs/" +
-    (source.image === "20261103.298.1"
+    (source.image === "20261116.315.1"
       ? "20261101-r5-windows-arm64-cross-x64-current-source-gn"
       : "20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn") +
     "/source-lock.json";
@@ -2170,7 +2174,7 @@ const JOB_FIELDS = [
   "cleanupMs",
   "elapsedMs",
 ];
-function job(value, receipt, state) {
+function job(value, receipt, state, cpuRate = ENGINE_CPU_RATE) {
   shape(value, JOB_FIELDS);
   need(
     value.exitCode === 0 &&
@@ -2181,7 +2185,7 @@ function job(value, receipt, state) {
       value.activeAtEnd === 0 &&
       value.processLimit === 64 &&
       value.memoryBytes === 8 * 1024 ** 3 &&
-      value.cpuRate === 2500 &&
+      value.cpuRate === cpuRate &&
       positive(value.workMs) &&
       value.workMs <= state.policy.jobPolicy.maxWorkMs &&
       positive(value.cleanupMs) &&

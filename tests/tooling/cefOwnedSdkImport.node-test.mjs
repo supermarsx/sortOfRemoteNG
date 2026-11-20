@@ -1937,7 +1937,7 @@ function windowsArmReviewFixture() {
   review.target = WINDOWS_ARM_SDK_TARGET;
   review.originPolicySha256 = "2".repeat(64);
   review.sourceLockIdentity =
-    "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90";
+    "e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d";
   review.assets.find((row) => row.name.endsWith(".tar.bz2")).name =
     `sorng-cef-custom-${review.sourceLockIdentity}-${review.target}.tar.bz2`;
   review.reviewBinding.evidencePins = Object.fromEntries(
@@ -2377,11 +2377,11 @@ async function armLocalConsumerFixture(t, mutatePolicy = () => {}) {
   const raw = (value) => Buffer.from(canonical(value) + "\n");
   const pin = (value) => ({ bytes: value.length, sha256: digest(value) });
   const sourceTuples = {
-    "20261103.298.1": {
+    "20261116.315.1": {
       sourceLockIdentity:
-        "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+        "e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d",
       sourceProfileSha256:
-        "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
+        "218e300d66ff17e08a894547fb9cdb0c9ab4c751aabef6687c93ff37fbb67b1c",
     },
     "20261021.278.1": {
       sourceLockIdentity:
@@ -2480,7 +2480,7 @@ async function armLocalConsumerFixture(t, mutatePolicy = () => {}) {
       head: git(root, "rev-parse", "HEAD").toString().trim(),
     };
   }
-  function packet(f, image = "20261103.298.1") {
+  function packet(f, image = "20261116.315.1") {
     const producer = {
       repository: "supermarsx/sortOfRemoteNG",
       repositoryId: 1010282954,
@@ -2521,7 +2521,7 @@ async function armLocalConsumerFixture(t, mutatePolicy = () => {}) {
       activeAtEnd: 0,
       processLimit: 64,
       memoryBytes: 8 * 1024 ** 3,
-      cpuRate: 2500,
+      cpuRate: 7500,
       workMs: 1000,
       cleanupMs: 30000,
       elapsedMs: 100,
@@ -2543,7 +2543,7 @@ async function armLocalConsumerFixture(t, mutatePolicy = () => {}) {
         activeProcessLimit: 64,
         jobMemoryBytes: String(8 * 1024 ** 3),
         cpuFlags: 5,
-        cpuRate: 2500,
+        cpuRate: 7500,
         inheritedHandles: 3,
         affinityChanged: false,
       },
@@ -2839,11 +2839,11 @@ test("Windows ARM token-free native boundary rechecks real committed typed recor
 test("Windows ARM local consumer rejects retired image and stale current-profile declarations before inspecting records", async (t) => {
   for (const mutatePolicy of [
     (policy) => {
-      policy.sources["20261030.294.1"] = policy.sources["20261103.298.1"];
-      delete policy.sources["20261103.298.1"];
+      policy.sources["20261030.294.1"] = policy.sources["20261116.315.1"];
+      delete policy.sources["20261116.315.1"];
     },
     (policy) => {
-      policy.sources["20261103.298.1"].sourceProfileSha256 =
+      policy.sources["20261116.315.1"].sourceProfileSha256 =
         "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05";
     },
   ]) {
@@ -2989,11 +2989,11 @@ async function engineHostArchitectureFixture() {
     profile = await json("full-sdk-source-profile.json"),
     base = await json("profile.json"),
     privatePolicy = await json("private-qualification-profile.json"),
-    selected = profile.images["20261103.298.1"],
+    selected = profile.images["20261116.315.1"],
     image = await json(selected.profile),
     p = {
       ...base,
-      image: "20261103.298.1",
+      image: "20261116.315.1",
       sourceGn: image.sourceGn,
       sourcePaths: [],
       privatePolicy,

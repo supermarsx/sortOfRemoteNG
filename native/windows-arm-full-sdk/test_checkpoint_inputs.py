@@ -22,7 +22,7 @@ class CheckpointInputTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.repo = Path(self.temp.name).resolve()
-        self.identity = dict(image='20261103.298.1', sourceId=subject.SOURCES['20261103.298.1'],
+        self.identity = dict(image='20261116.315.1', sourceId=subject.SOURCES['20261116.315.1'],
                              producerSha256='a' * 64, sourceDateEpoch=dict(present=True, value='1700000000'))
         self.root = self.repo / '.artifacts' / subject.root_name(self.identity['image'], self.identity['sourceId'])
         self.root.mkdir(parents=True)
@@ -182,7 +182,7 @@ class CheckpointInputTests(unittest.TestCase):
                                  types.SimpleNamespace(remaining=lambda: left['seconds']), late_fence)
 
     def test_original_fixed_root_epoch_and_policy_bounds(self):
-        self.assertEqual(self.root.name, 'windows-arm-full-sdk-1ce5fa02-8d6f-4ab8-937d-1c1e319c0789')
+        self.assertEqual(self.root.name, 'windows-arm-full-sdk-021bb5b2-3b38-41c6-86af-4af171e0edfd')
         self.assertEqual(subject.root_name('20261021.278.1', subject.SOURCES['20261021.278.1']),
                          'windows-arm-full-sdk-adaa4b45-ea3f-4a01-b88f-10a988c6b0ac')
         self.assertEqual((subject.MAX_ENTRIES, subject.MAX_FILE, subject.MAX_RAW, subject.MAX_SIDECAR),

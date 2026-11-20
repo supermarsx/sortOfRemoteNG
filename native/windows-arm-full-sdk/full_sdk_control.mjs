@@ -31,13 +31,13 @@ const sourceSessions = new WeakMap(); // Sole writer: actual runSourcePhase crea
 const leases = new WeakMap();
 const controls = new WeakMap();
 const sources = Object.freeze({
-  "20261103.298.1": Object.freeze({
-    id: "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
-    profile: "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
+  "20261116.315.1": Object.freeze({
+    id: "e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d",
+    profile: "218e300d66ff17e08a894547fb9cdb0c9ab4c751aabef6687c93ff37fbb67b1c",
   }),
   "20261021.278.1": Object.freeze({
     id: "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
-    profile: "442dde898498335536d158a1c39ca61abec5564bd72437ea43cd5745df0de3a6",
+    profile: "67a7467762339db88d90f3ab4fbc3f030a81f3fd374deb9a62d94f9dc20c398b",
   }),
 });
 function need(value, code) {
@@ -673,7 +673,7 @@ async function retireControl(token) {
 const CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.
 const SOURCE_QUALIFICATION_ALLOWED = true;
 const FULL_SOURCE_PROFILE_SHA256 =
-  "20ed8980b9fa5e248eafaac3b0216d8d294e113d38a4adb2f99957935e334dc7";
+  "ffc8728fa043b6c22964a92ec26a251be6d5d1edbd0d93d7d5c13b6aba57f139";
 const MODULE_URL = import.meta.url;
 const CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));
 const CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, "../..");
@@ -1080,10 +1080,10 @@ const EXPECTED_DEFAULTS_PATH =
   "native/windows-arm-full-sdk/expected-defaults.mjs";
 const EXPECTED_DEFAULTS_PIN = Object.freeze({
   bytes: 36630,
-  sha256: "36075a49dc79480ed760c1741d9dbb9904ebc1f794276388821ae7fc321b31e9",
+  sha256: "d135c839d1496eb32dfb21c138d027065cc5166035f42fbb101cc4c16ee22e7a",
 });
 const EXPECTED_DEFAULTS_POLICY_SHA256 =
-  "0c2adc00d0f5a7c06a2d4fd9aad235cd3bb2474df0b07934845eccf2c749bea8";
+  "9c5f92a7d7bab0ea623fe2530167c582264e52e8d681c083c4abf3d1a58f3d58";
 async function heldExpectedDefaultsLive(token, joinedAllowed = false) {
   const relative = EXPECTED_DEFAULTS_PATH,
     maximum = 65536,
@@ -1320,7 +1320,7 @@ function expectedDefaultsFact(state, projected, binding) {
 
 // Strict DATA readers only. These cannot register a source, create a child or open admission.
 const parentMetadata_PRIVATE_PROFILE_SHA256 =
-  "5c263f19c1b1c7c220fc8d5e8cc8801b5adf3d9196aed8d0c6df792e961daad3";
+  "d31971146190df9f0311172cc37a0a3961546829066d3ae310ed2950e3f9283b";
 
 const parentMetadata_PRIVATE_MODE = "private-compiler-input-qualification";
 
@@ -3098,7 +3098,7 @@ async function verifySourceToolProof(token) {
   need(
     input >= 0 &&
       state.plan.producerInputs[input].sha256 ===
-        "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a",
+        "ea4bf3acb619d8719a5d28ac17b6afbd49f467e15fa2fc90e524aed7dee046ea",
     "TOOL_PROOF_BASE_PIN",
   );
   const baseRelative = "source-inputs/" + input,
@@ -4672,7 +4672,7 @@ async function createSourceOperation(bootstrap) {
       {
         bytes: 1895,
         sha256:
-          "0eb782728321e9eb793e93987c218d4a7b99d9fd5d3bbb95fbd073dd392b183e",
+          "06a162fa95f77369697f54f8a54194c36df52cd411bdc647c8d316cd96827da7",
       },
     )
   ).raw;
@@ -4680,7 +4680,7 @@ async function createSourceOperation(bootstrap) {
   need(
     rootCode.length === 1895 &&
       hashBytes(rootCode) ===
-        "0eb782728321e9eb793e93987c218d4a7b99d9fd5d3bbb95fbd073dd392b183e",
+        "06a162fa95f77369697f54f8a54194c36df52cd411bdc647c8d316cd96827da7",
     "SOURCE_ROOT_MODULE_PIN",
   );
   need(

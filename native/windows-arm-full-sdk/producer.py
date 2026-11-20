@@ -16,7 +16,7 @@ import checkpoint
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-PROFILE_SHA = "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a"
+PROFILE_SHA = "ea4bf3acb619d8719a5d28ac17b6afbd49f467e15fa2fc90e524aed7dee046ea"
 CONTEXT_SHA = None
 COMMAND_INVENTORY_REPORTING_FAILURE = False
 ROLES = ("sdk-data", "llvm-data", "rust-archive", "gn-archive", "siso-archive", "materialize", "runtime-closure")
@@ -38,15 +38,15 @@ REVIEWED_NAMESPACE = 'native/cef-build-inputs/20261101-r5-windows-arm64-cross-x6
 
 IMAGE_MODE = 'image-qualified-source-gn'
 IMAGE_REF = 'refs/heads/codex/windows-arm-image-qualified-source-gn-20261101'
-IMAGE_TUPLES = {'20261103.298.1': {'image': '20261103.298.1',
+IMAGE_TUPLES = {'20261116.315.1': {'image': '20261116.315.1',
                     'profile': 'image-qualified-current-profile.json',
-                    'sha256': '5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd',
+                    'sha256': '218e300d66ff17e08a894547fb9cdb0c9ab4c751aabef6687c93ff37fbb67b1c',
                     'driver': 'image-qualified-current-driver.mjs',
-                    'sourceId': 'e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90',
+                    'sourceId': 'e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d',
                     'namespace': 'native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/'},
  '20261021.278.1': {'image': '20261021.278.1',
                     'profile': 'image-qualified-20261021-profile.json',
-                    'sha256': '442dde898498335536d158a1c39ca61abec5564bd72437ea43cd5745df0de3a6',
+                    'sha256': '67a7467762339db88d90f3ab4fbc3f030a81f3fd374deb9a62d94f9dc20c398b',
                     'driver': 'image-qualified-20261021-driver.mjs',
                     'sourceId': 'fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa',
                     'namespace': 'native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/'}}

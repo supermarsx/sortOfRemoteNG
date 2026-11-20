@@ -95,7 +95,7 @@ test("Windows ARM local handoff admits only typed candidates and requires fixed 
     target: WINDOWS_ARM_SDK_TARGET,
     originPolicySha256: "a".repeat(64),
     sourceLockIdentity:
-      "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+      "e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d",
     descriptorSha256: "b".repeat(64),
     python: {
       path: path.resolve("synthetic-python"),

@@ -12,7 +12,7 @@ import { deflateRawSync } from "node:zlib";
 import * as original from "../../scripts/lib/cef-windows-arm-sdk-origin.mjs";
 // Explicit MODELED native/process/API outcomes. Actual helper, exact128 path
 // inventory, held Git loader, raw JSON/ZIP validators and binding registry run.
-function rawModeledPacket(f, image = "20261103.298.1", manifestPadding = 0) {
+function rawModeledPacket(f, image = "20261116.315.1", manifestPadding = 0) {
   const id = sourceTuples[image].sourceLockIdentity,
     sources = f.policy.producerInputs;
   const evidence = (v, pretty = false) => {
@@ -245,6 +245,8 @@ function rawModeledPacket(f, image = "20261103.298.1", manifestPadding = 0) {
   }
   const sj = {
     ...kernel,
+    // The source Job keeps its 25 % cap; only the engine roles run at 75 %.
+    policyReadback: { ...kernel.policyReadback, cpuRate: 2500 },
     rootPid: 82,
     rootCreationFiletime: "802",
     outputCapBytes: 131072,
@@ -740,7 +742,7 @@ test("schema2 constructor denies oversized input before copy and generated DATA 
       /RAW_BOUND/,
     );
   const f = await fixture(t, () => {}, true),
-    { seal, bundleMetadata } = rawModeledPacket(f, "20261103.298.1", 790000);
+    { seal, bundleMetadata } = rawModeledPacket(f, "20261116.315.1", 790000);
   assert(bundleMetadata.manifest.bytes < 1024 * 1024);
   let outputCopied = false;
   Buffer.from = function (value, ...args) {
@@ -1027,11 +1029,11 @@ export function extractIndependentSealBytes(rawZip) {
 });
 const H = "a".repeat(64);
 const sourceTuples = {
-  "20261103.298.1": {
+  "20261116.315.1": {
     sourceLockIdentity:
-      "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+      "e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d",
     sourceProfileSha256:
-      "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
+      "218e300d66ff17e08a894547fb9cdb0c9ab4c751aabef6687c93ff37fbb67b1c",
   },
   "20261021.278.1": {
     sourceLockIdentity:
@@ -1265,7 +1267,7 @@ async function fixture(t, mutate = () => {}, rawMode = false) {
     head: git(root, "rev-parse", "HEAD").toString().trim(),
   };
 }
-function packet(f, image = "20261103.298.1") {
+function packet(f, image = "20261116.315.1") {
   const producer = {
     repository: "supermarsx/sortOfRemoteNG",
     repositoryId: 1010282954,
@@ -1306,7 +1308,7 @@ function packet(f, image = "20261103.298.1") {
     activeAtEnd: 0,
     processLimit: 64,
     memoryBytes: 8 * 1024 ** 3,
-    cpuRate: 2500,
+    cpuRate: 7500,
     workMs: 1000,
     cleanupMs: 30000,
     elapsedMs: 100,
@@ -1328,7 +1330,7 @@ function packet(f, image = "20261103.298.1") {
       activeProcessLimit: 64,
       jobMemoryBytes: String(8 * 1024 ** 3),
       cpuFlags: 5,
-      cpuRate: 2500,
+      cpuRate: 7500,
       inheritedHandles: 3,
       affinityChanged: false,
     },
@@ -1744,7 +1746,7 @@ test("only the new owned-review variant adds the exact fixed policy digest", asy
     origin: original.WINDOWS_ARM_SDK_ORIGIN,
     target: original.WINDOWS_ARM_SDK_TARGET,
     originPolicySha256: f.policySha,
-    sourceLockIdentity: sourceTuples["20261103.298.1"].sourceLockIdentity,
+    sourceLockIdentity: sourceTuples["20261116.315.1"].sourceLockIdentity,
     bundleSourceLockRawSha256: H,
     originalInputsSourceLockRawSha256: H,
     descriptorSha256: H,
@@ -1791,7 +1793,7 @@ test("fixed policy does not accept extra admission keys, arbitrary producer path
       policy.producerInputs[0].path = "scripts/arbitrary.mjs";
     },
     (policy) => {
-      policy.sources["20261103.298.1"].sourceLockIdentity = H;
+      policy.sources["20261116.315.1"].sourceLockIdentity = H;
     },
   ])
     await assert.rejects(fixture(t, change));
@@ -2365,7 +2367,7 @@ test("reviewed current image refresh preserves whole historical inputs and admit
   ).replaceAll("\r\n", "\n");
   const current = JSON.parse(text),
     previous = JSON.parse(withoutReviewedWindowsImage(text, file));
-  assert.equal(current.image, "20261103.298.1");
+  assert.equal(current.image, "20261116.315.1");
   assert.equal(current.sourceGn.hostClosure.image, current.image);
   const evidence = current.imageRefreshEvidence;
   assert.equal(evidence.probe.admits, false);

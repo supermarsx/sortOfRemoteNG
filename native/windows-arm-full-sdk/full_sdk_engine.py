@@ -20,7 +20,7 @@ ROLES = ('probe-clang', 'probe-link', 'cef-engine', 'package', 'checkpoint-seal'
 ENGINE_CPU_RATE = 7500
 CAPS = {'probe-clang': 900, 'probe-link': 900, 'cef-engine': 10800, 'package': 2400, 'checkpoint-seal': 6000}
 METADATA_MAXIMA = (65536, 65536, 1048576, 1048576, 4194304, 1048576, 8388608, 8388608, 131072)
-SOURCES = {'20261103.298.1': 'e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90',
+SOURCES = {'20261116.315.1': 'e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d',
            '20261021.278.1': 'fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa'}
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
