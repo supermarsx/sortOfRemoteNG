@@ -43,10 +43,14 @@ const NATIVE_WORKFLOW = ".github/workflows/cef-runtime-acceptance.yml";
 export const ENGINEERING_PRODUCER =
   "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98";
 export const ENGINEERING_PRODUCERS = Object.freeze({
-  // Source binding only. A future actual successful run and both independent
-  // completion/native seals are still mandatory; no failed run is selected.
+  // Code tree digest of the actual successful engineering SDK producer run
+  // 44265831643 (head cc60f0d3b4fa4fe99922c547253a715da8ded433); it equals
+  // that run's sealed completion.identity.producer. Both independent
+  // completion/native seals are still mandatory for publication.
   "aarch64-unknown-linux-gnu":
-    "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",
+    "25da34d744501f1499a6a18aebc971a3790d94ffbbf98e7c7409179013252c1d",
+  // Source bindings only. A future actual successful run and both independent
+  // completion/native seals are still mandatory; no failed run is selected.
   "x86_64-apple-darwin": ENGINEERING_PRODUCER,
   "aarch64-apple-darwin":
     "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",

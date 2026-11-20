@@ -1067,6 +1067,10 @@ test("engineering publisher routing whole workflow inverse preserves the origina
 // module blob delta for1edd. Transport/native execution below is explicitly modeled.
 const engineeringGitRowsDeflate =
   "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";
+// Selected committed code rows (scripts/, workflow, recipe, .node-version) of the
+// GitHub tree of producer head cc60f0d3b4fa4fe99922c547253a715da8ded433.
+const linuxCc60GitRowsDeflate =
+  "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";
 function engineeringFixture(target = "x86_64-apple-darwin") {
   const old = fixture(modernLock),
     profile = checkpointProfile(target);
@@ -1074,103 +1078,104 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
     new URL("../../" + profile.inputs + "/source-lock.json", import.meta.url),
   );
   const lock = JSON.parse(lockRaw);
-  const rows = JSON.parse(
-    inflateSync(Buffer.from(engineeringGitRowsDeflate, "base64")),
-  );
-  if (target === "aarch64-unknown-linux-gnu") {
-    const currentLinuxBlobs = {
-      "scripts/lib/cef-checkpoint-archive.py":
-        "66e77e0ec607aee4d80fae3ad1f185fbf0b6600f",
-      "scripts/lib/cef-engineering-checkpoint.mjs":
-        "e8c21320d5858c25b4b7ae6ad909e8cc7791d6ec",
-      "scripts/lib/cef-linux-producer-migration.mjs":
-        "434bb814abbc4c16ac417477a081ce9c7abf6f77",
-    };
-    for (const [name, sha] of Object.entries(currentLinuxBlobs))
-      rows.find((row) => row.path === name).sha = sha;
-  }
-  if (target !== "aarch64-unknown-linux-gnu") {
-    const currentMacBlobs = {
-      "scripts/lib/cef-checkpoint-archive.py":
-        "66e77e0ec607aee4d80fae3ad1f185fbf0b6600f",
-      "scripts/lib/cef-engineering-checkpoint.mjs":
-        "e8c21320d5858c25b4b7ae6ad909e8cc7791d6ec",
-      "scripts/lib/cef-linux-producer-migration.mjs":
-        "434bb814abbc4c16ac417477a081ce9c7abf6f77",
-    };
-    for (const [name, sha] of Object.entries(currentMacBlobs))
-      rows.find((row) => row.path === name).sha = sha;
-  }
-  if (["x86_64-apple-darwin", "aarch64-apple-darwin"].includes(target)) {
-    // Both Mac witnesses include the reviewed cold-discovery source.
-    const coldMetalBlobs = {
-      "scripts/cef-hosted-provision.mjs":
-        "9fb323d215e1d246f537685b360d3a665f87f748",
-      "scripts/cef-runtime-ci.mjs": "12364c78030f4d8ba44a2e2a3c8cd3eef88724f6",
-      "scripts/lib/cef-linux-producer-migration.mjs":
-        "d8de10ec9a96ce6b1f39d48369a33cdb735962ea",
-    };
-    for (const [name, sha] of Object.entries(coldMetalBlobs))
-      rows.find((row) => row.path === name).sha = sha;
-  }
-  if (["x86_64-apple-darwin", "aarch64-apple-darwin"].includes(target)) {
-    // Exact new source-budget composition; modeled SDK transport only.
-    const sourceBudgetBlobs = {
-      "scripts/cef-engineering-checkpoint.mjs":
-        "5cf3cba75a6afc624ec1c658d287da96c1b0a67c",
-      "scripts/cef-runtime-ci.mjs": "0a5aff87d6755bf2ab0705269e891bc9d663f746",
-      "scripts/lib/cef-checkpoint-archive.py":
-        "b36a1c357bc4eeb9edf36a5f436e195597db7a1e",
-      "scripts/lib/cef-engineering-checkpoint.mjs":
-        "61f8105eb1419c45b15ab6b5ec8e03c4e3f5923f",
-      "scripts/lib/cef-linux-producer-migration.mjs":
-        "42a68eaacefdd64c75949f0e133de52e5cd5e37f",
-    };
-    for (const [name, sha] of Object.entries(sourceBudgetBlobs))
-      rows.find((row) => row.path === name).sha = sha;
-  }
-  // Exact reviewed successor source; transport remains modeled DATA only.
-  const successorBlobs = {
-    "scripts/cef-engineering-checkpoint.mjs":
-      "ced7571cfc1efda7260acaa39e03b81511e7dfb7",
-    "scripts/cef-hosted-provision.mjs":
-      "9fb323d215e1d246f537685b360d3a665f87f748",
-    "scripts/cef-runtime-ci.mjs": "0a5aff87d6755bf2ab0705269e891bc9d663f746",
-    "scripts/lib/cef-checkpoint-archive.py":
-      "58e4600b0f2ad71fc454e1a504e88d19135e3858",
-    "scripts/lib/cef-engineering-checkpoint.mjs":
-      "113822b8e5172c9b77cd4743e5f9ca72531280a4",
-    "scripts/lib/cef-linux-producer-migration.mjs":
-      "d2e58083ac39a4404d2298d658b1bfea89f77824",
-    "scripts/lib/cef-windows-arm-sdk-origin.mjs":
-      "c0f2dfbf08fa94b0b10786847ee5a01d2df61fb6",
-  };
-  for (const [name, sha] of Object.entries(successorBlobs))
-    rows.find((row) => row.path === name).sha = sha;
-  if (target === "x86_64-apple-darwin" || target === "aarch64-apple-darwin")
-    rows.find((row) => row.path === "scripts/cef-runtime-ci.mjs").sha =
-      "9831c2cb0f4a7aebbabcd87e090eeb89c1563507";
-  if (target === "aarch64-unknown-linux-gnu") {
-    rows.find((row) => row.path === "scripts/cef-runtime-ci.mjs").sha =
-      "9831c2cb0f4a7aebbabcd87e090eeb89c1563507";
-    rows.find(
-      (row) => row.path === "scripts/lib/cef-linux-producer-migration.mjs",
-    ).sha = "6cc34440ca80437ba881dcc33e62eea8f5cc55cc";
-  }
-  const ownedMacHashingBlobs = {
-    "scripts/lib/cef-checkpoint-archive.py":
-      "9b649cfbdd2b90f3b981f2e1c8e71b7e803f1c9a",
-    "scripts/lib/cef-engineering-checkpoint.mjs":
-      "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2",
-    "scripts/lib/cef-linux-producer-migration.mjs":
-      "4d216379902e002fe80cf99e07858b622def5bf8",
-  };
-  for (const [name, sha] of Object.entries(ownedMacHashingBlobs)) {
-    const row = rows.find((item) => item.path === name);
-    assert(row);
-    assert.equal(row.mode, "100644");
-    row.sha = sha;
-  }
+  // Linux ARM64 is bound to the real successful producer run 44265831643
+  // (head cc60f0d3): its selected committed code rows, taken from the GitHub
+  // tree, digest to the sealed completion.identity.producer. The other two
+  // targets keep their modeled source-binding witnesses.
+  const rows =
+    target === "aarch64-unknown-linux-gnu"
+      ? JSON.parse(inflateSync(Buffer.from(linuxCc60GitRowsDeflate, "base64")))
+      : (() => {
+          const rows = JSON.parse(
+            inflateSync(Buffer.from(engineeringGitRowsDeflate, "base64")),
+          );
+          if (target !== "aarch64-unknown-linux-gnu") {
+            const currentMacBlobs = {
+              "scripts/lib/cef-checkpoint-archive.py":
+                "66e77e0ec607aee4d80fae3ad1f185fbf0b6600f",
+              "scripts/lib/cef-engineering-checkpoint.mjs":
+                "e8c21320d5858c25b4b7ae6ad909e8cc7791d6ec",
+              "scripts/lib/cef-linux-producer-migration.mjs":
+                "434bb814abbc4c16ac417477a081ce9c7abf6f77",
+            };
+            for (const [name, sha] of Object.entries(currentMacBlobs))
+              rows.find((row) => row.path === name).sha = sha;
+          }
+          if (
+            ["x86_64-apple-darwin", "aarch64-apple-darwin"].includes(target)
+          ) {
+            // Both Mac witnesses include the reviewed cold-discovery source.
+            const coldMetalBlobs = {
+              "scripts/cef-hosted-provision.mjs":
+                "9fb323d215e1d246f537685b360d3a665f87f748",
+              "scripts/cef-runtime-ci.mjs":
+                "12364c78030f4d8ba44a2e2a3c8cd3eef88724f6",
+              "scripts/lib/cef-linux-producer-migration.mjs":
+                "d8de10ec9a96ce6b1f39d48369a33cdb735962ea",
+            };
+            for (const [name, sha] of Object.entries(coldMetalBlobs))
+              rows.find((row) => row.path === name).sha = sha;
+          }
+          if (
+            ["x86_64-apple-darwin", "aarch64-apple-darwin"].includes(target)
+          ) {
+            // Exact new source-budget composition; modeled SDK transport only.
+            const sourceBudgetBlobs = {
+              "scripts/cef-engineering-checkpoint.mjs":
+                "5cf3cba75a6afc624ec1c658d287da96c1b0a67c",
+              "scripts/cef-runtime-ci.mjs":
+                "0a5aff87d6755bf2ab0705269e891bc9d663f746",
+              "scripts/lib/cef-checkpoint-archive.py":
+                "b36a1c357bc4eeb9edf36a5f436e195597db7a1e",
+              "scripts/lib/cef-engineering-checkpoint.mjs":
+                "61f8105eb1419c45b15ab6b5ec8e03c4e3f5923f",
+              "scripts/lib/cef-linux-producer-migration.mjs":
+                "42a68eaacefdd64c75949f0e133de52e5cd5e37f",
+            };
+            for (const [name, sha] of Object.entries(sourceBudgetBlobs))
+              rows.find((row) => row.path === name).sha = sha;
+          }
+          // Exact reviewed successor source; transport remains modeled DATA only.
+          const successorBlobs = {
+            "scripts/cef-engineering-checkpoint.mjs":
+              "ced7571cfc1efda7260acaa39e03b81511e7dfb7",
+            "scripts/cef-hosted-provision.mjs":
+              "9fb323d215e1d246f537685b360d3a665f87f748",
+            "scripts/cef-runtime-ci.mjs":
+              "0a5aff87d6755bf2ab0705269e891bc9d663f746",
+            "scripts/lib/cef-checkpoint-archive.py":
+              "58e4600b0f2ad71fc454e1a504e88d19135e3858",
+            "scripts/lib/cef-engineering-checkpoint.mjs":
+              "113822b8e5172c9b77cd4743e5f9ca72531280a4",
+            "scripts/lib/cef-linux-producer-migration.mjs":
+              "d2e58083ac39a4404d2298d658b1bfea89f77824",
+            "scripts/lib/cef-windows-arm-sdk-origin.mjs":
+              "c0f2dfbf08fa94b0b10786847ee5a01d2df61fb6",
+          };
+          for (const [name, sha] of Object.entries(successorBlobs))
+            rows.find((row) => row.path === name).sha = sha;
+          if (
+            target === "x86_64-apple-darwin" ||
+            target === "aarch64-apple-darwin"
+          )
+            rows.find((row) => row.path === "scripts/cef-runtime-ci.mjs").sha =
+              "9831c2cb0f4a7aebbabcd87e090eeb89c1563507";
+          const ownedMacHashingBlobs = {
+            "scripts/lib/cef-checkpoint-archive.py":
+              "9b649cfbdd2b90f3b981f2e1c8e71b7e803f1c9a",
+            "scripts/lib/cef-engineering-checkpoint.mjs":
+              "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2",
+            "scripts/lib/cef-linux-producer-migration.mjs":
+              "4d216379902e002fe80cf99e07858b622def5bf8",
+          };
+          for (const [name, sha] of Object.entries(ownedMacHashingBlobs)) {
+            const row = rows.find((item) => item.path === name);
+            assert(row);
+            assert.equal(row.mode, "100644");
+            row.sha = sha;
+          }
+          return rows;
+        })();
   assert.equal(codeTreeDigest(rows), ENGINEERING_PRODUCERS[target]);
   const sdkProducer = {
     repository,
@@ -1457,7 +1462,40 @@ async function engineeringFlow(t, target) {
   return { ...f, options, dependencies, events };
 }
 
+const linuxActualProducerBinding = [
+  [
+    "  // Code tree digest of the actual successful engineering SDK producer run",
+    "  // 44265831643 (head cc60f0d3b4fa4fe99922c547253a715da8ded433); it equals",
+    "  // that run's sealed completion.identity.producer. Both independent",
+    "  // completion/native seals are still mandatory for publication.",
+    '  "aarch64-unknown-linux-gnu":',
+    '    "25da34d744501f1499a6a18aebc971a3790d94ffbbf98e7c7409179013252c1d",',
+    "  // Source bindings only. A future actual successful run and both independent",
+    "  // completion/native seals are still mandatory; no failed run is selected.",
+    "",
+  ].join("\n"),
+  [
+    "  // Source binding only. A future actual successful run and both independent",
+    "  // completion/native seals are still mandatory; no failed run is selected.",
+    '  "aarch64-unknown-linux-gnu":',
+    '    "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",',
+    "",
+  ].join("\n"),
+];
+
+// Restores the adapter before the Linux ARM64 binding was moved from the
+// placeholder to the actual producer run's code tree digest.
+function withoutLinuxActualProducerBinding(raw) {
+  const [current, prior] = linuxActualProducerBinding;
+  assert.equal(raw.split(current).length, 2);
+  return raw.replace(current, prior);
+}
+
 function withoutOwnedMacHashingProducerBindings(raw) {
+  return withoutOwnedMacHashingCore(withoutLinuxActualProducerBinding(raw));
+}
+
+function withoutOwnedMacHashingCore(raw) {
   const changes = [
     [
       'export const ENGINEERING_PRODUCER =\n  "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98";',
@@ -1552,6 +1590,17 @@ test("owned Mac hashing publisher bindings restore the whole prior adapter and r
   ).replaceAll("\r\n", "\n");
   withoutOwnedMacHashingProducerBindings(raw);
   assert.throws(() => withoutOwnedMacHashingProducerBindings(raw + "\n"));
+  // The Linux actual-producer binding is part of the restored history too.
+  const [linuxCurrent, linuxPrior] = linuxActualProducerBinding;
+  assert.throws(() =>
+    withoutOwnedMacHashingProducerBindings(
+      raw.replace(linuxCurrent, linuxPrior),
+    ),
+  );
+  assert.throws(() =>
+    withoutOwnedMacHashingProducerBindings(raw + linuxCurrent),
+  );
+  const base = withoutLinuxActualProducerBinding(raw);
   for (const [current, old] of [
     [
       'export const ENGINEERING_PRODUCER =\n  "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98";',
@@ -1566,11 +1615,9 @@ test("owned Mac hashing publisher bindings restore the whole prior adapter and r
       '  "aarch64-apple-darwin":\n    "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864",',
     ],
   ]) {
-    assert.equal(raw.split(current).length, 2);
-    assert.throws(() =>
-      withoutOwnedMacHashingProducerBindings(raw.replace(current, old)),
-    );
-    assert.throws(() => withoutOwnedMacHashingProducerBindings(raw + current));
+    assert.equal(base.split(current).length, 2);
+    assert.throws(() => withoutOwnedMacHashingCore(base.replace(current, old)));
+    assert.throws(() => withoutOwnedMacHashingCore(base + current));
   }
 });
 
@@ -1629,7 +1676,7 @@ test("engineering publication exact target producers select repaired source with
   );
   assert.equal(
     ENGINEERING_PRODUCERS["aarch64-unknown-linux-gnu"],
-    "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",
+    "25da34d744501f1499a6a18aebc971a3790d94ffbbf98e7c7409179013252c1d",
   );
   for (const target of Object.keys(ENGINEERING_PRODUCERS)) {
     const f = engineeringFixture(target);
