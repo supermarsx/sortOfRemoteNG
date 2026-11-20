@@ -1,0 +1,1 @@
+seq=1 utc=2026-11-20T10:34:24.5214357+00:00 elapsedMin=5 diskCFreeGB=30.8 diskDFreeGB=143.7 diskTempFreeGB=30.8 ramFreeMB=13434 ramTotalMB=16379 virtFreeMB=16523 procCount=146 RunnerListener=1 RunnerWorker=1 node=1 python=3 siso=0 clangcl=0 lldlink=0 topMem=explorer:156MB|StartMenuExperienceHost:130MB|SearchHost:109MB logfull-source-operation=0@10:31:34 logsdk-data=0@10:31:36
