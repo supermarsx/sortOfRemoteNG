@@ -20,6 +20,16 @@ jobs:
     runs-on: windows-2025-vs2026
     timeout-minutes: 40
     steps:
+      - name: Check out the branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: "false"
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
       - name: Record the installed MSVC facts
         shell: pwsh
         run: |
@@ -87,11 +97,18 @@ jobs:
           $report['redistRows'] = $redist
           $report | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8 (Join-Path $out 'msvc-pin-probe.json')
           Write-Output ("image " + $env:ImageVersion + " toolsets " + ($report.toolsets -join ','))
+      - name: Regenerate the image-dependent pins from the real bytes
+        shell: pwsh
+        run: |
+          $python = 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe'
+          if (-not (Test-Path $python)) { $python = (Get-Command python).Source }
+          & $python -I -B native/windows-arm-full-sdk/requal_probe.py
+          exit $LASTEXITCODE
       - name: Retain the probe record
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: windows-arm-msvc-pin-probe-${{ github.run_id }}
-          path: ${{ runner.temp }}/msvc-pin-probe/msvc-pin-probe.json
+          path: ${{ runner.temp }}/msvc-pin-probe/*.json
           if-no-files-found: warn
           retention-days: 30
