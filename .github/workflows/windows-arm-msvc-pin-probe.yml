@@ -1,0 +1,97 @@
+name: Windows ARM MSVC pin probe (image requalification evidence)
+
+# Evidence only, branch-scoped: records the installed MSVC toolset facts (the 14 role
+# files pinned by native/windows-arm-full-sdk/profile.json installedMsvc14, the Redist
+# runtime DLLs, versions) of whichever hosted image the job lands on, so a reviewed image
+# profile for a rolled image can be regenerated from real bytes. Nothing is built or admitted.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-arm-msvc-pin-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.ref == 'refs/heads/winarm-image-315-requal' && github.event_name == 'workflow_dispatch'
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 40
+    steps:
+      - name: Record the installed MSVC facts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'msvc-pin-probe'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $vs = 'C:/Program Files/Microsoft Visual Studio/18/Enterprise'
+          function Machine($path) {
+            $fs = [System.IO.File]::OpenRead($path)
+            try {
+              $b = New-Object byte[] 4096
+              $n = $fs.Read($b, 0, 4096)
+              if ($n -lt 64 -or $b[0] -ne 0x4D -or $b[1] -ne 0x5A) { return $null }
+              $pe = [BitConverter]::ToInt32($b, 60)
+              if ($pe + 6 -gt $n) { return $null }
+              return [int][BitConverter]::ToUInt16($b, $pe + 4)
+            } finally { $fs.Dispose() }
+          }
+          function Row($root, $full) {
+            $item = Get-Item -LiteralPath $full
+            $row = [ordered]@{
+              path = $full.Substring($root.Length + 1).Replace('\', '/')
+              bytes = $item.Length
+              sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $full).Hash.ToLowerInvariant()
+              machine = Machine $full
+              fileVersion = $item.VersionInfo.FileVersion
+            }
+            return $row
+          }
+          $report = [ordered]@{
+            kind = 'windows-arm-msvc-pin-probe'
+            imageVersion = $env:ImageVersion
+            imageOS = $env:ImageOS
+            toolsets = @()
+            redistFolders = @()
+          }
+          Get-ChildItem "$vs/VC/Tools/MSVC" -Directory | ForEach-Object { $report.toolsets += $_.Name }
+          Get-ChildItem "$vs/VC/Redist/MSVC" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            foreach ($arch in 'x64', 'arm64') {
+              Get-ChildItem "$($_.FullName)/$arch" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $report.redistFolders += $_.FullName.Replace('\', '/') }
+            }
+          }
+          $roles = [ordered]@{
+            'host-cl.exe' = 'bin/Hostx64/arm64/cl.exe'; 'host-link.exe' = 'bin/Hostx64/arm64/link.exe'; 'host-lib.exe' = 'bin/Hostx64/arm64/lib.exe'
+            'crt-libcmt.lib' = 'lib/arm64/libcmt.lib'; 'crt-libcpmt.lib' = 'lib/arm64/libcpmt.lib'; 'crt-libvcruntime.lib' = 'lib/arm64/libvcruntime.lib'; 'crt-oldnames.lib' = 'lib/arm64/oldnames.lib'
+            'atl-atls.lib' = 'atlmfc/lib/arm64/atls.lib'; 'atl-uafxcw.lib' = 'atlmfc/lib/arm64/uafxcw.lib'
+            'header-vcruntime.h' = 'include/vcruntime.h'; 'header-vector' = 'include/vector'; 'header-string' = 'include/string'
+            'header-atlbase.h' = 'atlmfc/include/atlbase.h'; 'header-afxwin.h' = 'atlmfc/include/afxwin.h'
+          }
+          $perToolset = [ordered]@{}
+          foreach ($t in $report.toolsets) {
+            $root = "$vs/VC/Tools/MSVC/$t"
+            $rows = @()
+            foreach ($role in $roles.Keys) {
+              $full = "$root/$($roles[$role])"
+              if (Test-Path -LiteralPath $full) { $r = Row $root $full; $r['role'] = $role; $rows += $r } else { $rows += [ordered]@{ role = $role; path = $roles[$role]; missing = $true } }
+            }
+            $perToolset[$t] = $rows
+          }
+          $report['installedMsvc14'] = $perToolset
+          $redist = @()
+          foreach ($folder in $report.redistFolders) {
+            Get-ChildItem -LiteralPath $folder -File | ForEach-Object { $r = Row $folder $_.FullName; $r['folder'] = $folder; $redist += $r }
+          }
+          $report['redistRows'] = $redist
+          $report | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8 (Join-Path $out 'msvc-pin-probe.json')
+          Write-Output ("image " + $env:ImageVersion + " toolsets " + ($report.toolsets -join ','))
+      - name: Retain the probe record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-arm-msvc-pin-probe-${{ github.run_id }}
+          path: ${{ runner.temp }}/msvc-pin-probe/msvc-pin-probe.json
+          if-no-files-found: warn
+          retention-days: 30
