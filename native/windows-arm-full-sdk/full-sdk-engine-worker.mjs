@@ -836,7 +836,7 @@ export function inspectNativeSlice(value, seconds) {
     activeProcessLimit: 64,
     jobMemoryBytes: "8589934592",
     cpuFlags: 5,
-    cpuRate: 2500,
+    cpuRate: 7500,
     inheritedHandles: 3,
     affinityChanged: false,
   };

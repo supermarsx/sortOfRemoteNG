@@ -55,7 +55,8 @@ ARCHIVE_CODES = {'archive-deadline': 'ARCHIVE_ARCHIVE_DEADLINE', 'asset-hash': '
 
 
 SAFE_CODES = SAFE_CODES | frozenset({'CARRIER_REPOSITORY', 'CARRIER_REF', 'CARRIER_COMMIT',
-                                    'CARRIER_CHANGED', 'CARRIER_RELEASE', 'SDK_ASSIGNED_SECONDS', 'SDK_CHECKED_INPUTS', 'SDK_PRODUCER_TIMING'})
+                                    'CARRIER_CHANGED', 'CARRIER_RELEASE', 'SDK_ASSIGNED_SECONDS', 'SDK_CHECKED_INPUTS', 'SDK_PRODUCER_TIMING',
+                                    'TRANSPORT_IMAGE'})
 
 
 class CheckpointFailure(ValueError):
@@ -153,6 +154,9 @@ def failure_context(error):
             return copied
     except BaseException:
         pass
+    # A closed predicate raised before any stage opened (for example the first-clock image scope) keeps its own label.
+    if type(error) is CheckpointFailure and error.code in SAFE_CODES:
+        return dict(stage='identity', code=error.code)
     return dict(stage='identity', code='UNKNOWN')
 
 
@@ -328,7 +332,7 @@ def _job(value, deadline=False, *, output_cap=64 * 1024**2):
          value.get('outputCapBytes') == output_cap and type(value.get('capturedBytes')) is int and
          0 <= value['capturedBytes'] <= output_cap, 'JOB_CLOSURE')
     expected = dict(flags=0x2000 | 0x200 | 0x8, activeProcessLimit=64, jobMemoryBytes=str(8 * 1024**3),
-                    cpuFlags=5, cpuRate=2500, inheritedHandles=3, affinityChanged=False)
+                    cpuFlags=5, cpuRate=2500 if output_cap == 131072 else 7500, inheritedHandles=3, affinityChanged=False)
     need(value.get('policyReadback') == expected, 'JOB_POLICY')
     need(type(value.get('rootPid')) is int and value['rootPid'] > 0 and
          re.fullmatch('[1-9][0-9]{0,19}', value.get('rootCreationFiletime', '')), 'JOB_IDENTITY')
@@ -1485,6 +1489,8 @@ class _TransportClock:
         need(os.name == 'nt' and set(value) == fields and type(value['schemaVersion']) is int and value['schemaVersion'] == 1 and
              value['kind'] == 'windows-arm-first-workflow-clock' and value['clock'] == 'windows-gettickcount64' and
              type(value['dotnetMajor']) is int and value['dotnetMajor'] in (8, 9, 10), 'TRANSPORT_FIRST_CLOCK')
+        # The hosted pool rolls runner images (20261116.315.1 replaced 20261103.298.1); say so instead of a bare UNKNOWN.
+        need(value['image'] in inputs.SOURCES, 'TRANSPORT_IMAGE')
         keys = dict(repository='GITHUB_REPOSITORY', repositoryId='GITHUB_REPOSITORY_ID', ref='GITHUB_REF',
                     event='GITHUB_EVENT_NAME', runId='GITHUB_RUN_ID', attempt='GITHUB_RUN_ATTEMPT', head='GITHUB_SHA',
                     workflowSha='GITHUB_WORKFLOW_SHA', workflowRef='GITHUB_WORKFLOW_REF', job='GITHUB_JOB', image='ImageVersion')

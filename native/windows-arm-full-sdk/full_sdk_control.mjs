@@ -5375,7 +5375,9 @@ async function runEnginePhase(token, role) {
       wallEnd: Math.min(lease.wallEnd - 150000, nowWall + 900000),
       monoEnd: Math.min(lease.monoEnd - 150000, nowMono + 900000),
     });
-  const reserve = role === "cef-engine" ? 3600000 : 150000,
+  // The compile must end 75 min before the job does: the checkpoint seal (about 73 min serial on the 29 GB tree, about 50 with the
+  // parallel hashing, with its artifact upload) runs in what is left, so a late compile start shortens the slice instead of starving the seal.
+  const reserve = role === "cef-engine" ? 4500000 : 150000,
     cap = checkpoint ? 6000000 : ENGINE_CAPS_MS[index];
   const nativeWallEnd =
       index <= 1

@@ -104,7 +104,7 @@ class BootstrapTests(unittest.TestCase):
                     return ast.parse({'processes':'8','memoryBytes':'512 * 1024 ** 2','cpuRate':'2500'}[key],mode='eval').body
                 return self.generic_visit(node)
         normal=PolicyDefaults();new=normal.visit(new)
-        self.assertEqual(normal.counts,{'processes':2,'memoryBytes':2,'cpuRate':1})
+        self.assertEqual(normal.counts,{'processes':2,'memoryBytes':2,'cpuRate':2})
         # Only the role-bound environment selector differs in the Job lifecycle;
         # creation, assignment, limits, handles, cancellation and cleanup match.
         selectors=[n for n in ast.walk(run) if isinstance(n,ast.Call) and

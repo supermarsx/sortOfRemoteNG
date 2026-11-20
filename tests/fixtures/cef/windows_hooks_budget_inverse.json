@@ -36,9 +36,13 @@
     "beforeSha256": "7d54f695876d59ce0fd8922a8463a6426b0209a1aad2b32c4dae480b2b043bc0"
   },
   "native/windows-arm-full-sdk/full_sdk_control.mjs": {
-    "bytes": 198303,
-    "sha256": "a1ea568c876a946b91724f5d9a06f32010dd802e7edc617cfcd9466a7d8337df",
+    "bytes": 198579,
+    "sha256": "ba26d7cd6ec3facd8745f3d20007123a677a44d501415059033e0cea6eda8964",
     "pairs": [
+      {
+        "current": "      wallEnd: Math.min(lease.wallEnd - 150000, nowWall + 900000),\n      monoEnd: Math.min(lease.monoEnd - 150000, nowMono + 900000),\n    });\n  // The compile must end 75 min before the job does: the checkpoint seal (about 73 min serial on the 29 GB tree, about 50 with the\n  // parallel hashing, with its artifact upload) runs in what is left, so a late compile start shortens the slice instead of starving the seal.\n  const reserve = role === \"cef-engine\" ? 4500000 : 150000,\n    cap = checkpoint ? 6000000 : ENGINE_CAPS_MS[index];\n  const nativeWallEnd =\n      index <= 1\n",
+        "previous": "      wallEnd: Math.min(lease.wallEnd - 150000, nowWall + 900000),\n      monoEnd: Math.min(lease.monoEnd - 150000, nowMono + 900000),\n    });\n  const reserve = role === \"cef-engine\" ? 3600000 : 150000,\n    cap = checkpoint ? 6000000 : ENGINE_CAPS_MS[index];\n  const nativeWallEnd =\n      index <= 1\n"
+      },
       {
         "current": "const FULL_SOURCE_PROFILE_SHA256 =\n  \"20ed8980b9fa5e248eafaac3b0216d8d294e113d38a4adb2f99957935e334dc7\";\nconst MODULE_URL = import.meta.url;\n",
         "previous": "const FULL_SOURCE_PROFILE_SHA256 =\n  \"7d54f695876d59ce0fd8922a8463a6426b0209a1aad2b32c4dae480b2b043bc0\";\nconst MODULE_URL = import.meta.url;\n"
@@ -64,9 +68,17 @@
     "beforeSha256": "cd82c363b490d0550d0b154c8486b9b69b06eb426ede2b4d41032e577eacf723"
   },
   "native/windows-arm-full-sdk/test_full_sdk_source.py": {
-    "bytes": 526336,
-    "sha256": "28e6ab7657629111c96d6322060f1e9967bcad8dbbbd7c1a452d00bbb1941ea4",
+    "bytes": 526633,
+    "sha256": "f5ecd043ba8818b0dc3ccb663084a6785bba226d37ef8951e9fae33cfc7806dd",
     "pairs": [
+      {
+        "current": "                                             'ROLE', 'VECTOR', 'CLOSEDVECTOR', 'RECIPE', 'HOST')),\n                             ('job.py', ('COMMAND',))]:\n            raw = normalized((HERE / name).read_bytes())\n            # Newest layer: the engine CPU cap is policy-driven in job.py (whole-file inverse, any other state passes through).\n            raw = _IMAGE_HISTORY.hooks_prefix(raw, 'native/windows-arm-full-sdk/' + name)\n            if name == 'producer.py':\n                raw = full_graph_deadline_inverse(raw, 'producer')\n            if name == 'producer.py':\n",
+        "previous": "                                             'ROLE', 'VECTOR', 'CLOSEDVECTOR', 'RECIPE', 'HOST')),\n                             ('job.py', ('COMMAND',))]:\n            raw = normalized((HERE / name).read_bytes())\n            if name == 'producer.py':\n                raw = full_graph_deadline_inverse(raw, 'producer')\n            if name == 'producer.py':\n"
+      },
+      {
+        "current": "            size, digest = BASELINE_PINS[name]\n            self.assertEqual(len(restored), size)\n            self.assertEqual(hashlib.sha256(restored).hexdigest(), digest)\n        new = ast.parse(_IMAGE_HISTORY.hooks_prefix(normalized((HERE / 'job.py').read_bytes()), 'native/windows-arm-full-sdk/job.py'))\n        def kernel(tree):\n            return ast.dump(next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'run_job'), include_attributes=False)\n        self.assertEqual(hashlib.sha256(kernel(new).encode()).hexdigest(), RUN_JOB_AST_SHA256)\n",
+        "previous": "            size, digest = BASELINE_PINS[name]\n            self.assertEqual(len(restored), size)\n            self.assertEqual(hashlib.sha256(restored).hexdigest(), digest)\n        new = ast.parse((HERE / 'job.py').read_bytes())\n        def kernel(tree):\n            return ast.dump(next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'run_job'), include_attributes=False)\n        self.assertEqual(hashlib.sha256(kernel(new).encode()).hexdigest(), RUN_JOB_AST_SHA256)\n"
+      },
       {
         "current": "        self.assertEqual(self.p['limits'], dict(wholeSeconds=21600, sourceSeconds=14400,\n                         acquisitionSeconds=7200, hooksSeconds=5400,\n                         cleanupSeconds=30, finalReserveSeconds=120))\n",
         "previous": "        self.assertEqual(self.p['limits'], dict(wholeSeconds=21600, sourceSeconds=14400,\n                         acquisitionSeconds=7200, hooksSeconds=3600,\n                         cleanupSeconds=30, finalReserveSeconds=120))\n"
@@ -84,9 +96,13 @@
     "beforeSha256": "98be6c952dd8312e2bea681a8f48083686e720c36b3a2a6bf35f9aedf4922a61"
   },
   "tests/tooling/windowsArmFullSdk.node-test.mjs": {
-    "bytes": 860081,
-    "sha256": "d246e7f47a36bc100b3ccb8ced4b7f9b1431d8e9676e39c252c9cbfbe3c1854d",
+    "bytes": 860170,
+    "sha256": "b392e6dc4888469fcda8fa2d663d35f057dda0a0a7d70464f61a8470c5d62e42",
     "pairs": [
+      {
+        "current": "+engine._ACTIVE[str(root)]=state;engine._BIRTHS[birth]=state\n+def run(*args,**kwargs):\n+ result=json.loads((root/'jobs/full-sdk-source-gn/receipt.json').read_bytes());result.update(rootPid=9002,rootCreationFiletime='900200',outputCapBytes=kwargs['cap'],capturedBytes=0,elapsedMs=args[3]*1000)\n+ result['policyReadback']=dict(result['policyReadback'],cpuRate=engine.ENGINE_CPU_RATE)\n+ if mode=='native-deadline':result.update(success=False,outcome='deadline',rootExit=None,finalRootExit=124)\n+ else:result.update(success=False,outcome='compiler-failure',rootExit=1,finalRootExit=1)\n+ out=args[2];out.mkdir(parents=True);(out/'receipt.json').write_text(json.dumps(result,indent=2)+'\\\\n');return result\n",
+        "previous": "+engine._ACTIVE[str(root)]=state;engine._BIRTHS[birth]=state\n+def run(*args,**kwargs):\n+ result=json.loads((root/'jobs/full-sdk-source-gn/receipt.json').read_bytes());result.update(rootPid=9002,rootCreationFiletime='900200',outputCapBytes=kwargs['cap'],capturedBytes=0,elapsedMs=args[3]*1000)\n+ if mode=='native-deadline':result.update(success=False,outcome='deadline',rootExit=None,finalRootExit=124)\n+ else:result.update(success=False,outcome='compiler-failure',rootExit=1,finalRootExit=1)\n+ out=args[2];out.mkdir(parents=True);(out/'receipt.json').write_text(json.dumps(result,indent=2)+'\\\\n');return result\n"
+      },
       {
         "current": "import {\n  sisoMetadataCachePrefix,\n  withoutHooksBudget,\n} from \"./helpers/cefWindowsEngineHostHistory.mjs\";\nimport {\n",
         "previous": "import { sisoMetadataCachePrefix } from \"./helpers/cefWindowsEngineHostHistory.mjs\";\nimport {\n"
@@ -117,8 +133,40 @@
   },
   "native/windows-arm-full-sdk/sdk-origin-review.json": {
     "bytes": 27528,
-    "sha256": "451956162270aa9d3f1d950c1eec4acb0048862fb09092713e03fd077ef3b879",
+    "sha256": "35ad0209208e6f5c12ccc454c3848f0c2b2c5acecb33041f1db0a8ff7c06866e",
     "pairs": [
+      {
+        "current": "{\"bytes\":42509,\"path\":\"native/windows-arm-full-sdk/checkpoint_inputs.py\",\"sha256\":\"03df49113c62cdb4eddcc8000781523eb421ebe3d6662e4ded961d3546f6f5f6\"}",
+        "previous": "{\"bytes\":36806,\"path\":\"native/windows-arm-full-sdk/checkpoint_inputs.py\",\"sha256\":\"d48fc7d0ab569540e0c7b550bbb4c0ddd4edc5c5e98c91b30b80d207bc6b88a9\"}"
+      },
+      {
+        "current": "{\"bytes\":118012,\"path\":\"native/windows-arm-full-sdk/compiled_checkpoint.py\",\"sha256\":\"ccdc2245971c570790189bbe198e5a2c08829b978a0011fe541004aa2328c15e\"}",
+        "previous": "{\"bytes\":117491,\"path\":\"native/windows-arm-full-sdk/compiled_checkpoint.py\",\"sha256\":\"34e08e617bca04d9f77ae6ffd1c795c025878b1e5720fede467f80f3da8b9d98\"}"
+      },
+      {
+        "current": "{\"bytes\":198579,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"ba26d7cd6ec3facd8745f3d20007123a677a44d501415059033e0cea6eda8964\"}",
+        "previous": "{\"bytes\":198303,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"a1ea568c876a946b91724f5d9a06f32010dd802e7edc617cfcd9466a7d8337df\"}"
+      },
+      {
+        "current": "{\"bytes\":24721,\"path\":\"native/windows-arm-full-sdk/job.py\",\"sha256\":\"44aee196028564b33f4a32f8d003a1734133358ae7e798fafc76bb10bf18dd83\"}",
+        "previous": "{\"bytes\":24708,\"path\":\"native/windows-arm-full-sdk/job.py\",\"sha256\":\"4e260223c88cadd59083a726d2f01acd924d5d36bf5da3877cab7b8c05b3b863\"}"
+      },
+      {
+        "current": "{\"bytes\":27168,\"path\":\"native/windows-arm-full-sdk/full_sdk_engine.py\",\"sha256\":\"1d0b6863ef48d1cd1c4ed643f05a7733d7814baaea706309843dd2300d398d55\"}",
+        "previous": "{\"bytes\":26885,\"path\":\"native/windows-arm-full-sdk/full_sdk_engine.py\",\"sha256\":\"c7ffd6469742fe08750cf55ecdaa73809b916795db821c1fc3074b56bfd36213\"}"
+      },
+      {
+        "current": "{\"bytes\":42282,\"path\":\"native/windows-arm-full-sdk/full-sdk-engine-worker.mjs\",\"sha256\":\"4223ca59b47270e485eaa1ff22b6e1e980c2cf790b13b28af9dad99f5b38b74c\"}",
+        "previous": "{\"bytes\":42282,\"path\":\"native/windows-arm-full-sdk/full-sdk-engine-worker.mjs\",\"sha256\":\"12c63141c73038fd6070214802f3e451b0223788f602a6e2032dfa3e95b248a2\"}"
+      },
+      {
+        "current": "{\"bytes\":526633,\"path\":\"native/windows-arm-full-sdk/test_full_sdk_source.py\",\"sha256\":\"f5ecd043ba8818b0dc3ccb663084a6785bba226d37ef8951e9fae33cfc7806dd\"}",
+        "previous": "{\"bytes\":526336,\"path\":\"native/windows-arm-full-sdk/test_full_sdk_source.py\",\"sha256\":\"28e6ab7657629111c96d6322060f1e9967bcad8dbbbd7c1a452d00bbb1941ea4\"}"
+      },
+      {
+        "current": "{\"bytes\":860170,\"path\":\"tests/tooling/windowsArmFullSdk.node-test.mjs\",\"sha256\":\"b392e6dc4888469fcda8fa2d663d35f057dda0a0a7d70464f61a8470c5d62e42\"}",
+        "previous": "{\"bytes\":859635,\"path\":\"tests/tooling/windowsArmFullSdk.node-test.mjs\",\"sha256\":\"0a372c0ddb8ab91b0f63b8e5fed397292af162c6c32a255ae9e05bbb5f08d82c\"}"
+      },
       {
         "current": "{\"bytes\":306889,\"path\":\"native/windows-arm-full-sdk/full-sdk-source-driver.mjs\",\"sha256\":\"5257432c828cceb17c1248db7b67ed4ed8111f8c68cf56fb55eeafd6af3a1b9e\"}",
         "previous": "{\"bytes\":306889,\"path\":\"native/windows-arm-full-sdk/full-sdk-source-driver.mjs\",\"sha256\":\"bfbac8e30d104555c3f2acf3d51efb5c10c078448a72293a793eb4c0266f51fd\"}"
@@ -142,5 +190,129 @@
     ],
     "beforeBytes": 27528,
     "beforeSha256": "3e93e707ad229f5083a8a8a5aa5901c7780d03ae60ce264fa39a3aa08e2ece9c"
+  },
+  "native/windows-arm-full-sdk/checkpoint_inputs.py": {
+    "bytes": 42509,
+    "sha256": "03df49113c62cdb4eddcc8000781523eb421ebe3d6662e4ded961d3546f6f5f6",
+    "pairs": [
+      {
+        "current": "The caller retains the genuine original lease and owner fence. Output transport\nis handled by the unchanged archive helper; external installed tools are absent.\n\"\"\"\nfrom collections import deque\nfrom concurrent.futures import ThreadPoolExecutor\nfrom contextlib import contextmanager\nimport functools\nimport hashlib\nimport json\nimport math\n",
+        "previous": "The caller retains the genuine original lease and owner fence. Output transport\nis handled by the unchanged archive helper; external installed tools are absent.\n\"\"\"\nfrom contextlib import contextmanager\nimport hashlib\nimport json\nimport math\n"
+      },
+      {
+        "current": "\nRESOLVE_INTERVAL = 5.0\nHASH_CHUNK = 4 * 1024**2\n# Parallel content hashing: the walk, every comparison and every emitted row stay on the calling thread in walk\n# order; only the full-file reads run on workers. SORNG_CHECKPOINT_HASH_WORKERS=1 forces the serial path.\nHASH_WORKERS_ENV = 'SORNG_CHECKPOINT_HASH_WORKERS'\nHASH_WINDOW = 128\nSHARED_CHECK_INTERVAL = 0.2\nPROGRESS_FILE = 'full-sdk-engine-checkpoint-seal-progress.json'  # matches the always() records glob full-sdk-engine-*.json\nPROGRESS_KIND = 'windows-arm-full-sdk-checkpoint-seal-progress'\nPROGRESS_INTERVAL = 30.0\n",
+        "previous": "\nRESOLVE_INTERVAL = 5.0\nHASH_CHUNK = 4 * 1024**2\nPROGRESS_FILE = 'full-sdk-engine-checkpoint-seal-progress.json'  # matches the always() records glob full-sdk-engine-*.json\nPROGRESS_KIND = 'windows-arm-full-sdk-checkpoint-seal-progress'\nPROGRESS_INTERVAL = 30.0\n"
+      },
+      {
+        "current": "        self.failed, self.primary = False, None\n        self.directories = {}\n        self.resolved = None\n        self.lock = threading.RLock()\n        self.last_full = 0.0\n        self.wall, self.mono = time.time(), time.monotonic()\n        need(self.root.is_absolute() and self.root.parent == REPO / '.artifacts' and\n             self.root.name == header['canonicalRoot'], 'ROOT')\n",
+        "previous": "        self.failed, self.primary = False, None\n        self.directories = {}\n        self.resolved = None\n        self.wall, self.mono = time.time(), time.monotonic()\n        need(self.root.is_absolute() and self.root.parent == REPO / '.artifacts' and\n             self.root.name == header['canonicalRoot'], 'ROOT')\n"
+      },
+      {
+        "current": "        self.check()\n\n    def check(self):\n        with self.lock:\n            self._check()\n            self.last_full = time.monotonic()\n\n    def check_shared(self):\n        # Worker-thread check: the complete check (root identity, alias, fence, rollback) runs at most every\n        # SHARED_CHECK_INTERVAL seconds (the main thread runs it at every walk entry anyway); in between, a failure\n        # already latched by any thread and the original deadline are still enforced on every call.\n        if self.failed:\n            raise self.primary\n        if time.monotonic() - self.last_full >= SHARED_CHECK_INTERVAL:\n            return self.check()\n        try:\n            left = self.clock.remaining()\n            need(type(left) in (int, float) and math.isfinite(left) and left > 0, 'DEADLINE')\n        except BaseException as error:\n            with self.lock:\n                if not self.failed:\n                    self.failed, self.primary = True, error\n                raise self.primary\n        if self.failed:\n            raise self.primary\n\n    def _check(self):\n        if self.failed:\n            raise self.primary\n        try:\n",
+        "previous": "        self.check()\n\n    def check(self):\n        if self.failed:\n            raise self.primary\n        try:\n"
+      },
+      {
+        "current": "            raise\n\n\n@functools.lru_cache(maxsize=None)\ndef _kernel_open():\n    # One CreateFileW/CloseHandle prototype for the process (it was rebuilt for every file).\n    import ctypes as c\n    from ctypes import wintypes as w\n    kernel = c.WinDLL('kernel32', use_last_error=True)\n    open_file = kernel.CreateFileW\n    open_file.argtypes = (w.LPCWSTR, w.DWORD, w.DWORD, c.c_void_p, w.DWORD, w.DWORD, w.HANDLE)\n    open_file.restype = w.HANDLE\n    close = kernel.CloseHandle\n    close.argtypes, close.restype = (w.HANDLE,), w.BOOL\n    return open_file, close\n\n\n@contextmanager\ndef _file(path, guard, timestamp=False, create=False):\n    guard.check()\n",
+        "previous": "            raise\n\n\n@contextmanager\ndef _file(path, guard, timestamp=False, create=False):\n    guard.check()\n"
+      },
+      {
+        "current": "        # FILE_SHARE_READ excludes concurrent writers/rename/delete. Operate on\n        # the very same handle for hashing and SetFileTime, never a second path.\n        import ctypes as c\n        import msvcrt\n        open_file, close = _kernel_open()\n        handle = open_file(str(path), 0x80000000 | (0x100 if timestamp else 0), 1, None, 3, 0x00200000, None)\n        need(handle not in (None, c.c_void_p(-1).value), 'OPEN')\n        try:\n",
+        "previous": "        # FILE_SHARE_READ excludes concurrent writers/rename/delete. Operate on\n        # the very same handle for hashing and SetFileTime, never a second path.\n        import ctypes as c\n        from ctypes import wintypes as w\n        import msvcrt\n        kernel = c.WinDLL('kernel32', use_last_error=True)\n        open_file = kernel.CreateFileW\n        open_file.argtypes = (w.LPCWSTR, w.DWORD, w.DWORD, c.c_void_p, w.DWORD, w.DWORD, w.HANDLE)\n        open_file.restype = w.HANDLE\n        close = kernel.CloseHandle\n        close.argtypes, close.restype = (w.HANDLE,), w.BOOL\n        handle = open_file(str(path), 0x80000000 | (0x100 if timestamp else 0), 1, None, 3, 0x00200000, None)\n        need(handle not in (None, c.c_void_p(-1).value), 'OPEN')\n        try:\n"
+      },
+      {
+        "current": "        # _file runs guard.check() again right after closing the stream; nothing happens in between.\n\n\ndef _worker_count(workers=None):\n    if workers is None:\n        raw = os.environ.get(HASH_WORKERS_ENV, '')\n        workers = int(raw) if re.fullmatch('[1-9][0-9]{0,2}', raw) else min(16, max(4, 2 * (os.cpu_count() or 1)))\n    return max(1, min(int(workers), 256))\n\n\nclass _SharedGuard:\n    \"\"\"What _hash/_file need from the guard, with the throttled thread-safe check.\"\"\"\n    def __init__(self, guard):\n        self.root, self.directories, self.check = guard.root, guard.directories, guard.check_shared\n\n\nclass _Ordered:\n    \"\"\"Content hashes on a bounded worker pool, completions consumed strictly in walk order.\n\n    push() queues one walk entry; finish(before, sha) (sha is None without a path) always runs on the calling\n    thread in push order, so rows, counters, the first error and the sidecar bytes equal the serial result.\n    One worker means the original inline path. close() cancels what is outstanding and joins every thread.\n    \"\"\"\n    def __init__(self, guard, workers=None):\n        self.guard, self.pending = guard, deque()\n        count = _worker_count(workers)\n        self.pool = ThreadPoolExecutor(max_workers=count, thread_name_prefix='checkpoint-hash') if count > 1 else None\n        self.shared = _SharedGuard(guard) if self.pool else None\n        self.window = max(HASH_WINDOW, count * 4)\n\n    def _job(self, path, signature):\n        with _hash(path, self.shared, signature) as (_, before, sha):\n            return before, sha\n\n    def push(self, path, signature, finish):\n        if self.pool is None:\n            if path is None:\n                finish(None, None)\n            else:\n                with _hash(path, self.guard, signature) as (_, before, sha):\n                    finish(before, sha)\n            return\n        future = None if path is None else self.pool.submit(self._job, path, signature)\n        self.pending.append((future, finish))\n        if len(self.pending) >= self.window:\n            self.complete()\n\n    def complete(self):\n        future, finish = self.pending.popleft()\n        if future is None:\n            finish(None, None)\n        else:\n            before, sha = future.result()\n            finish(before, sha)\n\n    def drain(self):\n        # Also used when the calling thread failed: earlier entries' own failures still win, in walk order.\n        while self.pending:\n            self.complete()\n\n    def close(self):\n        if self.pool is not None:\n            for future, _ in self.pending:\n                if future is not None:\n                    future.cancel()\n            self.pending.clear()\n            self.pool.shutdown(wait=True, cancel_futures=True)\n\n\ndef _set_mtime(stream, nanoseconds):\n    need(type(nanoseconds) is int and 0 <= nanoseconds <= 253402300799999999999, 'MTIME')\n    if os.name == 'nt':\n",
+        "previous": "        # _file runs guard.check() again right after closing the stream; nothing happens in between.\n\n\ndef _set_mtime(stream, nanoseconds):\n    need(type(nanoseconds) is int and 0 <= nanoseconds <= 253402300799999999999, 'MTIME')\n    if os.name == 'nt':\n"
+      },
+      {
+        "current": "         0 < pin['bytes'] <= MAX_SIDECAR and type(pin['sha256']) is str and re.fullmatch('[a-f0-9]{64}', pin['sha256']), 'SIDECAR_PIN')\n\n\ndef record_inputs(root, identity, clock, fence, workers=None):\n    header = _identity(identity)\n    guard = _Guard(root, header, clock, fence)\n    # Metadata-only pre-pass: report every link/reparse violation at once, minutes\n",
+        "previous": "         0 < pin['bytes'] <= MAX_SIDECAR and type(pin['sha256']) is str and re.fullmatch('[a-f0-9]{64}', pin['sha256']), 'SIDECAR_PIN')\n\n\ndef record_inputs(root, identity, clock, fence):\n    header = _identity(identity)\n    guard = _Guard(root, header, clock, fence)\n    # Metadata-only pre-pass: report every link/reparse violation at once, minutes\n"
+      },
+      {
+        "current": "        written += len(raw)\n        digest.update(raw)\n    PROGRESS.stage('record-walk-hash', total_entries=report['entries'])\n    ordered = _Ordered(guard, workers)\n    try:\n        with _file(guard.root / SIDECAR, guard, create=True) as output:\n            emit(output, header)\n            def finisher(row):\n                def finish(before, sha):\n                    nonlocal count, files, raw_bytes\n                    count += 1\n                    if row['kind'] == 'file':\n                        row.update(bytes=before[3], sha256=sha, mtimeNs=before[4])\n                        files += 1\n                        raw_bytes += row['bytes']\n                        need(raw_bytes <= MAX_RAW, 'RAW_BOUND')\n                    emit(output, row)\n                    PROGRESS.tick(count, files, raw_bytes)\n                return finish\n            try:\n                for row, signature in _walk(guard):\n                    ordered.push(guard.root / row['path'] if row['kind'] == 'file' else None, signature, finisher(row))\n            except BaseException:\n                ordered.drain()\n                raise\n            ordered.drain()\n            emit(output, dict(kind='end', entries=count, files=files, rawBytes=raw_bytes))\n    finally:\n        ordered.close()\n    pin = dict(bytes=written, sha256=digest.hexdigest())\n    # No back-to-back re-hash here: nothing can change the inputs between this walk and the final\n    # verify-record-seal pass, which runs after pack/restore; apply_inputs re-hashes fully on restore.\n",
+        "previous": "        written += len(raw)\n        digest.update(raw)\n    PROGRESS.stage('record-walk-hash', total_entries=report['entries'])\n    with _file(guard.root / SIDECAR, guard, create=True) as output:\n        emit(output, header)\n        for row, signature in _walk(guard):\n            count += 1\n            if row['kind'] == 'file':\n                with _hash(guard.root / row['path'], guard, signature) as (_, before, sha):\n                    row.update(bytes=before[3], sha256=sha, mtimeNs=before[4])\n                files += 1\n                raw_bytes += row['bytes']\n                need(raw_bytes <= MAX_RAW, 'RAW_BOUND')\n            emit(output, row)\n            PROGRESS.tick(count, files, raw_bytes)\n        emit(output, dict(kind='end', entries=count, files=files, rawBytes=raw_bytes))\n    pin = dict(bytes=written, sha256=digest.hexdigest())\n    # No back-to-back re-hash here: nothing can change the inputs between this walk and the final\n    # verify-record-seal pass, which runs after pack/restore; apply_inputs re-hashes fully on restore.\n"
+      },
+      {
+        "current": "        pass\n\n\ndef _verify(guard, header, pin, require_mtime=False, collect=True, label='verify', total_entries=None, content=True, restore=False, workers=None):\n    # collect=False (seal-only passes) drops the per-file signature list that only apply_inputs consumes.\n    # content=False (the final seal pass) re-walks and compares names, sizes and mtimes without re-reading file bytes.\n    # restore=True (apply_inputs only) exempts VOLATILE_PREFIX bytes and reports every changed file before denying.\n",
+        "previous": "        pass\n\n\ndef _verify(guard, header, pin, require_mtime=False, collect=True, label='verify', total_entries=None, content=True, restore=False):\n    # collect=False (seal-only passes) drops the per-file signature list that only apply_inputs consumes.\n    # content=False (the final seal pass) re-walks and compares names, sizes and mtimes without re-reading file bytes.\n    # restore=True (apply_inputs only) exempts VOLATILE_PREFIX bytes and reports every changed file before denying.\n"
+      },
+      {
+        "current": "            return _parse(raw)\n        need(_line(read()) == _line(header), 'HEADER')\n        walker = _walk(guard)\n        ordered = _Ordered(guard, workers if content else 1)\n        def finisher(row, fresh, signature, exempt, hashed):\n            def finish(before_file, sha):\n                nonlocal count, files, raw_bytes\n                count += 1\n                if hashed:\n                    same = row['bytes'] == before_file[3] and row['sha256'] == sha\n                    if restore and not same:\n                        changed.append(fresh['path'])\n                    else:\n                        need(same, 'BYTES')\n                    if require_mtime:\n                        need(before_file[4] == row['mtimeNs'], 'MTIME')\n                elif fresh['kind'] == 'file' and not exempt:\n                    need(not collect and row['bytes'] == signature[3] and type(row['sha256']) is str and re.fullmatch('[a-f0-9]{64}', row['sha256']), 'BYTES')\n                    if require_mtime:\n                        need(signature[4] == row['mtimeNs'], 'MTIME')\n                if fresh['kind'] == 'file':\n                    files += 1\n                    raw_bytes += row['bytes']\n                    need(raw_bytes <= MAX_RAW, 'RAW_BOUND')\n                    if collect and not exempt:\n                        signatures.append((fresh['path'], signature, row['mtimeNs'], sha))\n                PROGRESS.tick(count, files, raw_bytes)\n            return finish\n        try:\n            try:\n                for fresh, signature in walker:\n                    row = read()\n                    if not (type(row) is dict and row.get('kind') == fresh['kind'] and row.get('path') == fresh['path']):\n                        _name_set_report(read, walker, fresh, row, count + len(ordered.pending))\n                    need(type(row) is dict and row.get('kind') == fresh['kind'] and row.get('path') == fresh['path'], 'NAME_SET')\n                    exempt = hashed = False\n                    path = None\n                    if fresh['kind'] == 'file':\n                        need(set(row) == {'kind', 'path', 'bytes', 'sha256', 'mtimeNs'} and type(row['bytes']) is int and\n                             type(row['mtimeNs']) is int and 0 <= row['mtimeNs'] <= 253402300799999999999 and\n                             (os.name != 'nt' or row['mtimeNs'] % 100 == 0), 'ROW')\n                        exempt = restore and fresh['path'].startswith(VOLATILE_PREFIX)\n                        hashed = content and not exempt\n                        if hashed:\n                            path = guard.root / fresh['path']\n                    else:\n                        need(row == fresh, 'ROW')\n                    ordered.push(path, signature, finisher(row, fresh, signature, exempt, hashed))\n            except BaseException:\n                ordered.drain()\n                raise\n            ordered.drain()\n        finally:\n            ordered.close()\n        if changed:\n            _changed_report(changed)\n        need(not changed, 'BYTES')\n",
+        "previous": "            return _parse(raw)\n        need(_line(read()) == _line(header), 'HEADER')\n        walker = _walk(guard)\n        for fresh, signature in walker:\n            row = read()\n            if not (type(row) is dict and row.get('kind') == fresh['kind'] and row.get('path') == fresh['path']):\n                _name_set_report(read, walker, fresh, row, count)\n            need(type(row) is dict and row.get('kind') == fresh['kind'] and row.get('path') == fresh['path'], 'NAME_SET')\n            count += 1\n            if fresh['kind'] == 'file':\n                need(set(row) == {'kind', 'path', 'bytes', 'sha256', 'mtimeNs'} and type(row['bytes']) is int and\n                     type(row['mtimeNs']) is int and 0 <= row['mtimeNs'] <= 253402300799999999999 and\n                     (os.name != 'nt' or row['mtimeNs'] % 100 == 0), 'ROW')\n                exempt = restore and fresh['path'].startswith(VOLATILE_PREFIX)\n                if exempt:\n                    pass\n                elif content:\n                    with _hash(guard.root / fresh['path'], guard, signature) as (_, before_file, sha):\n                        same = row['bytes'] == before_file[3] and row['sha256'] == sha\n                        if restore and not same:\n                            changed.append(fresh['path'])\n                        else:\n                            need(same, 'BYTES')\n                        if require_mtime:\n                            need(before_file[4] == row['mtimeNs'], 'MTIME')\n                else:\n                    need(not collect and row['bytes'] == signature[3] and type(row['sha256']) is str and re.fullmatch('[a-f0-9]{64}', row['sha256']), 'BYTES')\n                    if require_mtime:\n                        need(signature[4] == row['mtimeNs'], 'MTIME')\n                files += 1\n                raw_bytes += row['bytes']\n                need(raw_bytes <= MAX_RAW, 'RAW_BOUND')\n                if collect and not exempt:\n                    signatures.append((fresh['path'], signature, row['mtimeNs'], sha))\n            else:\n                need(row == fresh, 'ROW')\n            PROGRESS.tick(count, files, raw_bytes)\n        if changed:\n            _changed_report(changed)\n        need(not changed, 'BYTES')\n"
+      },
+      {
+        "current": "    return signatures\n\n\ndef apply_inputs(root, identity, sidecar_pin, clock, fence, workers=None):\n    header = _identity(identity)\n    guard = _Guard(root, header, clock, fence)\n    # Complete namespace/byte/identity validation precedes the first mutation. This is the only pass that reads\n    # file bytes: re-hashing the 29 GB tree for the timestamp pass and again for the final check cost ~53 minutes\n    # each (the seal's record walk took 3156 s), so both later passes prove the tree by metadata instead.\n    signatures = _verify(guard, header, sidecar_pin, label='verify-restore', restore=True, workers=workers)\n    for name, signature, nanoseconds, sha in signatures:\n        path = guard.root / name\n        # The pass-1 signature pins size, mtime, file id and birth; a replaced or rewritten file fails CHANGED.\n",
+        "previous": "    return signatures\n\n\ndef apply_inputs(root, identity, sidecar_pin, clock, fence):\n    header = _identity(identity)\n    guard = _Guard(root, header, clock, fence)\n    # Complete namespace/byte/identity validation precedes the first mutation. This is the only pass that reads\n    # file bytes: re-hashing the 29 GB tree for the timestamp pass and again for the final check cost ~53 minutes\n    # each (the seal's record walk took 3156 s), so both later passes prove the tree by metadata instead.\n    signatures = _verify(guard, header, sidecar_pin, label='verify-restore', restore=True)\n    for name, signature, nanoseconds, sha in signatures:\n        path = guard.root / name\n        # The pass-1 signature pins size, mtime, file id and birth; a replaced or rewritten file fails CHANGED.\n"
+      }
+    ],
+    "beforeBytes": 36806,
+    "beforeSha256": "d48fc7d0ab569540e0c7b550bbb4c0ddd4edc5c5e98c91b30b80d207bc6b88a9"
+  },
+  "native/windows-arm-full-sdk/compiled_checkpoint.py": {
+    "bytes": 118012,
+    "sha256": "ccdc2245971c570790189bbe198e5a2c08829b978a0011fe541004aa2328c15e",
+    "pairs": [
+      {
+        "current": "\n\nSAFE_CODES = SAFE_CODES | frozenset({'CARRIER_REPOSITORY', 'CARRIER_REF', 'CARRIER_COMMIT',\n                                    'CARRIER_CHANGED', 'CARRIER_RELEASE', 'SDK_ASSIGNED_SECONDS', 'SDK_CHECKED_INPUTS', 'SDK_PRODUCER_TIMING',\n                                    'TRANSPORT_IMAGE'})\n\n\nclass CheckpointFailure(ValueError):\n",
+        "previous": "\n\nSAFE_CODES = SAFE_CODES | frozenset({'CARRIER_REPOSITORY', 'CARRIER_REF', 'CARRIER_COMMIT',\n                                    'CARRIER_CHANGED', 'CARRIER_RELEASE', 'SDK_ASSIGNED_SECONDS', 'SDK_CHECKED_INPUTS', 'SDK_PRODUCER_TIMING'})\n\n\nclass CheckpointFailure(ValueError):\n"
+      },
+      {
+        "current": "            return copied\n    except BaseException:\n        pass\n    # A closed predicate raised before any stage opened (for example the first-clock image scope) keeps its own label.\n    if type(error) is CheckpointFailure and error.code in SAFE_CODES:\n        return dict(stage='identity', code=error.code)\n    return dict(stage='identity', code='UNKNOWN')\n\n\n",
+        "previous": "            return copied\n    except BaseException:\n        pass\n    return dict(stage='identity', code='UNKNOWN')\n\n\n"
+      },
+      {
+        "current": "         value.get('outputCapBytes') == output_cap and type(value.get('capturedBytes')) is int and\n         0 <= value['capturedBytes'] <= output_cap, 'JOB_CLOSURE')\n    expected = dict(flags=0x2000 | 0x200 | 0x8, activeProcessLimit=64, jobMemoryBytes=str(8 * 1024**3),\n                    cpuFlags=5, cpuRate=2500 if output_cap == 131072 else 7500, inheritedHandles=3, affinityChanged=False)\n    need(value.get('policyReadback') == expected, 'JOB_POLICY')\n    need(type(value.get('rootPid')) is int and value['rootPid'] > 0 and\n         re.fullmatch('[1-9][0-9]{0,19}', value.get('rootCreationFiletime', '')), 'JOB_IDENTITY')\n",
+        "previous": "         value.get('outputCapBytes') == output_cap and type(value.get('capturedBytes')) is int and\n         0 <= value['capturedBytes'] <= output_cap, 'JOB_CLOSURE')\n    expected = dict(flags=0x2000 | 0x200 | 0x8, activeProcessLimit=64, jobMemoryBytes=str(8 * 1024**3),\n                    cpuFlags=5, cpuRate=2500, inheritedHandles=3, affinityChanged=False)\n    need(value.get('policyReadback') == expected, 'JOB_POLICY')\n    need(type(value.get('rootPid')) is int and value['rootPid'] > 0 and\n         re.fullmatch('[1-9][0-9]{0,19}', value.get('rootCreationFiletime', '')), 'JOB_IDENTITY')\n"
+      },
+      {
+        "current": "        need(os.name == 'nt' and set(value) == fields and type(value['schemaVersion']) is int and value['schemaVersion'] == 1 and\n             value['kind'] == 'windows-arm-first-workflow-clock' and value['clock'] == 'windows-gettickcount64' and\n             type(value['dotnetMajor']) is int and value['dotnetMajor'] in (8, 9, 10), 'TRANSPORT_FIRST_CLOCK')\n        # The hosted pool rolls runner images (20261116.315.1 replaced 20261103.298.1); say so instead of a bare UNKNOWN.\n        need(value['image'] in inputs.SOURCES, 'TRANSPORT_IMAGE')\n        keys = dict(repository='GITHUB_REPOSITORY', repositoryId='GITHUB_REPOSITORY_ID', ref='GITHUB_REF',\n                    event='GITHUB_EVENT_NAME', runId='GITHUB_RUN_ID', attempt='GITHUB_RUN_ATTEMPT', head='GITHUB_SHA',\n                    workflowSha='GITHUB_WORKFLOW_SHA', workflowRef='GITHUB_WORKFLOW_REF', job='GITHUB_JOB', image='ImageVersion')\n",
+        "previous": "        need(os.name == 'nt' and set(value) == fields and type(value['schemaVersion']) is int and value['schemaVersion'] == 1 and\n             value['kind'] == 'windows-arm-first-workflow-clock' and value['clock'] == 'windows-gettickcount64' and\n             type(value['dotnetMajor']) is int and value['dotnetMajor'] in (8, 9, 10), 'TRANSPORT_FIRST_CLOCK')\n        keys = dict(repository='GITHUB_REPOSITORY', repositoryId='GITHUB_REPOSITORY_ID', ref='GITHUB_REF',\n                    event='GITHUB_EVENT_NAME', runId='GITHUB_RUN_ID', attempt='GITHUB_RUN_ATTEMPT', head='GITHUB_SHA',\n                    workflowSha='GITHUB_WORKFLOW_SHA', workflowRef='GITHUB_WORKFLOW_REF', job='GITHUB_JOB', image='ImageVersion')\n"
+      }
+    ],
+    "beforeBytes": 117491,
+    "beforeSha256": "34e08e617bca04d9f77ae6ffd1c795c025878b1e5720fede467f80f3da8b9d98"
+  },
+  "native/windows-arm-full-sdk/job.py": {
+    "bytes": 24721,
+    "sha256": "44aee196028564b33f4a32f8d003a1734133358ae7e798fafc76bb10bf18dd83",
+    "pairs": [
+      {
+        "current": "        limits.basic.active_limit = policy['processes']\n        limits.job_memory = policy['memoryBytes']\n        checked(set_job(job, 9, C.byref(limits), C.sizeof(limits)), \"job-limits\")\n        cpu = CpuRate(1 | 4, policy['cpuRate'] if _test_fault != \"policy\" else 10001)\n        checked(set_job(job, 15, C.byref(cpu), C.sizeof(cpu)), \"cpu-policy\")\n        result['policyReadback']=readback_policy(job,policy)\n        files.append(open(os.devnull, \"rb\", buffering=0))\n",
+        "previous": "        limits.basic.active_limit = policy['processes']\n        limits.job_memory = policy['memoryBytes']\n        checked(set_job(job, 9, C.byref(limits), C.sizeof(limits)), \"job-limits\")\n        cpu = CpuRate(1 | 4, 2500 if _test_fault != \"policy\" else 10001)\n        checked(set_job(job, 15, C.byref(cpu), C.sizeof(cpu)), \"cpu-policy\")\n        result['policyReadback']=readback_policy(job,policy)\n        files.append(open(os.devnull, \"rb\", buffering=0))\n"
+      }
+    ],
+    "beforeBytes": 24708,
+    "beforeSha256": "4e260223c88cadd59083a726d2f01acd924d5d36bf5da3877cab7b8c05b3b863"
+  },
+  "native/windows-arm-full-sdk/full_sdk_engine.py": {
+    "bytes": 27168,
+    "sha256": "1d0b6863ef48d1cd1c4ed643f05a7733d7814baaea706309843dd2300d398d55",
+    "pairs": [
+      {
+        "current": "NATIVE_ENGINE_ADMITTED = True  # Reviewed fixed execution ATTEMPT; no native qualification claim.\nEXPENSIVE_ENGINE_ADMITTED = True  # Original6h/3h slice and real checkpoint alternative required.\nROLES = ('probe-clang', 'probe-link', 'cef-engine', 'package', 'checkpoint-seal')\nENGINE_CPU_RATE = 7500\nCAPS = {'probe-clang': 900, 'probe-link': 900, 'cef-engine': 10800, 'package': 2400, 'checkpoint-seal': 6000}\nMETADATA_MAXIMA = (65536, 65536, 1048576, 1048576, 4194304, 1048576, 8388608, 8388608, 131072)\nSOURCES = {'20261103.298.1': 'e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90',\n",
+        "previous": "NATIVE_ENGINE_ADMITTED = True  # Reviewed fixed execution ATTEMPT; no native qualification claim.\nEXPENSIVE_ENGINE_ADMITTED = True  # Original6h/3h slice and real checkpoint alternative required.\nROLES = ('probe-clang', 'probe-link', 'cef-engine', 'package', 'checkpoint-seal')\nCAPS = {'probe-clang': 900, 'probe-link': 900, 'cef-engine': 10800, 'package': 2400, 'checkpoint-seal': 6000}\nMETADATA_MAXIMA = (65536, 65536, 1048576, 1048576, 4194304, 1048576, 8388608, 8388608, 131072)\nSOURCES = {'20261103.298.1': 'e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90',\n"
+      },
+      {
+        "current": "def _worker_policy(role, context):\n    state = _state(context=context)\n    need(role == state['context']['role'], 'ROLE')\n    # Hard CPU cap in 1/100 percent: 75 % of the 4-core hosted runner (3 cores). The compile and the seal hashing were\n    # throttled to one core at 2500; the remaining core keeps the runner agent, telemetry and the watchdog responsive.\n    return {'processes': 64, 'memoryBytes': 8 * 1024**3, 'cpuRate': ENGINE_CPU_RATE}\n\n\ndef _worker_argv(state):\n",
+        "previous": "def _worker_policy(role, context):\n    state = _state(context=context)\n    need(role == state['context']['role'], 'ROLE')\n    return {'processes': 64, 'memoryBytes': 8 * 1024**3, 'cpuRate': 2500}\n\n\ndef _worker_argv(state):\n"
+      },
+      {
+        "current": "         result.get('outputCapBytes') == 64 * 1024**2 and type(result.get('capturedBytes')) is int and\n         0 <= result['capturedBytes'] <= result['outputCapBytes'], 'SLICE_NATIVE_DEADLINE')\n    need(result.get('policyReadback') == dict(flags=8712, activeProcessLimit=64, jobMemoryBytes=str(8 * 1024**3),\n         cpuFlags=5, cpuRate=ENGINE_CPU_RATE, inheritedHandles=3, affinityChanged=False), 'SLICE_POLICY')\n    return result\n\n\n",
+        "previous": "         result.get('outputCapBytes') == 64 * 1024**2 and type(result.get('capturedBytes')) is int and\n         0 <= result['capturedBytes'] <= result['outputCapBytes'], 'SLICE_NATIVE_DEADLINE')\n    need(result.get('policyReadback') == dict(flags=8712, activeProcessLimit=64, jobMemoryBytes=str(8 * 1024**3),\n         cpuFlags=5, cpuRate=2500, inheritedHandles=3, affinityChanged=False), 'SLICE_POLICY')\n    return result\n\n\n"
+      }
+    ],
+    "beforeBytes": 26885,
+    "beforeSha256": "c7ffd6469742fe08750cf55ecdaa73809b916795db821c1fc3074b56bfd36213"
+  },
+  "native/windows-arm-full-sdk/full-sdk-engine-worker.mjs": {
+    "bytes": 42282,
+    "sha256": "4223ca59b47270e485eaa1ff22b6e1e980c2cf790b13b28af9dad99f5b38b74c",
+    "pairs": [
+      {
+        "current": "    activeProcessLimit: 64,\n    jobMemoryBytes: \"8589934592\",\n    cpuFlags: 5,\n    cpuRate: 7500,\n    inheritedHandles: 3,\n    affinityChanged: false,\n  };\n",
+        "previous": "    activeProcessLimit: 64,\n    jobMemoryBytes: \"8589934592\",\n    cpuFlags: 5,\n    cpuRate: 2500,\n    inheritedHandles: 3,\n    affinityChanged: false,\n  };\n"
+      }
+    ],
+    "beforeBytes": 42282,
+    "beforeSha256": "12c63141c73038fd6070214802f3e451b0223788f602a6e2032dfa3e95b248a2"
   }
 }

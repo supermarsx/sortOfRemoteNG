@@ -208,7 +208,7 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(kwargs['cap'], 64 * 1024**2)
             self.assertIs(kwargs['cancel'], state['parent'])
             self.assertEqual(engine._worker_policy('probe-clang', state['context']),
-                             dict(processes=64, memoryBytes=8 * 1024**3, cpuRate=2500))
+                             dict(processes=64, memoryBytes=8 * 1024**3, cpuRate=7500))
             self.assertTrue((root / 'full-sdk-engine-probe-clang-launch.json').is_file())
             with self.assertRaisesRegex(ValueError, 'ROLE'):
                 engine._worker_policy('package', state['context'])
@@ -336,7 +336,7 @@ class EngineTests(unittest.TestCase):
                     resumed=True, assignedAtCreationVerified=True, assignmentMode='creation-attribute', handleListOnly=True,
                     jobHandleInheritable=False, jobHandleInStdioAllowlist=False, rootPid=9999, rootCreationFiletime='999999',
                     outputCapBytes=64*1024**2, capturedBytes=0,
-                    policyReadback=dict(flags=8712,activeProcessLimit=64,jobMemoryBytes='8589934592',cpuFlags=5,cpuRate=2500,inheritedHandles=3,affinityChanged=False))
+                    policyReadback=dict(flags=8712,activeProcessLimit=64,jobMemoryBytes='8589934592',cpuFlags=5,cpuRate=7500,inheritedHandles=3,affinityChanged=False))
                 def run(*args, **kwargs):
                     output = args[2]
                     output.mkdir(parents=True)
@@ -390,7 +390,7 @@ class EngineTests(unittest.TestCase):
             cleanupVerified=True,logReadersStopped=True,cleanupBudgetMs=30000,elapsedMs=1000,started=True,jobCreated=True,assignedBeforeResume=True,
             resumed=True,assignedAtCreationVerified=True,assignmentMode='creation-attribute',handleListOnly=True,jobHandleInheritable=False,
             jobHandleInStdioAllowlist=False,rootPid=1,rootCreationFiletime='1',outputCapBytes=67108864,capturedBytes=0,
-            policyReadback=dict(flags=8712,activeProcessLimit=64,jobMemoryBytes='8589934592',cpuFlags=5,cpuRate=2500,inheritedHandles=3,affinityChanged=False))
+            policyReadback=dict(flags=8712,activeProcessLimit=64,jobMemoryBytes='8589934592',cpuFlags=5,cpuRate=7500,inheritedHandles=3,affinityChanged=False))
         self.assertIs(engine.inspect_native_slice(result,1),result)
         for key,value in [('outcome','compiler-failure'),('success',True),('rootExit',0),('finalRootExit',0),('activeAtEnd',False),('elapsedMs',999),('logReadersStopped',False),('capturedBytes',67108865)]:
             with self.subTest(key=key),self.assertRaises(ValueError):

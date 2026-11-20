@@ -1049,6 +1049,8 @@ class Interfaces(unittest.TestCase):
                                              'ROLE', 'VECTOR', 'CLOSEDVECTOR', 'RECIPE', 'HOST')),
                              ('job.py', ('COMMAND',))]:
             raw = normalized((HERE / name).read_bytes())
+            # Newest layer: the engine CPU cap is policy-driven in job.py (whole-file inverse, any other state passes through).
+            raw = _IMAGE_HISTORY.hooks_prefix(raw, 'native/windows-arm-full-sdk/' + name)
             if name == 'producer.py':
                 raw = full_graph_deadline_inverse(raw, 'producer')
             if name == 'producer.py':
@@ -1076,7 +1078,7 @@ class Interfaces(unittest.TestCase):
             size, digest = BASELINE_PINS[name]
             self.assertEqual(len(restored), size)
             self.assertEqual(hashlib.sha256(restored).hexdigest(), digest)
-        new = ast.parse((HERE / 'job.py').read_bytes())
+        new = ast.parse(_IMAGE_HISTORY.hooks_prefix(normalized((HERE / 'job.py').read_bytes()), 'native/windows-arm-full-sdk/job.py'))
         def kernel(tree):
             return ast.dump(next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'run_job'), include_attributes=False)
         self.assertEqual(hashlib.sha256(kernel(new).encode()).hexdigest(), RUN_JOB_AST_SHA256)

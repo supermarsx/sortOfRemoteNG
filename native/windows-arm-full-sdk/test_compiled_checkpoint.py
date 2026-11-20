@@ -40,14 +40,14 @@ def carrier_metadata(route):
     return None
 
 
-def job(deadline=False):
+def job(deadline=False, cpu=7500):
     value = dict(kind='owned-job-proof', started=True, jobCreated=True, assignedBeforeResume=True, resumed=True,
                  assignedAtCreationVerified=True, handleListOnly=True, cleanupVerified=True, rootReaped=True,
                  logReadersStopped=True, assignmentMode='creation-attribute', activeAtEnd=0,
                  jobHandleInheritable=False, jobHandleInStdioAllowlist=False, cleanupBudgetMs=30000,
                  outputCapBytes=64 * 1024**2, capturedBytes=10, rootPid=102, rootCreationFiletime='1002',
                  policyReadback=dict(flags=0x2000 | 0x200 | 0x8, activeProcessLimit=64,
-                                     jobMemoryBytes=str(8 * 1024**3), cpuFlags=5, cpuRate=2500,
+                                     jobMemoryBytes=str(8 * 1024**3), cpuFlags=5, cpuRate=cpu,
                                      inheritedHandles=3, affinityChanged=False),
                  success=not deadline, outcome='deadline' if deadline else 'success',
                  rootExit=None if deadline else 0, finalRootExit=124 if deadline else 0, elapsedMs=1000)
@@ -197,7 +197,7 @@ class CodecTests(unittest.TestCase):
                            sdkBuilt=False, nativeAcceptance=False, success=True, completion='native-slice-ended',
                            receiptPin=jp, jobSeconds=1)
         self.put('full-sdk-engine-closed-cef-engine.json', self.closed)
-        source_job = dict(job(), outputCapBytes=131072, rootPid=82, rootCreationFiletime='802')
+        source_job = dict(job(cpu=2500), outputCapBytes=131072, rootPid=82, rootCreationFiletime='802')
         self.put('jobs/full-source-operation/receipt.json', source_job)
         self.put('full-source-launcher-result.json', dict(success=True, sdkBuilt=False, originalOperationJob=source_job,
                                                          ownPid=90, ownCreationFiletime='900'))
@@ -273,7 +273,7 @@ class CodecTests(unittest.TestCase):
         observed = []
         reports = {}
         def native_model(*args, **kwargs):
-            result = dict(job(), rootPid=82, rootCreationFiletime='802')
+            result = dict(job(cpu=2500), rootPid=82, rootCreationFiletime='802')
             exec(field_writer, {'result': result, 'cap': kwargs['cap']})
             observed.append(result)
             return result
@@ -298,7 +298,7 @@ class CodecTests(unittest.TestCase):
         self.assertEqual(subject.validate_chain(self.guard(), self.identity)[1]['outcome'], 'quiet-deadline')
 
     def test_source_and_engine_output_caps_remain_distinct_and_strict(self):
-        source_job = dict(job(), rootPid=82, rootCreationFiletime='802', outputCapBytes=131072)
+        source_job = dict(job(cpu=2500), rootPid=82, rootCreationFiletime='802', outputCapBytes=131072)
         for fields in (dict(outputCapBytes=64 * 1024**2), dict(outputCapBytes=131071),
                        dict(outputCapBytes=131073), dict(capturedBytes=131073)):
             with self.subTest(role='source', fields=fields), self.assertRaisesRegex(ValueError, 'JOB_CLOSURE'):
@@ -847,6 +847,33 @@ class CodecTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'CLOCK_ROLLBACK') as first: clock.remaining()
             with self.assertRaises(ValueError) as again: clock.remaining()
             self.assertIs(again.exception, first.exception)
+
+    @unittest.skipUnless(os.name == 'nt', 'Actual Windows GetTickCount64 carrier interface')
+    def test_unreviewed_runner_image_is_named_not_unknown(self):
+        # Runs 44741877111, 44745518802 and 44747775838 died in seconds with {"stage":"identity","code":"UNKNOWN"}:
+        # the hosted pool had rolled to image 20261116.315.1, which the first-clock scope rejects before any stage opens.
+        import ctypes as c
+        tick = c.WinDLL('kernel32').GetTickCount64
+        tick.restype = c.c_ulonglong
+        wall_start, tick_start = int(subject.time.time() * 1000) - 1000, tick() - 1000
+        value = dict(schemaVersion=1, kind='windows-arm-first-workflow-clock', clock='windows-gettickcount64', dotnetMajor=9,
+                     wallStartMs=wall_start, tickStartMs=tick_start, wallEndMs=wall_start + 21600000, tickEndMs=tick_start + 21600000,
+                     repository=subject.REPOSITORY, repositoryId=str(subject.REPOSITORY_ID), ref='refs/heads/main', event='workflow_dispatch',
+                     runId='1234', attempt='1', head='a' * 40, workflowSha='a' * 40,
+                     workflowRef=subject.REPOSITORY + '/' + subject.WORKFLOW + '@refs/heads/main', job='sdk', image='20261116.315.1')
+        keys = dict(repository='GITHUB_REPOSITORY', repositoryId='GITHUB_REPOSITORY_ID', ref='GITHUB_REF', event='GITHUB_EVENT_NAME',
+                    runId='GITHUB_RUN_ID', attempt='GITHUB_RUN_ATTEMPT', head='GITHUB_SHA', workflowSha='GITHUB_WORKFLOW_SHA',
+                    workflowRef='GITHUB_WORKFLOW_REF', job='GITHUB_JOB', image='ImageVersion')
+        env = {name: value[key] for key, name in keys.items()}
+        env.update(SORNG_FULLSDK_FIRST_CLOCK=json.dumps(value), GITHUB_ACTIONS='true', RUNNER_ENVIRONMENT='github-hosted',
+                   GITHUB_REPOSITORY_VISIBILITY='public', CEF_DEFAULT_BRANCH='main')
+        self.assertNotIn(value['image'], subject.inputs.SOURCES)
+        with patch.dict(os.environ, env):
+            with self.assertRaises(ValueError) as caught: subject._TransportClock()
+        self.assertEqual(subject.failure_context(caught.exception), dict(stage='identity', code='TRANSPORT_IMAGE'))
+        # An error without a closed label (or a foreign exception) still degrades to UNKNOWN.
+        self.assertEqual(subject.failure_context(RuntimeError('x')), dict(stage='identity', code='UNKNOWN'))
+        self.assertEqual(subject.failure_context(subject.CheckpointFailure('NOT_A_CODE')), dict(stage='identity', code='UNKNOWN'))
 
     def test_immutable_seal_zip_exact_member_and_forged_digest_are_denied(self):
         for name, duplicate in (('../checkpoint-seal.json', False), ('checkpoint-seal.json', True)):

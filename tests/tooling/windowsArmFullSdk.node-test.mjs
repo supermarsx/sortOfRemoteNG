@@ -11148,6 +11148,7 @@ async function parentEngineFixture(t, mode = "normal", overrides = {}) {
 +engine._ACTIVE[str(root)]=state;engine._BIRTHS[birth]=state
 +def run(*args,**kwargs):
 + result=json.loads((root/'jobs/full-sdk-source-gn/receipt.json').read_bytes());result.update(rootPid=9002,rootCreationFiletime='900200',outputCapBytes=kwargs['cap'],capturedBytes=0,elapsedMs=args[3]*1000)
++ result['policyReadback']=dict(result['policyReadback'],cpuRate=engine.ENGINE_CPU_RATE)
 + if mode=='native-deadline':result.update(success=False,outcome='deadline',rootExit=None,finalRootExit=124)
 + else:result.update(success=False,outcome='compiler-failure',rootExit=1,finalRootExit=1)
 + out=args[2];out.mkdir(parents=True);(out/'receipt.json').write_text(json.dumps(result,indent=2)+'\\n');return result

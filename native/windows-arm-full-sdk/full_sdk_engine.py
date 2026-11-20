@@ -17,6 +17,7 @@ import time
 NATIVE_ENGINE_ADMITTED = True  # Reviewed fixed execution ATTEMPT; no native qualification claim.
 EXPENSIVE_ENGINE_ADMITTED = True  # Original6h/3h slice and real checkpoint alternative required.
 ROLES = ('probe-clang', 'probe-link', 'cef-engine', 'package', 'checkpoint-seal')
+ENGINE_CPU_RATE = 7500
 CAPS = {'probe-clang': 900, 'probe-link': 900, 'cef-engine': 10800, 'package': 2400, 'checkpoint-seal': 6000}
 METADATA_MAXIMA = (65536, 65536, 1048576, 1048576, 4194304, 1048576, 8388608, 8388608, 131072)
 SOURCES = {'20261103.298.1': 'e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90',
@@ -196,7 +197,9 @@ def _verified_active_sources(root, expected=None, bind=False):
 def _worker_policy(role, context):
     state = _state(context=context)
     need(role == state['context']['role'], 'ROLE')
-    return {'processes': 64, 'memoryBytes': 8 * 1024**3, 'cpuRate': 2500}
+    # Hard CPU cap in 1/100 percent: 75 % of the 4-core hosted runner (3 cores). The compile and the seal hashing were
+    # throttled to one core at 2500; the remaining core keeps the runner agent, telemetry and the watchdog responsive.
+    return {'processes': 64, 'memoryBytes': 8 * 1024**3, 'cpuRate': ENGINE_CPU_RATE}
 
 
 def _worker_argv(state):
@@ -340,7 +343,7 @@ def inspect_native_slice(result, seconds):
          result.get('outputCapBytes') == 64 * 1024**2 and type(result.get('capturedBytes')) is int and
          0 <= result['capturedBytes'] <= result['outputCapBytes'], 'SLICE_NATIVE_DEADLINE')
     need(result.get('policyReadback') == dict(flags=8712, activeProcessLimit=64, jobMemoryBytes=str(8 * 1024**3),
-         cpuFlags=5, cpuRate=2500, inheritedHandles=3, affinityChanged=False), 'SLICE_POLICY')
+         cpuFlags=5, cpuRate=ENGINE_CPU_RATE, inheritedHandles=3, affinityChanged=False), 'SLICE_POLICY')
     return result
 
 

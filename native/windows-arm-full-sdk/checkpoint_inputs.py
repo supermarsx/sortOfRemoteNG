@@ -3,7 +3,10 @@
 The caller retains the genuine original lease and owner fence. Output transport
 is handled by the unchanged archive helper; external installed tools are absent.
 """
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+import functools
 import hashlib
 import json
 import math
@@ -80,6 +83,11 @@ def _identity(value):
 
 RESOLVE_INTERVAL = 5.0
 HASH_CHUNK = 4 * 1024**2
+# Parallel content hashing: the walk, every comparison and every emitted row stay on the calling thread in walk
+# order; only the full-file reads run on workers. SORNG_CHECKPOINT_HASH_WORKERS=1 forces the serial path.
+HASH_WORKERS_ENV = 'SORNG_CHECKPOINT_HASH_WORKERS'
+HASH_WINDOW = 128
+SHARED_CHECK_INTERVAL = 0.2
 PROGRESS_FILE = 'full-sdk-engine-checkpoint-seal-progress.json'  # matches the always() records glob full-sdk-engine-*.json
 PROGRESS_KIND = 'windows-arm-full-sdk-checkpoint-seal-progress'
 PROGRESS_INTERVAL = 30.0
@@ -390,6 +398,8 @@ class _Guard:
         self.failed, self.primary = False, None
         self.directories = {}
         self.resolved = None
+        self.lock = threading.RLock()
+        self.last_full = 0.0
         self.wall, self.mono = time.time(), time.monotonic()
         need(self.root.is_absolute() and self.root.parent == REPO / '.artifacts' and
              self.root.name == header['canonicalRoot'], 'ROOT')
@@ -397,6 +407,30 @@ class _Guard:
         self.check()
 
     def check(self):
+        with self.lock:
+            self._check()
+            self.last_full = time.monotonic()
+
+    def check_shared(self):
+        # Worker-thread check: the complete check (root identity, alias, fence, rollback) runs at most every
+        # SHARED_CHECK_INTERVAL seconds (the main thread runs it at every walk entry anyway); in between, a failure
+        # already latched by any thread and the original deadline are still enforced on every call.
+        if self.failed:
+            raise self.primary
+        if time.monotonic() - self.last_full >= SHARED_CHECK_INTERVAL:
+            return self.check()
+        try:
+            left = self.clock.remaining()
+            need(type(left) in (int, float) and math.isfinite(left) and left > 0, 'DEADLINE')
+        except BaseException as error:
+            with self.lock:
+                if not self.failed:
+                    self.failed, self.primary = True, error
+                raise self.primary
+        if self.failed:
+            raise self.primary
+
+    def _check(self):
         if self.failed:
             raise self.primary
         try:
@@ -427,6 +461,20 @@ class _Guard:
             raise
 
 
+@functools.lru_cache(maxsize=None)
+def _kernel_open():
+    # One CreateFileW/CloseHandle prototype for the process (it was rebuilt for every file).
+    import ctypes as c
+    from ctypes import wintypes as w
+    kernel = c.WinDLL('kernel32', use_last_error=True)
+    open_file = kernel.CreateFileW
+    open_file.argtypes = (w.LPCWSTR, w.DWORD, w.DWORD, c.c_void_p, w.DWORD, w.DWORD, w.HANDLE)
+    open_file.restype = w.HANDLE
+    close = kernel.CloseHandle
+    close.argtypes, close.restype = (w.HANDLE,), w.BOOL
+    return open_file, close
+
+
 @contextmanager
 def _file(path, guard, timestamp=False, create=False):
     guard.check()
@@ -435,14 +483,8 @@ def _file(path, guard, timestamp=False, create=False):
         # FILE_SHARE_READ excludes concurrent writers/rename/delete. Operate on
         # the very same handle for hashing and SetFileTime, never a second path.
         import ctypes as c
-        from ctypes import wintypes as w
         import msvcrt
-        kernel = c.WinDLL('kernel32', use_last_error=True)
-        open_file = kernel.CreateFileW
-        open_file.argtypes = (w.LPCWSTR, w.DWORD, w.DWORD, c.c_void_p, w.DWORD, w.DWORD, w.HANDLE)
-        open_file.restype = w.HANDLE
-        close = kernel.CloseHandle
-        close.argtypes, close.restype = (w.HANDLE,), w.BOOL
+        open_file, close = _kernel_open()
         handle = open_file(str(path), 0x80000000 | (0x100 if timestamp else 0), 1, None, 3, 0x00200000, None)
         need(handle not in (None, c.c_void_p(-1).value), 'OPEN')
         try:
@@ -575,6 +617,72 @@ def _hash(path, guard, expected=None, timestamp=False, content=True):
         # _file runs guard.check() again right after closing the stream; nothing happens in between.
 
 
+def _worker_count(workers=None):
+    if workers is None:
+        raw = os.environ.get(HASH_WORKERS_ENV, '')
+        workers = int(raw) if re.fullmatch('[1-9][0-9]{0,2}', raw) else min(16, max(4, 2 * (os.cpu_count() or 1)))
+    return max(1, min(int(workers), 256))
+
+
+class _SharedGuard:
+    """What _hash/_file need from the guard, with the throttled thread-safe check."""
+    def __init__(self, guard):
+        self.root, self.directories, self.check = guard.root, guard.directories, guard.check_shared
+
+
+class _Ordered:
+    """Content hashes on a bounded worker pool, completions consumed strictly in walk order.
+
+    push() queues one walk entry; finish(before, sha) (sha is None without a path) always runs on the calling
+    thread in push order, so rows, counters, the first error and the sidecar bytes equal the serial result.
+    One worker means the original inline path. close() cancels what is outstanding and joins every thread.
+    """
+    def __init__(self, guard, workers=None):
+        self.guard, self.pending = guard, deque()
+        count = _worker_count(workers)
+        self.pool = ThreadPoolExecutor(max_workers=count, thread_name_prefix='checkpoint-hash') if count > 1 else None
+        self.shared = _SharedGuard(guard) if self.pool else None
+        self.window = max(HASH_WINDOW, count * 4)
+
+    def _job(self, path, signature):
+        with _hash(path, self.shared, signature) as (_, before, sha):
+            return before, sha
+
+    def push(self, path, signature, finish):
+        if self.pool is None:
+            if path is None:
+                finish(None, None)
+            else:
+                with _hash(path, self.guard, signature) as (_, before, sha):
+                    finish(before, sha)
+            return
+        future = None if path is None else self.pool.submit(self._job, path, signature)
+        self.pending.append((future, finish))
+        if len(self.pending) >= self.window:
+            self.complete()
+
+    def complete(self):
+        future, finish = self.pending.popleft()
+        if future is None:
+            finish(None, None)
+        else:
+            before, sha = future.result()
+            finish(before, sha)
+
+    def drain(self):
+        # Also used when the calling thread failed: earlier entries' own failures still win, in walk order.
+        while self.pending:
+            self.complete()
+
+    def close(self):
+        if self.pool is not None:
+            for future, _ in self.pending:
+                if future is not None:
+                    future.cancel()
+            self.pending.clear()
+            self.pool.shutdown(wait=True, cancel_futures=True)
+
+
 def _set_mtime(stream, nanoseconds):
     need(type(nanoseconds) is int and 0 <= nanoseconds <= 253402300799999999999, 'MTIME')
     if os.name == 'nt':
@@ -596,7 +704,7 @@ def _pin(pin):
          0 < pin['bytes'] <= MAX_SIDECAR and type(pin['sha256']) is str and re.fullmatch('[a-f0-9]{64}', pin['sha256']), 'SIDECAR_PIN')
 
 
-def record_inputs(root, identity, clock, fence):
+def record_inputs(root, identity, clock, fence, workers=None):
     header = _identity(identity)
     guard = _Guard(root, header, clock, fence)
     # Metadata-only pre-pass: report every link/reparse violation at once, minutes
@@ -617,19 +725,32 @@ def record_inputs(root, identity, clock, fence):
         written += len(raw)
         digest.update(raw)
     PROGRESS.stage('record-walk-hash', total_entries=report['entries'])
-    with _file(guard.root / SIDECAR, guard, create=True) as output:
-        emit(output, header)
-        for row, signature in _walk(guard):
-            count += 1
-            if row['kind'] == 'file':
-                with _hash(guard.root / row['path'], guard, signature) as (_, before, sha):
-                    row.update(bytes=before[3], sha256=sha, mtimeNs=before[4])
-                files += 1
-                raw_bytes += row['bytes']
-                need(raw_bytes <= MAX_RAW, 'RAW_BOUND')
-            emit(output, row)
-            PROGRESS.tick(count, files, raw_bytes)
-        emit(output, dict(kind='end', entries=count, files=files, rawBytes=raw_bytes))
+    ordered = _Ordered(guard, workers)
+    try:
+        with _file(guard.root / SIDECAR, guard, create=True) as output:
+            emit(output, header)
+            def finisher(row):
+                def finish(before, sha):
+                    nonlocal count, files, raw_bytes
+                    count += 1
+                    if row['kind'] == 'file':
+                        row.update(bytes=before[3], sha256=sha, mtimeNs=before[4])
+                        files += 1
+                        raw_bytes += row['bytes']
+                        need(raw_bytes <= MAX_RAW, 'RAW_BOUND')
+                    emit(output, row)
+                    PROGRESS.tick(count, files, raw_bytes)
+                return finish
+            try:
+                for row, signature in _walk(guard):
+                    ordered.push(guard.root / row['path'] if row['kind'] == 'file' else None, signature, finisher(row))
+            except BaseException:
+                ordered.drain()
+                raise
+            ordered.drain()
+            emit(output, dict(kind='end', entries=count, files=files, rawBytes=raw_bytes))
+    finally:
+        ordered.close()
     pin = dict(bytes=written, sha256=digest.hexdigest())
     # No back-to-back re-hash here: nothing can change the inputs between this walk and the final
     # verify-record-seal pass, which runs after pack/restore; apply_inputs re-hashes fully on restore.
@@ -686,7 +807,7 @@ def _changed_report(changed):
         pass
 
 
-def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify', total_entries=None, content=True, restore=False):
+def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify', total_entries=None, content=True, restore=False, workers=None):
     # collect=False (seal-only passes) drops the per-file signature list that only apply_inputs consumes.
     # content=False (the final seal pass) re-walks and compares names, sizes and mtimes without re-reading file bytes.
     # restore=True (apply_inputs only) exempts VOLATILE_PREFIX bytes and reports every changed file before denying.
@@ -710,40 +831,57 @@ def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify
             return _parse(raw)
         need(_line(read()) == _line(header), 'HEADER')
         walker = _walk(guard)
-        for fresh, signature in walker:
-            row = read()
-            if not (type(row) is dict and row.get('kind') == fresh['kind'] and row.get('path') == fresh['path']):
-                _name_set_report(read, walker, fresh, row, count)
-            need(type(row) is dict and row.get('kind') == fresh['kind'] and row.get('path') == fresh['path'], 'NAME_SET')
-            count += 1
-            if fresh['kind'] == 'file':
-                need(set(row) == {'kind', 'path', 'bytes', 'sha256', 'mtimeNs'} and type(row['bytes']) is int and
-                     type(row['mtimeNs']) is int and 0 <= row['mtimeNs'] <= 253402300799999999999 and
-                     (os.name != 'nt' or row['mtimeNs'] % 100 == 0), 'ROW')
-                exempt = restore and fresh['path'].startswith(VOLATILE_PREFIX)
-                if exempt:
-                    pass
-                elif content:
-                    with _hash(guard.root / fresh['path'], guard, signature) as (_, before_file, sha):
-                        same = row['bytes'] == before_file[3] and row['sha256'] == sha
-                        if restore and not same:
-                            changed.append(fresh['path'])
-                        else:
-                            need(same, 'BYTES')
-                        if require_mtime:
-                            need(before_file[4] == row['mtimeNs'], 'MTIME')
-                else:
+        ordered = _Ordered(guard, workers if content else 1)
+        def finisher(row, fresh, signature, exempt, hashed):
+            def finish(before_file, sha):
+                nonlocal count, files, raw_bytes
+                count += 1
+                if hashed:
+                    same = row['bytes'] == before_file[3] and row['sha256'] == sha
+                    if restore and not same:
+                        changed.append(fresh['path'])
+                    else:
+                        need(same, 'BYTES')
+                    if require_mtime:
+                        need(before_file[4] == row['mtimeNs'], 'MTIME')
+                elif fresh['kind'] == 'file' and not exempt:
                     need(not collect and row['bytes'] == signature[3] and type(row['sha256']) is str and re.fullmatch('[a-f0-9]{64}', row['sha256']), 'BYTES')
                     if require_mtime:
                         need(signature[4] == row['mtimeNs'], 'MTIME')
-                files += 1
-                raw_bytes += row['bytes']
-                need(raw_bytes <= MAX_RAW, 'RAW_BOUND')
-                if collect and not exempt:
-                    signatures.append((fresh['path'], signature, row['mtimeNs'], sha))
-            else:
-                need(row == fresh, 'ROW')
-            PROGRESS.tick(count, files, raw_bytes)
+                if fresh['kind'] == 'file':
+                    files += 1
+                    raw_bytes += row['bytes']
+                    need(raw_bytes <= MAX_RAW, 'RAW_BOUND')
+                    if collect and not exempt:
+                        signatures.append((fresh['path'], signature, row['mtimeNs'], sha))
+                PROGRESS.tick(count, files, raw_bytes)
+            return finish
+        try:
+            try:
+                for fresh, signature in walker:
+                    row = read()
+                    if not (type(row) is dict and row.get('kind') == fresh['kind'] and row.get('path') == fresh['path']):
+                        _name_set_report(read, walker, fresh, row, count + len(ordered.pending))
+                    need(type(row) is dict and row.get('kind') == fresh['kind'] and row.get('path') == fresh['path'], 'NAME_SET')
+                    exempt = hashed = False
+                    path = None
+                    if fresh['kind'] == 'file':
+                        need(set(row) == {'kind', 'path', 'bytes', 'sha256', 'mtimeNs'} and type(row['bytes']) is int and
+                             type(row['mtimeNs']) is int and 0 <= row['mtimeNs'] <= 253402300799999999999 and
+                             (os.name != 'nt' or row['mtimeNs'] % 100 == 0), 'ROW')
+                        exempt = restore and fresh['path'].startswith(VOLATILE_PREFIX)
+                        hashed = content and not exempt
+                        if hashed:
+                            path = guard.root / fresh['path']
+                    else:
+                        need(row == fresh, 'ROW')
+                    ordered.push(path, signature, finisher(row, fresh, signature, exempt, hashed))
+            except BaseException:
+                ordered.drain()
+                raise
+            ordered.drain()
+        finally:
+            ordered.close()
         if changed:
             _changed_report(changed)
         need(not changed, 'BYTES')
@@ -753,13 +891,13 @@ def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify
     return signatures
 
 
-def apply_inputs(root, identity, sidecar_pin, clock, fence):
+def apply_inputs(root, identity, sidecar_pin, clock, fence, workers=None):
     header = _identity(identity)
     guard = _Guard(root, header, clock, fence)
     # Complete namespace/byte/identity validation precedes the first mutation. This is the only pass that reads
     # file bytes: re-hashing the 29 GB tree for the timestamp pass and again for the final check cost ~53 minutes
     # each (the seal's record walk took 3156 s), so both later passes prove the tree by metadata instead.
-    signatures = _verify(guard, header, sidecar_pin, label='verify-restore', restore=True)
+    signatures = _verify(guard, header, sidecar_pin, label='verify-restore', restore=True, workers=workers)
     for name, signature, nanoseconds, sha in signatures:
         path = guard.root / name
         # The pass-1 signature pins size, mtime, file id and birth; a replaced or rewritten file fails CHANGED.

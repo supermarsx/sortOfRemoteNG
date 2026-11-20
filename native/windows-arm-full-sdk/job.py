@@ -196,7 +196,7 @@ def run_job(argv, cwd, output, seconds, *, cancel=None, _test_fault=None, cap=64
         limits.basic.active_limit = policy['processes']
         limits.job_memory = policy['memoryBytes']
         checked(set_job(job, 9, C.byref(limits), C.sizeof(limits)), "job-limits")
-        cpu = CpuRate(1 | 4, 2500 if _test_fault != "policy" else 10001)
+        cpu = CpuRate(1 | 4, policy['cpuRate'] if _test_fault != "policy" else 10001)
         checked(set_job(job, 15, C.byref(cpu), C.sizeof(cpu)), "cpu-policy")
         result['policyReadback']=readback_policy(job,policy)
         files.append(open(os.devnull, "rb", buffering=0))

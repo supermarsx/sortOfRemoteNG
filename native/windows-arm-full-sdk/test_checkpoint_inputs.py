@@ -1,10 +1,14 @@
 """Actual local file sidecar tests; no source checkout, compiler or Job actor."""
+import contextlib
 import copy
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import tempfile
+import threading
+import time
 import types
 import unittest
 from unittest.mock import patch
@@ -508,6 +512,116 @@ class CheckpointInputTests(unittest.TestCase):
         with patch.object(subject, '_verify', side_effect=raced), patch.object(subject, '_set_mtime', side_effect=AssertionError('mutated a changed file')):
             with self.assertRaisesRegex(ValueError, 'CHANGED'):
                 self.apply(pin)
+
+    def many_files(self, count=300):
+        for index in range(count):
+            directory = self.root / 'source-checkout/src' / ('d%d' % (index % 7))
+            directory.mkdir(exist_ok=True)
+            (directory / ('f%03d.txt' % index)).write_bytes((b'x%d' % index) * (index % 13))
+        (self.root / 'rust').mkdir(exist_ok=True)
+        (self.root / 'rust/big.bin').write_bytes(bytes(range(256)) * 20)
+        (self.root / 'rust/zero.bin').write_bytes(b'')
+
+    def sidecar_bytes(self):
+        return (self.root / subject.SIDECAR).read_bytes()
+
+    def test_parallel_record_and_verify_equal_serial_byte_for_byte(self):
+        self.many_files()
+        with patch.object(subject, 'HASH_CHUNK', 64):
+            serial = subject.record_inputs(self.root, self.identity, self.clock, self.fence, workers=1)
+            serial_raw = self.sidecar_bytes()
+            (self.root / subject.SIDECAR).unlink()
+            parallel = subject.record_inputs(self.root, self.identity, self.clock, self.fence, workers=8)
+            self.assertEqual(serial, parallel)
+            self.assertEqual(serial_raw, self.sidecar_bytes())
+            header = subject._identity(self.identity)
+            results = []
+            for workers in (1, 8):
+                guard = subject._Guard(self.root, header, self.clock, self.fence)
+                results.append(subject._verify(guard, header, parallel['sidecar'], workers=workers))
+            self.assertEqual(results[0], results[1])
+            self.assertGreater(len(results[0]), 300)
+
+    def test_scrambled_worker_completion_order_keeps_rows_in_walk_order(self):
+        self.many_files(60)
+        serial = subject.record_inputs(self.root, self.identity, self.clock, self.fence, workers=1)
+        serial_raw = self.sidecar_bytes()
+        (self.root / subject.SIDECAR).unlink()
+        real = subject._hash
+        def slow(path, guard, expected=None, timestamp=False, content=True):
+            time.sleep(0.02 if hash(path.name) % 3 == 0 else 0)
+            return real(path, guard, expected, timestamp, content)
+        with patch.object(subject, '_hash', slow):
+            parallel = subject.record_inputs(self.root, self.identity, self.clock, self.fence, workers=8)
+        self.assertEqual(serial, parallel)
+        self.assertEqual(serial_raw, self.sidecar_bytes())
+
+    def test_parallel_apply_reports_every_changed_file_and_serial_gives_the_same_code(self):
+        self.many_files(50)
+        pin = subject.record_inputs(self.root, self.identity, self.clock, self.fence, workers=1)['sidecar']
+        self.fresh_times()
+        changed = ['source-checkout/src/d1/f001.txt', 'source-checkout/src/d3/f010.txt', 'rust/big.bin']
+        for name in changed:
+            path = self.root / name
+            path.write_bytes(path.read_bytes() + b'!')
+        for workers in (1, 8):
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err), patch.object(subject, '_set_mtime', side_effect=AssertionError('mutated')):
+                with self.assertRaisesRegex(ValueError, 'CHECKPOINT_INPUTS_BYTES'):
+                    subject.apply_inputs(self.root, self.identity, pin, self.clock, self.fence, workers=workers)
+            text = err.getvalue()
+            self.assertIn('%d files differ' % len(changed), text)
+            for name in changed:
+                self.assertIn('changed: ' + name, text)
+
+    def test_worker_deadline_or_fence_failure_fails_the_call_and_joins_every_thread(self):
+        self.many_files(200)
+        pin = subject.record_inputs(self.root, self.identity, self.clock, self.fence, workers=1)['sidecar']
+        self.fresh_times()
+        main = threading.get_ident()
+        before = threading.active_count()
+        for kind in ('deadline', 'fence'):
+            state = dict(count=0)
+            def remaining():
+                if threading.get_ident() != main:
+                    state['count'] += 1
+                    if kind == 'deadline' and state['count'] > 20:
+                        return 0
+                return 600
+            def fence():
+                if kind == 'fence' and threading.get_ident() != main:
+                    state['count'] += 1
+                    if state['count'] > 20:
+                        raise RuntimeError('owner retired')
+            clock = types.SimpleNamespace(remaining=remaining)
+            with patch.object(subject, 'SHARED_CHECK_INTERVAL', 0), patch.object(subject, '_set_mtime', side_effect=AssertionError('mutated')):
+                with self.assertRaises((ValueError, RuntimeError)) as caught:
+                    subject.apply_inputs(self.root, self.identity, pin, clock, fence, workers=8)
+            self.assertIn('DEADLINE' if kind == 'deadline' else 'owner retired', str(caught.exception))
+            self.assertEqual(threading.active_count(), before)
+
+    def test_worker_hash_error_cancels_outstanding_and_leaks_no_thread(self):
+        self.many_files(200)
+        pin = subject.record_inputs(self.root, self.identity, self.clock, self.fence, workers=1)['sidecar']
+        self.fresh_times()
+        real = subject._hash
+        before = threading.active_count()
+        def broken(path, guard, expected=None, timestamp=False, content=True):
+            if content and path.name == 'f005.txt':
+                raise ValueError('CHECKPOINT_INPUTS_OPEN')
+            return real(path, guard, expected, timestamp, content)
+        with patch.object(subject, '_hash', broken):
+            with self.assertRaisesRegex(ValueError, 'CHECKPOINT_INPUTS_OPEN'):
+                subject.apply_inputs(self.root, self.identity, pin, self.clock, self.fence, workers=8)
+        self.assertEqual(threading.active_count(), before)
+
+    def test_worker_count_env_and_default(self):
+        with patch.dict(os.environ, {subject.HASH_WORKERS_ENV: '1'}):
+            self.assertEqual(subject._worker_count(), 1)
+        with patch.dict(os.environ, {subject.HASH_WORKERS_ENV: '5'}):
+            self.assertEqual(subject._worker_count(), 5)
+        with patch.dict(os.environ, {subject.HASH_WORKERS_ENV: ''}):
+            self.assertTrue(4 <= subject._worker_count() <= 16)
 
 
 class SealProgressTests(CheckpointInputTests):
