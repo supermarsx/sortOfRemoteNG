@@ -19,8 +19,8 @@ INSTALLED14 = {
 def installed_inventory(profile, clock, progress=None):
     """Observe complete fixed toolset roots before any executable admission."""
     toolset=Path(profile['vsRoot'])/'VC/Tools/MSVC'/profile['toolset']
-    need(profile['toolset']=='14.51.36231' and
-         str(toolset).replace('\\','/')=='C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231','FULL_INSTALLED_ROOT')
+    need(profile['toolset']=='14.52.37025' and
+         str(toolset).replace('\\','/')=='C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.52.37025','FULL_INSTALLED_ROOT')
     toolset=plain(toolset)
     roots=('include','atlmfc/include','lib/x64','lib/arm64','atlmfc/lib/x64','atlmfc/lib/arm64','bin/Hostx64/x64','bin/Hostx64/arm64')
     result=inventory_installed_roots(toolset,roots,profile['limits'],clock,progress)

@@ -4,8 +4,8 @@
   "mode": "image-qualified-source-gn",
   "ref": "refs/heads/codex/windows-arm-image-qualified-source-gn-20261101",
   "workflow": ".github/workflows/windows-arm-source-preflight.yml",
-  "image": "20261103.298.1",
-  "baseProfileSha256": "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a",
+  "image": "20261116.315.1",
+  "baseProfileSha256": "ea4bf3acb619d8719a5d28ac17b6afbd49f467e15fa2fc90e524aed7dee046ea",
   "helperSourceCommit": "0fd6ebc70f110ff80909fe996fb4abf5499c9468",
   "helperMirror": "native/windows-arm-full-sdk/current-source-helpers/",
   "sourcePaths": [
@@ -108,7 +108,7 @@
     "schemaVersion": 1,
     "mode": "image-qualified-source-gn",
     "namespace": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/",
-    "sourceId": "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+    "sourceId": "e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d",
     "limits": {
       "wholeSeconds": 7200,
       "cleanupSeconds": 30,
@@ -131,8 +131,8 @@
       },
       "git": {
         "path": "C:/Program Files/Git/cmd/git.exe",
-        "bytes": 44888,
-        "sha256": "20d0dde30a65afb6e5810a883700a94dcd77fbf3b44b32868d45bf7c9b30137c",
+        "bytes": 44872,
+        "sha256": "177bc8a9af84fa3a400c694c975fda731d048279c074e1a93947ce8b067ebb48",
         "nlink": 2
       }
     },
@@ -337,18 +337,18 @@
       },
       {
         "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/review-receipt.json",
-        "bytes": 835,
-        "sha256": "4da4a199ca8cba51d396f18ebf667af09601c5a8db0024753758e687698fb0c1"
+        "bytes": 836,
+        "sha256": "c327ea8d9d31b168344951509d479d329f194601d1fffd2b230cea7445397022"
       },
       {
         "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/source-lock.json",
         "bytes": 6153,
-        "sha256": "b16aad25386a8f9c48988c5116aa2d118e2581cfb151cd2a5ed3cc8682d76236"
+        "sha256": "3cc2c34d33b3069be090599ba0255b93003667ed217a5a5201ecf963f4df2274"
       },
       {
         "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/tools/aarch64-pc-windows-msvc.json",
         "bytes": 10425,
-        "sha256": "93dd8f76c361132134c1499320596bfbe06201cf8f3634c0f3bff7f48d3fc16f"
+        "sha256": "9c243305c35303fe05eafe7a0b0b8e3d9dcca10540b9d582997c225cdcfb9a59"
       },
       {
         "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/upstream-sha256.json",
@@ -381,7 +381,7 @@
       "source-caches/vpython"
     ],
     "hostClosure": {
-      "image": "20261103.298.1",
+      "image": "20261116.315.1",
       "rows": [
         {
           "path": "C:/hostedtoolcache/windows/node/24.19.0/x64/node.exe",
@@ -392,22 +392,22 @@
         },
         {
           "path": "C:/Program Files/Git/cmd/git.exe",
-          "bytes": 44888,
-          "sha256": "20d0dde30a65afb6e5810a883700a94dcd77fbf3b44b32868d45bf7c9b30137c",
+          "bytes": 44872,
+          "sha256": "177bc8a9af84fa3a400c694c975fda731d048279c074e1a93947ce8b067ebb48",
           "nlink": 2,
           "machine": 34404
         },
         {
           "path": "C:/Program Files/Git/ucrt64/bin/git.exe",
-          "bytes": 4412760,
-          "sha256": "9c75f3f41eb5686bacde4b7c4fdfcd7970e8b699ee05c8d7a0cc9c8a7ddaffe8",
+          "bytes": 4414792,
+          "sha256": "9bf8ee81d79f38a11eaf7799499a634c46a718e009a4a9b2b20b115804643302",
           "nlink": 4,
           "machine": 34404
         },
         {
           "path": "C:/Program Files/Git/ucrt64/libexec/git-core/git-remote-https.exe",
-          "bytes": 2614632,
-          "sha256": "ad461657eca12dfeb50f281d107ac3760ac355a20882e4a3b0d470cb6bab77c6",
+          "bytes": 2615640,
+          "sha256": "b7b9a5953a451211fa892118bd4d33fd913bd227a7c50eabf28db4cbf48a846b",
           "nlink": 1,
           "machine": 34404
         },
@@ -510,7 +510,7 @@
           "machine": 34404
         }
       ],
-      "peBytes": 113852732,
+      "peBytes": 113855756,
       "edgeCount": 242,
       "edgeSha256": "78537ac08d4dddabd50a5c83cdbd676114fdf03cf9abe670359c4ffd20ba5d9a"
     }
@@ -640,28 +640,28 @@
     "mode": "current-source-gn",
     "ref": "refs/heads/codex/windows-arm-current-source-gn-20261101",
     "image": "20261030.294.1",
-    "sourceId": "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+    "sourceId": "e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d",
     "namespace": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/"
   },
   "imageRefreshEvidence": {
     "kind": "reviewed-declared-host-pin-image-refresh",
-    "fromImage": "20261030.294.1",
-    "image": "20261103.298.1",
+    "fromImage": "20261103.298.1",
+    "image": "20261116.315.1",
     "probe": {
-      "runId": 43238921998,
+      "runId": 44782098630,
       "attempt": 1,
-      "head": "96791967742b8912462d69cf48c727608e3c45ff",
-      "artifactId": 13953008899,
-      "artifactBytes": 969855,
-      "artifactSha256": "6b7fc4242293f8eff419589ba2a81ff00232d5425ec4a8cd1506f497e9829bc8",
-      "reportBytes": 4244438,
-      "reportSha256": "87b394c4702ea263b09c689f78ebae19ff1e29381f84e8ecd4c61274486ff435",
+      "head": "c985b971f23b4d6aa71e964ad1701177d260900f",
+      "artifactId": 14650878238,
+      "artifactBytes": 883524,
+      "artifactSha256": "77e7c705cca78d1e48090b9b48eb40442fef8c23aa418fc7459ef1ace4ac61a0",
+      "reportBytes": 3869442,
+      "reportSha256": "600b22270ab79703381d7589fae03dbb4ffff02165e9003295da62dc8e4d19e0",
       "admits": false,
       "executed": false
     },
-    "declaredHostedFilePinsEqual": 33,
-    "hostClosureRowsEqual": 18,
-    "installedMsvcPinsEqual": 14,
+    "declaredHostedFilePinsEqual": 30,
+    "hostClosureRowsEqual": 15,
+    "installedMsvcPinsEqual": 0,
     "unlistedHistoricalTreeEqualityProven": false,
     "historicalNativeEvidenceRetained": true,
     "sdkBuilt": false,

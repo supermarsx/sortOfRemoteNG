@@ -34,7 +34,7 @@ enable_backup_ref_ptr_instance_tracer=false
 '''
 
 
-def request(image='20261030.294.1'):
+def request(image='20261116.315.1'):
     selected = POLICY['images'][image]
     tools = {}
     for role, expected in POLICY['tools'].items():

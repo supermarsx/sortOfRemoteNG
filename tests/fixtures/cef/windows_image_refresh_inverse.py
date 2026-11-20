@@ -30,7 +30,7 @@ def hooks_prefix(raw, file):
     # Outermost layer: the full source hooks/GN stage cap 3600 -> 5400 s. Exact whole current files only.
     file=NAMES.get(file,file);spec=HOOKS_SPECS.get(file)
     if not spec: return raw
-    normal=raw.replace(b'\r\n',b'\n') if file.startswith('tests/') else raw
+    normal=raw.replace(b'\r\n',b'\n') if file.startswith(('tests/','scripts/')) else raw
     if hashlib.sha256(normal).hexdigest()!=spec['sha256']: return raw
     raw=normal
     assert len(raw)==spec['bytes'], 'HOOKS_BUDGET_BYTES'
@@ -116,6 +116,7 @@ def inverse(raw, file):
     assert len(raw)==spec['beforeBytes'] and hashlib.sha256(raw).hexdigest()==spec['beforeSha256'], 'ASSEMBLY_INVERSE_IMAGE_OLD_WHOLE'
     return raw
 def prefix(raw, name):
+    raw=hooks_prefix(raw,name)  # newest layer first: exact whole current files only, anything else passes through
     raw=runtime_budget_prefix(raw,name)
     file=NAMES.get(name,name);spec=SPECS.get(file);canonical=raw.replace(b'\r\n',b'\n')
     return inverse(canonical,file) if spec and hashlib.sha256(canonical).hexdigest()==spec['sha256'] else raw

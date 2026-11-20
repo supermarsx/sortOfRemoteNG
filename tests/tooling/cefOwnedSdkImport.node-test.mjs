@@ -2989,11 +2989,11 @@ async function engineHostArchitectureFixture() {
     profile = await json("full-sdk-source-profile.json"),
     base = await json("profile.json"),
     privatePolicy = await json("private-qualification-profile.json"),
-    selected = profile.images["20261103.298.1"],
+    selected = profile.images["20261116.315.1"],
     image = await json(selected.profile),
     p = {
       ...base,
-      image: "20261103.298.1",
+      image: "20261116.315.1",
       sourceGn: image.sourceGn,
       sourcePaths: [],
       privatePolicy,

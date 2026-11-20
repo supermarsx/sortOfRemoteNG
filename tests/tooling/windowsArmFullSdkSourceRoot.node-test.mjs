@@ -13,9 +13,9 @@ import {
 const prefix = new URL("../../native/windows-arm-full-sdk/", import.meta.url);
 const vectors = [
   [
-    "20261103.298.1",
-    "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
-    "windows-arm-full-sdk-1ce5fa02-8d6f-4ab8-937d-1c1e319c0789",
+    "20261116.315.1",
+    "e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d",
+    "windows-arm-full-sdk-021bb5b2-3b38-41c6-86af-4af171e0edfd",
     "image-qualified-current-profile.json",
   ],
   [

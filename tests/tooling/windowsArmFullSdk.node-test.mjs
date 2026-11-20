@@ -1,4 +1,5 @@
 import {
+  requalForward,
   sisoMetadataCachePrefix,
   withoutHooksBudget,
 } from "./helpers/cefWindowsEngineHostHistory.mjs";
@@ -3041,7 +3042,7 @@ test("full phase map admits source GN while engine and compiled checkpoint autho
   assert.equal(profile.runtime17.rows.length, 17);
   assert.equal(
     profile.runtime17.rows.reduce((sum, row) => sum + row.bytes, 0),
-    21356560,
+    21709328,
   );
   assert.equal(profile.sdk.version, "10.0.28000.2270");
   assert(
@@ -3106,8 +3107,11 @@ test("Node 24 uses maintained pinned setup, exact workflow and Python source wit
   );
   for (const name of ["producer.py", "job.py"])
     assert((await read(prefix + name)).includes(sha(profileRaw)));
+  // The historical carrier workflow pins the profile bytes of its own time (before the 20261116.315.1 MSVC refresh).
   assert(
-    workflow.includes(`assert.equal(hash(rawProfile),'${sha(profileRaw)}')`),
+    workflow.includes(
+      "assert.equal(hash(rawProfile),'ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a')",
+    ),
   );
   assert(workflow.includes("phase='python';await pinnedPython();"));
   assert(
@@ -4390,11 +4394,11 @@ test("longpaths adoption changes only its reviewed helper row in the strict prof
     .replace('"bytes": 68713', '"bytes": 68266');
   assert.equal(
     sha(Buffer.from(original)),
-    "e5cb5cd3285faf2f9590a5d867918f3a710423e97c2478ac2e0be8c2e8e4ab0f",
+    "99fca8f309d5afb273900e4229099ed5a1398c57cfc081625e9a36f5b8022e19",
   );
   assert.equal(
     sha(profileRaw),
-    "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a",
+    "ea4bf3acb619d8719a5d28ac17b6afbd49f467e15fa2fc90e524aed7dee046ea",
   );
 });
 
@@ -7883,9 +7887,11 @@ async function inactiveControl(
     await import("../../native/windows-arm-full-sdk/expected-defaults.mjs");
   // This lexical model retains the exact pre-cache parent; current cache
   // ownership/IO runs in the required metadata suite and native regression.
-  let source = sisoMetadataCachePrefix(
-    await read(prefix + "full_sdk_control.mjs"),
-    prefix + "full_sdk_control.mjs",
+  let source = requalForward(
+    sisoMetadataCachePrefix(
+      await read(prefix + "full_sdk_control.mjs"),
+      prefix + "full_sdk_control.mjs",
+    ),
   );
   if (previousSourceParent) {
     // Isolate the actual old parent-creation behavior while retaining current
@@ -7986,12 +7992,12 @@ async function controlFixture(t, overrides = {}) {
     stage: "joined-success",
     pendingWriters: 0,
     creationJoined: true,
-    image: "20261103.298.1",
+    image: "20261116.315.1",
     target: "aarch64-pc-windows-msvc",
     sourceId:
-      "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+      "e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d",
     profileSha256:
-      "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
+      "218e300d66ff17e08a894547fb9cdb0c9ab4c751aabef6687c93ff37fbb67b1c",
     root: base,
     rootIdentity: api.directoryId(await fs.lstat(base, { bigint: true })),
   };
@@ -8532,11 +8538,11 @@ async function parentMetadataFixtureData() {
     const script = String.raw`import sys,json,base64
 sys.path.insert(0,${JSON.stringify(path.join(root, prefix))})
 import test_private_qualification as t,private_qualification as p
-context,observed=t.output_fixture('20261103.298.1')
+context,observed=t.output_fixture('20261116.315.1')
 ${await realisticExpectedDefaultsFixtureScript()}
 value=p.inspect_private_outputs(context,t.RAW,t.BASE_RAW,observed,wall_now=200,monotonic_now=200)
 report={key:value[key]for key in ('metadata','literalArguments','partitionAllocMacros','cefHeader','policyMinimumsMet','completeMacroInventoryMatches','fullArm64DefaultsQualified','executionAdmitted')}
-report.update(kind='windows-arm-full-source-metadata',compilerExecuted=False,cohortQuietProven=False,sourceId=t.POLICY['images']['20261103.298.1']['sourceId'],roleCount=4)
+report.update(kind='windows-arm-full-source-metadata',compilerExecuted=False,cohortQuietProven=False,sourceId=t.POLICY['images']['20261116.315.1']['sourceId'],roleCount=4)
 def encode(value):
  if type(value)is bytes:return {'__bytes':base64.b64encode(value).decode()}
  if type(value)is dict:return {k:encode(v)for k,v in value.items()}
@@ -8629,7 +8635,7 @@ async function createdSourceFixture(t, mode = "normal", overrides = {}) {
     JSON.stringify(graphSnapshot),
   );
   const sourceId =
-    "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90";
+    "e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d";
   const roles = [
     "sdk-data",
     "llvm-data",
@@ -8904,10 +8910,10 @@ async function createdSourceFixture(t, mode = "normal", overrides = {}) {
           ? path.join(process.env.SystemRoot, "System32")
           : "/usr/bin",
       }),
-      image: mode === "wrong-image" ? "20261021.278.1" : "20261103.298.1",
+      image: mode === "wrong-image" ? "20261021.278.1" : "20261116.315.1",
       sourceId,
       profileSha256:
-        "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
+        "218e300d66ff17e08a894547fb9cdb0c9ab4c751aabef6687c93ff37fbb67b1c",
       parentCreationFiletime: "777777",
       producerInputs: Object.freeze(
         producerInputs.map((row) => Object.freeze(row)),
@@ -9339,7 +9345,7 @@ test("inactive full SDK bootstrap requires privately bound full profile root con
     runId: "1",
     attempt: "1",
     inputs: {},
-    image: "20261103.298.1",
+    image: "20261116.315.1",
   };
   const recipe = {
     image: context.image,
@@ -9722,7 +9728,7 @@ def encode(value):
  if type(value)is dict:return {k:encode(v)for k,v in value.items()}
  if type(value)is list or type(value)is tuple:return [encode(v)for v in value]
  return value
-context,observed=t.output_fixture('20261103.298.1')
+context,observed=t.output_fixture('20261116.315.1')
 ${await realisticExpectedDefaultsFixtureScript()}
 print(json.dumps(encode({'context':context,'observed':observed})))
 `;
@@ -9771,7 +9777,7 @@ print(json.dumps(encode({'context':context,'observed':observed})))
     runId: "1",
     attempt: "1",
     inputs: { restore_run: "0" },
-    image: "20261103.298.1",
+    image: "20261116.315.1",
     sources: [],
     wallWorkEnd: Date.now() / 1000 + 1000,
     monotonicWorkEnd: 1000,
@@ -11207,7 +11213,7 @@ async function parentEngineFixture(t, mode = "normal", overrides = {}) {
       env: {
         ...process.env,
         CEF_FULLSDK_RESTORE_RUN: "0",
-        ImageVersion: "20261103.298.1",
+        ImageVersion: "20261116.315.1",
         GITHUB_SHA: "a".repeat(40),
         GITHUB_WORKFLOW_SHA: "a".repeat(40),
         GITHUB_RUN_ID: "30",
@@ -11725,7 +11731,7 @@ file=pathlib.Path(sys.argv[1]);spec=importlib.util.spec_from_file_location('code
 tree=ast.parse(file.read_text());function=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='transport_download')
 start=next(i for i,n in enumerate(function.body)if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id=='ready'for t in n.targets))
 statements=function.body[start:-1]
-rows=json.loads(sys.argv[3]);image='20261103.298.1';source=codec.inputs.SOURCES[image]
+rows=json.loads(sys.argv[3]);image='20261116.315.1';source=codec.inputs.SOURCES[image]
 identity=dict(image=image,sourceId=source,producerSha256=codec.producer_digest(rows),sourceDateEpoch=dict(present=False,value=None),canonicalRoot=codec.inputs.root_name(image,source),toolProofPin=dict(bytes=1,sha256='4'*64),graphPin=dict(bytes=1,sha256='5'*64))
 scope=dict(codec.__dict__);scope.update(record_pin=dict(bytes=1,sha256='1'*64),prior_run='20',prior_attempt='1',current=dict(id=30,run_attempt=1),prior=dict(head_sha='c'*40),record=dict(identity=identity),artifact_pin=dict(id=901,bytes=31,sha256='2'*64),destination=pathlib.Path(sys.argv[2]))
 exec(compile(ast.Module(body=statements,type_ignores=[]),str(file),'exec'),scope)
@@ -11772,7 +11778,7 @@ print('actual-ready-writer-complete')`;
   const result = await api.readRestoreHandoff(
     bootstrap,
     rows,
-    "20261103.298.1",
+    "20261116.315.1",
     codecReady.identity.sourceId,
   );
   assert.equal(result.runId, "20");
@@ -11790,7 +11796,7 @@ print('actual-ready-writer-complete')`;
     api.readRestoreHandoff(
       bootstrap,
       rows,
-      "20261103.298.1",
+      "20261116.315.1",
       codecReady.identity.sourceId,
     ),
     /RESTORE_ARTIFACT_PIN/,
@@ -12300,11 +12306,11 @@ async function sourceParentBootstrapFixture(t, mode) {
   const { fullSdkSourceRootName } =
     await import("../../native/windows-arm-full-sdk/source-root.mjs");
   const sourceId = JSON.parse(await read(prefix + "sdk-origin-review.json"))
-    .sources["20261103.298.1"].sourceLockIdentity;
+    .sources["20261116.315.1"].sourceLockIdentity;
   // Source identity is fixed by the actual pure naming implementation.
   const sourceRoot = path.join(
     parent,
-    fullSdkSourceRootName("20261103.298.1", sourceId),
+    fullSdkSourceRootName("20261116.315.1", sourceId),
   );
   const leaf = new Error("MODELED_NO_SOURCE_ACTOR");
   let owner,
@@ -12350,7 +12356,7 @@ async function sourceParentBootstrapFixture(t, mode) {
     GITHUB_JOB: "sdk",
     GITHUB_WORKFLOW_REF:
       "supermarsx/sortOfRemoteNG/.github/workflows/windows-arm-full-sdk.yml@refs/heads/main",
-    ImageVersion: "20261103.298.1",
+    ImageVersion: "20261116.315.1",
   };
   env.SORNG_FULLSDK_FIRST_CLOCK = JSON.stringify({
     schemaVersion: 1,
@@ -12905,9 +12911,9 @@ test("FULL environment fixture producer inverse restores the complete old source
 });
 async function fullSourceImageFixture(
   t,
-  { image = "20261103.298.1", previous = false, late = false } = {},
+  { image = "20261116.315.1", previous = false, late = false } = {},
 ) {
-  if (previous && image === "20261103.298.1") image = "20261030.294.1";
+  if (previous && image === "20261116.315.1") image = "20261030.294.1";
   const imageView = (raw, file) =>
     previous ? reviewedWindowsImagePrefix(raw.toString(), file) : raw;
   const firstWall = Date.now(),
@@ -13245,7 +13251,7 @@ test("actual full profile loader old PRIVATE_IMAGE denies and registered image d
   const old = await fullSourceImageFixture(t, { previous: true });
   await assert.rejects(old.load(), /^Error: PRIVATE_IMAGE$/);
   assert.equal(old.actors(), 0);
-  for (const image of ["20261103.298.1", "20261021.278.1"]) {
+  for (const image of ["20261116.315.1", "20261021.278.1"]) {
     const f = await fullSourceImageFixture(t, { image }),
       loaded = await f.load(),
       { p } = loaded;
@@ -14260,7 +14266,7 @@ const PINNED_DEPOT_GITIGNORE = {
 };
 
 test("FULL bootstrap cache uses only the genuine held profile and preserves legacy setup bytes with the reviewed exact image list", async (t) => {
-  for (const image of ["20261103.298.1", "20261021.278.1"]) {
+  for (const image of ["20261116.315.1", "20261021.278.1"]) {
     const f = await fullSourceImageFixture(t, { image }),
       loaded = await f.load();
     const current = f.api.bootstrapProgram(f.root, loaded.p, f.contextPin),
@@ -14268,7 +14274,7 @@ test("FULL bootstrap cache uses only the genuine held profile and preserves lega
     const reviewedPrevious = (bytes) => {
       const text = bytes.toString();
       const before = "('20261030.294.1','20261021.278.1')";
-      const after = "('20261103.298.1','20261021.278.1')";
+      const after = "('20261116.315.1','20261021.278.1')";
       assert.equal(text.split(before).length, 2);
       return text.replace(before, after);
     };
@@ -16806,7 +16812,7 @@ test("FULL engine worker profile object satisfies the reused source environment 
   const profile = await json("full-sdk-source-profile.json"),
     base = await json("profile.json"),
     privatePolicy = await json("private-qualification-profile.json");
-  for (const image of ["20261103.298.1", "20261021.278.1"]) {
+  for (const image of ["20261116.315.1", "20261021.278.1"]) {
     const selected = profile.images[image],
       imageJson = await json(selected.profile);
     const p = {
@@ -16889,14 +16895,18 @@ test("FULL-only runtime inventory budget retains exact whole history and unchang
   assert.deepEqual({ ...full.limits, hooksSeconds: 3600 }, previous.limits);
   assert.equal(base.limits.installedSeconds, 600);
   assert.equal(
-    full.images["20261103.298.1"].profileSha256,
-    "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
+    full.images["20261116.315.1"].profileSha256,
+    "218e300d66ff17e08a894547fb9cdb0c9ab4c751aabef6687c93ff37fbb67b1c",
   );
+  // The origin reader's reviewed pre-requalification bytes are the exact whole-file inverse of the current file.
   assert.equal(
     sha(
-      (await read("scripts/lib/cef-windows-arm-sdk-origin.mjs")).replaceAll(
-        "\r\n",
-        "\n",
+      withoutHooksBudget(
+        (await read("scripts/lib/cef-windows-arm-sdk-origin.mjs")).replaceAll(
+          "\r\n",
+          "\n",
+        ),
+        "scripts/lib/cef-windows-arm-sdk-origin.mjs",
       ),
     ),
     "6dc79f277efc50c6105aa737bc348aec04a1c9aa45854630462606664e83dda5",

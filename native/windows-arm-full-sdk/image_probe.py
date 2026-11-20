@@ -214,7 +214,7 @@ def image_toolchain():
     return out
 
 
-MSVC = "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231"
+MSVC = "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.52.37025"
 MSVC_ROOTS = ("include", "atlmfc/include", "lib/x64", "lib/arm64", "atlmfc/lib/x64", "atlmfc/lib/arm64",
               "bin/Hostx64/x64", "bin/Hostx64/arm64")
 HASH_TREES = {

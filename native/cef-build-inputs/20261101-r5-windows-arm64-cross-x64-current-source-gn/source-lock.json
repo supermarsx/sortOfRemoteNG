@@ -163,7 +163,7 @@
       },
       "toolchainLock": {
         "path": "tools/aarch64-pc-windows-msvc.json",
-        "sha256": "93dd8f76c361132134c1499320596bfbe06201cf8f3634c0f3bff7f48d3fc16f"
+        "sha256": "9c243305c35303fe05eafe7a0b0b8e3d9dcca10540b9d582997c225cdcfb9a59"
       }
     }
   ]

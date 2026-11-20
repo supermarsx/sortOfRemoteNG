@@ -126,7 +126,7 @@ class CodecTests(unittest.TestCase):
         self.repo = Path(self.temp.name).resolve() / 'checkout' / 'checkout'
         self.repo.mkdir(parents=True)
         self.original_repo = subject.REPO
-        self.root = self.repo / '.artifacts' / subject.inputs.root_name('20261103.298.1', subject.inputs.SOURCES['20261103.298.1'])
+        self.root = self.repo / '.artifacts' / subject.inputs.root_name('20261116.315.1', subject.inputs.SOURCES['20261116.315.1'])
         self.root.mkdir(parents=True)
         self.patches = [patch.object(subject, 'REPO', self.repo), patch.object(subject.inputs, 'REPO', self.repo)]
         for p in self.patches: p.start()
@@ -165,8 +165,8 @@ class CodecTests(unittest.TestCase):
         path.write_bytes(policy_raw)
         self.source = dict(kind='windows-arm-full-sdk-context', mode='full-sdk-source-gn', repository=subject.REPOSITORY,
                            repositoryId=str(subject.REPOSITORY_ID), workflow=subject.WORKFLOW, ref='refs/heads/main',
-                           event='workflow_dispatch', visibility='public', image='20261103.298.1', target='aarch64-pc-windows-msvc',
-                           sourceId=subject.inputs.SOURCES['20261103.298.1'], head='a' * 40, workflowSha='a' * 40,
+                           event='workflow_dispatch', visibility='public', image='20261116.315.1', target='aarch64-pc-windows-msvc',
+                           sourceId=subject.inputs.SOURCES['20261116.315.1'], head='a' * 40, workflowSha='a' * 40,
                            runId='1234', attempt='1', sources=self.rows, originPolicySha256=subject.sha(policy_raw),
                            wallWholeEnd=subject.time.time() + 5000, monotonicWholeEnd=subject.time.monotonic() + 5000)
         self.source_pin = self.put('context.json', self.source)
@@ -851,7 +851,7 @@ class CodecTests(unittest.TestCase):
     @unittest.skipUnless(os.name == 'nt', 'Actual Windows GetTickCount64 carrier interface')
     def test_unreviewed_runner_image_is_named_not_unknown(self):
         # Runs 44741877111, 44745518802 and 44747775838 died in seconds with {"stage":"identity","code":"UNKNOWN"}:
-        # the hosted pool had rolled to image 20261116.315.1, which the first-clock scope rejects before any stage opens.
+        # the hosted pool had rolled to an image outside the reviewed set, which the first-clock scope rejects before any stage opens.
         import ctypes as c
         tick = c.WinDLL('kernel32').GetTickCount64
         tick.restype = c.c_ulonglong
@@ -860,7 +860,7 @@ class CodecTests(unittest.TestCase):
                      wallStartMs=wall_start, tickStartMs=tick_start, wallEndMs=wall_start + 21600000, tickEndMs=tick_start + 21600000,
                      repository=subject.REPOSITORY, repositoryId=str(subject.REPOSITORY_ID), ref='refs/heads/main', event='workflow_dispatch',
                      runId='1234', attempt='1', head='a' * 40, workflowSha='a' * 40,
-                     workflowRef=subject.REPOSITORY + '/' + subject.WORKFLOW + '@refs/heads/main', job='sdk', image='20261116.315.1')
+                     workflowRef=subject.REPOSITORY + '/' + subject.WORKFLOW + '@refs/heads/main', job='sdk', image='20261201.320.1')
         keys = dict(repository='GITHUB_REPOSITORY', repositoryId='GITHUB_REPOSITORY_ID', ref='GITHUB_REF', event='GITHUB_EVENT_NAME',
                     runId='GITHUB_RUN_ID', attempt='GITHUB_RUN_ATTEMPT', head='GITHUB_SHA', workflowSha='GITHUB_WORKFLOW_SHA',
                     workflowRef='GITHUB_WORKFLOW_REF', job='GITHUB_JOB', image='ImageVersion')

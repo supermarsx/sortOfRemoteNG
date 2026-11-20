@@ -478,7 +478,7 @@ class FullInputTests(unittest.TestCase):
 
     def runtime_fixture(self):
         root=self.temp();sources=root/'sources';sources.mkdir();output=root/'output';output.mkdir()
-        p=copy.deepcopy(PROFILE);remaining=21356560
+        p=copy.deepcopy(PROFILE);remaining=21709328
         for i,row in enumerate(p['runtime17']['rows']):
             size=remaining if i==16 else 1250000;remaining-=size
             raw=pe(row['machine'])+bytes(size-len(pe(row['machine'])))
@@ -490,7 +490,7 @@ class FullInputTests(unittest.TestCase):
     def test_actual_pe_parser_and_seventeen_independent_runtime_copies(self):
         root,output,p=self.runtime_fixture()
         result=material.runtime_projection(output,p,clock())
-        self.assertEqual(len(result['files']),17);self.assertEqual(sum(r['bytes']for r in result['files']),21356560)
+        self.assertEqual(len(result['files']),17);self.assertEqual(sum(r['bytes']for r in result['files']),21709328)
         self.assertFalse(result['executed']);self.assertFalse(result['sdk28000DebuggerClaim'])
         for before,after in zip(p['runtime17']['rows'],result['files']):
             source=Path(before['source']);destination=output/after['path']
@@ -571,9 +571,10 @@ class FullInputTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(HISTORICAL_SETUP_BODIES.encode()).hexdigest(),HISTORICAL_SETUP_SHA)
         scope={'Path':Path,'need':acquire.need,'CPUS':environment.CPUS,'re':material.re,'ntpath':ntpath,'json':json}
         exec(compile(HISTORICAL_SETUP_BODIES,'pinned-historical-setup','exec'),scope)
-        self.assertTrue(scope['verify_setup'](ACTUAL_SETUP_X86,Path(ACTUAL_SETUP_ROOT),PROFILE,'x86')['setupSucceeded'])
+        historical=dict(PROFILE,toolset='14.51.36231')  # the genuine setup was observed on the 14.51 image
+        self.assertTrue(scope['verify_setup'](ACTUAL_SETUP_X86,Path(ACTUAL_SETUP_ROOT),historical,'x86')['setupSucceeded'])
         # This next body is intentionally transformed prospective context, not a new hosted observation.
-        fields={k:json.loads(v)for k,v in (line.split(' = ',1)for line in ACTUAL_SETUP_X86.splitlines())}
+        fields={k:json.loads(v)for k,v in (line.split(' = ',1)for line in ACTUAL_SETUP_X86.replace('14.51.36231',PROFILE['toolset']).splitlines())}
         fields['paths']=fields['paths'].replace('\\host-runtime','\\runtime\\x64').replace('/host-runtime','/runtime/x64')
         text='\n'.join(k+' = '+json.dumps(v)for k,v in fields.items())
         self.assertTrue(environment.verify_setup(text,Path(ACTUAL_SETUP_ROOT),PROFILE,'x86')['setupSucceeded'])

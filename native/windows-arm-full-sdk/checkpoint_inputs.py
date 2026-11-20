@@ -28,7 +28,7 @@ MAX_FILE = 8 * 1024**3
 MAX_RAW = 256 * 1024**3
 MAX_SIDECAR = 1536 * 1024**2
 NAMESPACES = ('source-checkout', 'Windows Kits', 'llvm', 'rust', 'siso', 'gn', 'custom-vs', 'runtime')
-SOURCES = {'20261103.298.1': 'e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90',
+SOURCES = {'20261116.315.1': 'e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d',
            '20261021.278.1': 'fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa'}
 
 

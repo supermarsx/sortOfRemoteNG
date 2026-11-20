@@ -614,7 +614,7 @@ def context():
  if P['fullContext'] is not None:
   data.need(P['enabled'] is True and value==P['fullContext'],'FULL_BOOTSTRAP_AUTHORITY')
  else:
-  data.need(P['enabled'] is True and value['mode']=='private-compiler-input-qualification' and value['image']==P['image'] and value['image'] in ('20261103.298.1','20261021.278.1') and value['repositoryId']=='1010282954' and value['visibility']=='public' and value['event']=='workflow_dispatch' and value['ref']=='refs/heads/codex/windows-arm-engine-qualification-20261101','FULL_BOOTSTRAP_AUTHORITY')
+  data.need(P['enabled'] is True and value['mode']=='private-compiler-input-qualification' and value['image']==P['image'] and value['image'] in ('20261116.315.1','20261021.278.1') and value['repositoryId']=='1010282954' and value['visibility']=='public' and value['event']=='workflow_dispatch' and value['ref']=='refs/heads/codex/windows-arm-engine-qualification-20261101','FULL_BOOTSTRAP_AUTHORITY')
  clock=data.Clock(value['wallWorkEnd'],value['monotonicWorkEnd'])
  for key,relative in (('CIPD_CACHE_DIR','cipd'),('VPYTHON_VIRTUALENV_ROOT','vpython'),('LOCALAPPDATA','local'),('APPDATA','roaming'),('XDG_CACHE_HOME','xdg')):
   data.need(Path(os.environ.get(key,''))==ROOT/'source-caches'/relative,'FULL_BOOTSTRAP_ENV');data.plain(ROOT/'source-caches'/relative)
@@ -2500,7 +2500,7 @@ export async function loadSealedProfile(
   need(
     sha(baseRaw) === selected.baseProfileSha256 &&
       selected.baseProfileSha256 ===
-        "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a",
+        "ea4bf3acb619d8719a5d28ac17b6afbd49f467e15fa2fc90e524aed7dee046ea",
     "FULL_BASE_PROFILE",
   );
   need(
@@ -3109,7 +3109,7 @@ async function privateSourceBody(argv) {
 function privateImage(p) {
   const value = p.privatePolicy?.images?.[p.image];
   need(
-    value && ["20261103.298.1", "20261021.278.1"].includes(p.image),
+    value && ["20261116.315.1", "20261021.278.1"].includes(p.image),
     "PRIVATE_IMAGE",
   );
   return value;
@@ -3260,7 +3260,7 @@ async function privateQualificationHandoff({
 
 export const PRIVATE_DRIVER_ADMITTED = false;
 const PRIVATE_PROFILE_SHA256 =
-  "5c263f19c1b1c7c220fc8d5e8cc8801b5adf3d9196aed8d0c6df792e961daad3";
+  "d31971146190df9f0311172cc37a0a3961546829066d3ae310ed2950e3f9283b";
 const PRIVATE_MODE = "private-compiler-input-qualification";
 const PRIVATE_REF =
   "refs/heads/codex/windows-arm-engine-qualification-20261101";
@@ -6637,7 +6637,7 @@ async function fullSourceStage(root, budget, stage, maximumSeconds, action) {
 
 const FULL_SOURCE_BODY_ADMITTED = true; // Reviewed source qualification attempt; no engine grant.
 const FULL_SOURCE_PROFILE_SHA256 =
-  "20ed8980b9fa5e248eafaac3b0216d8d294e113d38a4adb2f99957935e334dc7";
+  "ffc8728fa043b6c22964a92ec26a251be6d5d1edbd0d93d7d5c13b6aba57f139";
 const fullSourceProfiles = new WeakMap();
 // The reviewed generated setup is bootstrap cache, covered by c101 .cipd_client*.
 // No ignore file or clean-check exception is created or changed.

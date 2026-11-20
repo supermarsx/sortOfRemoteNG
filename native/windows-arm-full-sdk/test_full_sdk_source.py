@@ -955,7 +955,7 @@ class Interfaces(unittest.TestCase):
     def setUp(self):
         self.raw = (HERE / 'full-sdk-source-profile.json').read_bytes()
         self.p = subject.parse_profile(self.raw)
-        image = '20261103.298.1'
+        image = '20261116.315.1'
         selected = self.p['images'][image]
         self.context = {key: self.p[key] for key in
                         ('mode', 'workflow', 'policy', 'ref', 'repository', 'repositoryId',
@@ -1842,9 +1842,10 @@ class FullRuntimeBudget(unittest.TestCase):
         begin=next(i for i,n in enumerate(loader.body) if isinstance(n,ast.Assign) and ast.unparse(n)=='p = copy.deepcopy(base)')
         end=next(i for i in range(begin+1,len(loader.body)) if isinstance(loader.body[i],ast.For))
         # Execute the actual contiguous entry assembly, before native state capture.
-        selected=full['images']['20261103.298.1']
+        image='20261103.298.1' if before else '20261116.315.1'  # the runtime-budget inverse still names the previous image
+        selected=full['images'][image]
         recipe=json.loads((HERE / selected['profile']).read_bytes())
-        ns=dict(copy=copy,base=self.base,full=full,c={'image':'20261103.298.1'},recipe=recipe,rows=[])
+        ns=dict(copy=copy,base=self.base,full=full,c={'image':image},recipe=recipe,rows=[])
         exec(compile(ast.Module(body=loader.body[begin:end],type_ignores=[]),'<actual-full-entry-profile-assembly>','exec'),ns)
         return ns['p']
 
@@ -1855,7 +1856,7 @@ class FullRuntimeBudget(unittest.TestCase):
         self.assertEqual(current['limits']['installedSeconds'],1800)
         self.assertEqual(current['runtimeClosure'],dict(installedSeconds=1800,jobSeconds=1920))
         self.assertEqual(self.base,original)
-        wanted=copy.deepcopy(old);wanted['limits']['installedSeconds']=1800
+        wanted=copy.deepcopy(old);wanted['limits']['installedSeconds']=1800;wanted['image']=current['image']
         wanted['runtimeClosure']=dict(installedSeconds=1800,jobSeconds=1920)
         self.assertEqual(current,wanted)
         tree=ast.parse((HERE / 'full_sdk_source.py').read_bytes())

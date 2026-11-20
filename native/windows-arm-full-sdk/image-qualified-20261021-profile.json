@@ -5,7 +5,7 @@
   "ref": "refs/heads/codex/windows-arm-image-qualified-source-gn-20261101",
   "workflow": ".github/workflows/windows-arm-source-preflight.yml",
   "image": "20261021.278.1",
-  "baseProfileSha256": "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a",
+  "baseProfileSha256": "ea4bf3acb619d8719a5d28ac17b6afbd49f467e15fa2fc90e524aed7dee046ea",
   "helperSourceCommit": "0fd6ebc70f110ff80909fe996fb4abf5499c9468",
   "helperMirror": "native/windows-arm-full-sdk/current-source-helpers/",
   "sourcePaths": [
@@ -630,7 +630,7 @@
   },
   "oldHostSourceEvidence": {
     "runId": 40497501254,
-    "baseProfileSha256": "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a",
+    "baseProfileSha256": "ea4bf3acb619d8719a5d28ac17b6afbd49f467e15fa2fc90e524aed7dee046ea",
     "freshByteMatchRequired": true
   },
   "availableImageEvidenceRuns": [41335608542, 41335973337, 41336317414],

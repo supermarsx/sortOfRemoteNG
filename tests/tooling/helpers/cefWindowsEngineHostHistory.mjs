@@ -55,9 +55,10 @@ export function withoutHooksBudget(text, file) {
   const spec = hooksSpecs[file];
   if (!spec) return text;
   // Only ordinary Git text witnesses (tests/) may expand to CRLF on Windows.
-  const normal = file.startsWith("tests/")
-    ? text.replaceAll("\r\n", "\n")
-    : text;
+  const normal =
+    file.startsWith("tests/") || file.startsWith("scripts/")
+      ? text.replaceAll("\r\n", "\n")
+      : text;
   if (sha(normal) !== spec.sha256) return text;
   text = normal;
   assert.equal(Buffer.byteLength(text), spec.bytes, "HOOKS_BUDGET_BYTES");
@@ -71,6 +72,19 @@ export function withoutHooksBudget(text, file) {
     "HOOKS_BUDGET_OLD_BYTES",
   );
   assert.equal(sha(text), spec.beforeSha256, "HOOKS_BUDGET_OLD_WHOLE");
+  return text;
+}
+// Image requalification (20261116.315.1): the history layers invert whole current files to
+// their old states, whose pins and names are the previous image's. Models that need the
+// current pins after the older layers are inverted apply this forward table last.
+const requalForwardPairs = JSON.parse(
+  readFileSync(
+    new URL("../../fixtures/cef/windows_requal_forward.json", import.meta.url),
+    "utf8",
+  ),
+);
+export function requalForward(text) {
+  for (const [from, to] of requalForwardPairs) text = text.replaceAll(from, to);
   return text;
 }
 // Outermost layer: the optional compile_cap_minutes input in the controller.

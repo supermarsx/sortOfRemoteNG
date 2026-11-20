@@ -166,7 +166,7 @@ def cipd_archive(archive,output,spec,profile,clock):
 
 def runtime_projection(root,profile,clock):
     root=plain(root);rows=profile['runtime17']['rows']
-    need(len(rows)==17 and sum(r['bytes']for r in rows)==21356560 and
+    need(len(rows)==17 and sum(r['bytes']for r in rows)==21709328 and
          len({r['source'].casefold()for r in rows})==17 and len({r['destination'].casefold()for r in rows})==17,'FULL_RUNTIME_SET')
     projected=[]
     for row in rows:

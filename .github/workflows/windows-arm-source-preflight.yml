@@ -146,7 +146,7 @@ jobs:
             workMs=3600000;assert(remaining()>0);
             const repo=await physical(process.cwd()),dir=path.join(repo,'native/windows-arm-full-sdk');
             phase='profile';const rawProfile=await held(path.join(dir,'profile.json')),p=JSON.parse(rawProfile);
-            assert.equal(hash(rawProfile),'ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a');
+            assert.equal(hash(rawProfile),'ea4bf3acb619d8719a5d28ac17b6afbd49f467e15fa2fc90e524aed7dee046ea');
             assert.equal(p.kind,'sorng-windows-arm-full-sdk-source');assert.equal(p.buildAdmission,false);assert.equal(process.env.ImageVersion,carrierImage(mode,p));
             const preflightRaw=await held(path.join(dir,'preflight-profile.json'));assert.equal(hash(preflightRaw),'87afb795b1da433070ce57702156dae2d0a3affaddb9386d2d4270748b71f5ce');
             const selected=JSON.parse(preflightRaw);assert(selected.image===process.env.ImageVersion&&selected.ref===process.env.GITHUB_REF&&selected.mode===mode&&selected.benignVersionExecutionAllowed===true);

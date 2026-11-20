@@ -1,4 +1,7 @@
-import { withoutEngineHostArchitecture } from "./helpers/cefWindowsEngineHostHistory.mjs";
+import {
+  withoutEngineHostArchitecture,
+  withoutHooksBudget,
+} from "./helpers/cefWindowsEngineHostHistory.mjs";
 import { withoutReviewedWindowsImage } from "./helpers/cefWindowsImageReviewedHistory.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -2365,20 +2368,25 @@ test("reviewed current image refresh preserves whole historical inputs and admit
   ).replaceAll("\r\n", "\n");
   const current = JSON.parse(text),
     previous = JSON.parse(withoutReviewedWindowsImage(text, file));
-  assert.equal(current.image, "20261103.298.1");
+  assert.equal(current.image, "20261116.315.1");
   assert.equal(current.sourceGn.hostClosure.image, current.image);
+  // 20261116.315.1 requalification: three Git files and the whole MSVC 14.52.37025 toolset changed.
   const evidence = current.imageRefreshEvidence;
+  assert.equal(evidence.fromImage, "20261103.298.1");
   assert.equal(evidence.probe.admits, false);
   assert.equal(evidence.probe.executed, false);
-  assert.equal(evidence.declaredHostedFilePinsEqual, 33);
-  assert.equal(evidence.hostClosureRowsEqual, 18);
-  assert.equal(evidence.installedMsvcPinsEqual, 14);
+  assert.equal(evidence.declaredHostedFilePinsEqual, 30);
+  assert.equal(evidence.hostClosureRowsEqual, 15);
+  assert.equal(evidence.installedMsvcPinsEqual, 0);
   assert.equal(evidence.unlistedHistoricalTreeEqualityProven, false);
   assert.equal(evidence.runtimeReady, false);
-  current.image = previous.image;
-  current.sourceGn.hostClosure.image = previous.sourceGn.hostClosure.image;
-  delete current.imageRefreshEvidence;
-  assert.deepEqual(current, previous);
+  // The previous (20261103.298.1) profile differs from its predecessor only in the image fields and evidence.
+  const reviewed = JSON.parse(withoutHooksBudget(text, file));
+  assert.equal(reviewed.image, "20261103.298.1");
+  reviewed.image = previous.image;
+  reviewed.sourceGn.hostClosure.image = previous.sourceGn.hostClosure.image;
+  delete reviewed.imageRefreshEvidence;
+  assert.deepEqual(reviewed, previous);
   const policyFile = "native/windows-arm-full-sdk/sdk-origin-review.json",
     workerFile = "native/windows-arm-full-sdk/full-sdk-engine-worker.mjs";
   // Authenticate the complete current native bytes first. This test's image
