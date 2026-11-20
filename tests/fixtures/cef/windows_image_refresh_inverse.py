@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 METADATA_SPECS = json.loads(Path(__file__).with_name('windows_metadata_diagnostic_inverse.json').read_text())
 CACHE_SPECS = json.loads(Path(__file__).with_name('windows_siso_cache_inverse.json').read_text())
+HOOKS_SPECS = json.loads(Path(__file__).with_name('windows_hooks_budget_inverse.json').read_text())
 CAP_SPECS = json.loads(Path(__file__).with_name('windows_compile_cap_inverse.json').read_text())
 ENGINE_HOST_SPECS = json.loads(Path(__file__).with_name('windows_engine_host_arch_inverse.json').read_text())
 RUNTIME_BUDGET_SPECS = json.loads(Path(__file__).with_name('windows_runtime_budget_inverse.json').read_text())
@@ -25,7 +26,23 @@ def metadata_prefix(raw, file):
     spec=METADATA_SPECS.get(file)
     return metadata_inverse(raw,file) if spec and hashlib.sha256(raw).hexdigest()==spec['sha256'] else raw
 
+def hooks_prefix(raw, file):
+    # Outermost layer: the full source hooks/GN stage cap 3600 -> 5400 s. Exact whole current files only.
+    file=NAMES.get(file,file);spec=HOOKS_SPECS.get(file)
+    if not spec: return raw
+    normal=raw.replace(b'\r\n',b'\n') if file.startswith('tests/') else raw
+    if hashlib.sha256(normal).hexdigest()!=spec['sha256']: return raw
+    raw=normal
+    assert len(raw)==spec['bytes'], 'HOOKS_BUDGET_BYTES'
+    for row in spec['pairs']:
+        current,previous=row['current'].encode(),row['previous'].encode()
+        assert raw.count(current)==1, 'HOOKS_BUDGET_COUNT'
+        raw=raw.replace(current,previous,1)
+    assert len(raw)==spec['beforeBytes'] and hashlib.sha256(raw).hexdigest()==spec['beforeSha256'], 'HOOKS_BUDGET_OLD_WHOLE'
+    return raw
+
 def cap_prefix(raw, file):
+    raw=hooks_prefix(raw,file)
     if file=='workflow': file='.github/workflows/windows-arm-full-sdk.yml'
     spec=CAP_SPECS.get(file)
     if not spec: return raw

@@ -1,0 +1,146 @@
+{
+  "native/windows-arm-full-sdk/full-sdk-source-driver.mjs": {
+    "bytes": 306889,
+    "sha256": "5257432c828cceb17c1248db7b67ed4ed8111f8c68cf56fb55eeafd6af3a1b9e",
+    "pairs": [
+      {
+        "current": "    (stage === \"source-acquisition\" && maximumSeconds === 7200) ||\n      (stage === \"source-hooks-gn\" && maximumSeconds === 5400),\n    \"FULL_SOURCE_STAGE\",\n",
+        "previous": "    (stage === \"source-acquisition\" && maximumSeconds === 7200) ||\n      (stage === \"source-hooks-gn\" && maximumSeconds === 3600),\n    \"FULL_SOURCE_STAGE\",\n"
+      },
+      {
+        "current": "const FULL_SOURCE_PROFILE_SHA256 =\n  \"20ed8980b9fa5e248eafaac3b0216d8d294e113d38a4adb2f99957935e334dc7\";\nconst fullSourceProfiles = new WeakMap();\n",
+        "previous": "const FULL_SOURCE_PROFILE_SHA256 =\n  \"7d54f695876d59ce0fd8922a8463a6426b0209a1aad2b32c4dae480b2b043bc0\";\nconst fullSourceProfiles = new WeakMap();\n"
+      },
+      {
+        "current": "      limits.acquisitionSeconds === 7200 &&\n      limits.hooksSeconds === 5400 &&\n      limits.cleanupSeconds === 30 &&\n",
+        "previous": "      limits.acquisitionSeconds === 7200 &&\n      limits.hooksSeconds === 3600 &&\n      limits.cleanupSeconds === 30 &&\n"
+      },
+      {
+        "current": "    );\n    await fullSourceStage(root, budget, \"source-hooks-gn\", 5400, async () => {\n      stage = executionCommands[1].role;\n",
+        "previous": "    );\n    await fullSourceStage(root, budget, \"source-hooks-gn\", 3600, async () => {\n      stage = executionCommands[1].role;\n"
+      }
+    ],
+    "beforeBytes": 306889,
+    "beforeSha256": "bfbac8e30d104555c3f2acf3d51efb5c10c078448a72293a793eb4c0266f51fd"
+  },
+  "native/windows-arm-full-sdk/full-sdk-source-profile.json": {
+    "bytes": 11224,
+    "sha256": "20ed8980b9fa5e248eafaac3b0216d8d294e113d38a4adb2f99957935e334dc7",
+    "pairs": [
+      {
+        "current": "    \"acquisitionSeconds\": 7200,\n    \"hooksSeconds\": 5400,\n    \"cleanupSeconds\": 30,\n",
+        "previous": "    \"acquisitionSeconds\": 7200,\n    \"hooksSeconds\": 3600,\n    \"cleanupSeconds\": 30,\n"
+      }
+    ],
+    "beforeBytes": 11224,
+    "beforeSha256": "7d54f695876d59ce0fd8922a8463a6426b0209a1aad2b32c4dae480b2b043bc0"
+  },
+  "native/windows-arm-full-sdk/full_sdk_control.mjs": {
+    "bytes": 198303,
+    "sha256": "a1ea568c876a946b91724f5d9a06f32010dd802e7edc617cfcd9466a7d8337df",
+    "pairs": [
+      {
+        "current": "const FULL_SOURCE_PROFILE_SHA256 =\n  \"20ed8980b9fa5e248eafaac3b0216d8d294e113d38a4adb2f99957935e334dc7\";\nconst MODULE_URL = import.meta.url;\n",
+        "previous": "const FULL_SOURCE_PROFILE_SHA256 =\n  \"7d54f695876d59ce0fd8922a8463a6426b0209a1aad2b32c4dae480b2b043bc0\";\nconst MODULE_URL = import.meta.url;\n"
+      }
+    ],
+    "beforeBytes": 198303,
+    "beforeSha256": "15ae76bdffd4d0dff181ba4aa8f96b703800c4afeaee9719a6481288f55e6281"
+  },
+  "native/windows-arm-full-sdk/full_sdk_source.py": {
+    "bytes": 36016,
+    "sha256": "ef8ff932e17dee474326e8899d7f7f477e073866e8e3efe559c13383fab8ef2e",
+    "pairs": [
+      {
+        "current": "POLICY = 'native/windows-arm-full-sdk/sdk-origin-review.json'\nPROFILE_SHA256 = '20ed8980b9fa5e248eafaac3b0216d8d294e113d38a4adb2f99957935e334dc7'\nFULL_SOURCE_ADMITTED = False\n",
+        "previous": "POLICY = 'native/windows-arm-full-sdk/sdk-origin-review.json'\nPROFILE_SHA256 = '7d54f695876d59ce0fd8922a8463a6426b0209a1aad2b32c4dae480b2b043bc0'\nFULL_SOURCE_ADMITTED = False\n"
+      },
+      {
+        "current": "            # All acquisition roles consume the same original7200s endpoint. The\n            # Node body debits data time and retains the fixed5400s hook cap.\n            remaining = min(clock.remaining(), phase_end - time.monotonic(), wall_phase_end - time.time()) if role != _NODE else clock.remaining()\n",
+        "previous": "            # All acquisition roles consume the same original7200s endpoint. The\n            # Node body debits data time and retains the fixed3600s hook cap.\n            remaining = min(clock.remaining(), phase_end - time.monotonic(), wall_phase_end - time.time()) if role != _NODE else clock.remaining()\n"
+      }
+    ],
+    "beforeBytes": 36016,
+    "beforeSha256": "cd82c363b490d0550d0b154c8486b9b69b06eb426ede2b4d41032e577eacf723"
+  },
+  "native/windows-arm-full-sdk/test_full_sdk_source.py": {
+    "bytes": 526336,
+    "sha256": "28e6ab7657629111c96d6322060f1e9967bcad8dbbbd7c1a452d00bbb1941ea4",
+    "pairs": [
+      {
+        "current": "        self.assertEqual(self.p['limits'], dict(wholeSeconds=21600, sourceSeconds=14400,\n                         acquisitionSeconds=7200, hooksSeconds=5400,\n                         cleanupSeconds=30, finalReserveSeconds=120))\n",
+        "previous": "        self.assertEqual(self.p['limits'], dict(wholeSeconds=21600, sourceSeconds=14400,\n                         acquisitionSeconds=7200, hooksSeconds=3600,\n                         cleanupSeconds=30, finalReserveSeconds=120))\n"
+      },
+      {
+        "current": "        for file in _IMAGE_HISTORY.RUNTIME_BUDGET_SPECS:\n            # The newest hooks-budget layer is inverted first; the runtime-budget tamper cases then act on that exact state.\n            current=_IMAGE_HISTORY.hooks_prefix((ROOT/file).read_bytes().replace(b'\\r\\n',b'\\n'),file)\n            previous=_IMAGE_HISTORY.runtime_budget_inverse(current,file)\n",
+        "previous": "        for file in _IMAGE_HISTORY.RUNTIME_BUDGET_SPECS:\n            current=(ROOT/file).read_bytes().replace(b'\\r\\n',b'\\n')\n            previous=_IMAGE_HISTORY.runtime_budget_inverse(current,file)\n"
+      },
+      {
+        "current": "\n    def test_hooks_budget_inverse_is_whole_and_tamper_or_duplicate_denies(self):\n        for file, spec in _IMAGE_HISTORY.HOOKS_SPECS.items():\n            if file not in {'native/windows-arm-full-sdk/'+n for n in ('full-sdk-source-driver.mjs','full-sdk-source-profile.json','full_sdk_control.mjs','full_sdk_source.py')}:\n                continue\n            current=(ROOT/file).read_bytes().replace(b'\\r\\n',b'\\n')\n            self.assertEqual(hashlib.sha256(current).hexdigest(),spec['sha256'])\n            previous=_IMAGE_HISTORY.hooks_prefix(current,file)\n            self.assertEqual(hashlib.sha256(previous).hexdigest(),spec['beforeSha256'])\n            self.assertNotEqual(previous,current)\n            # Only an exact whole current file is inverted; any other state passes through untouched.\n            for other in (current+b'\\n',current+spec['pairs'][0]['current'].encode()):\n                self.assertEqual(_IMAGE_HISTORY.hooks_prefix(other,file),other)\n        profile=json.loads(_IMAGE_HISTORY.hooks_prefix((HERE/'full-sdk-source-profile.json').read_bytes(),'native/windows-arm-full-sdk/full-sdk-source-profile.json'))\n        self.assertEqual(profile['limits']['hooksSeconds'],3600)\n        self.assertEqual(self.full['limits']['hooksSeconds'],5400)\n        # Every stage constant that must move together carries the new cap.\n        driver=(HERE/'full-sdk-source-driver.mjs').read_bytes()\n        self.assertIn(b'stage === \"source-hooks-gn\" && maximumSeconds === 5400',driver)\n        self.assertIn(b'limits.hooksSeconds === 5400 &&',driver)\n        self.assertIn(b'fullSourceStage(root, budget, \"source-hooks-gn\", 5400, async () => {',driver)\n        self.assertNotIn(b'\"source-hooks-gn\", 3600',driver)\n        self.assertIn(subject.PROFILE_SHA256.encode(),driver)\n        self.assertIn(subject.PROFILE_SHA256.encode(),(HERE/'full_sdk_control.mjs').read_bytes())\n        self.assertEqual(hashlib.sha256((HERE/'full-sdk-source-profile.json').read_bytes()).hexdigest(),subject.PROFILE_SHA256)\n\n\nif __name__ == '__main__':\n",
+        "previous": "\nif __name__ == '__main__':\n"
+      }
+    ],
+    "beforeBytes": 524168,
+    "beforeSha256": "98be6c952dd8312e2bea681a8f48083686e720c36b3a2a6bf35f9aedf4922a61"
+  },
+  "tests/tooling/windowsArmFullSdk.node-test.mjs": {
+    "bytes": 860081,
+    "sha256": "d246e7f47a36bc100b3ccb8ced4b7f9b1431d8e9676e39c252c9cbfbe3c1854d",
+    "pairs": [
+      {
+        "current": "import {\n  sisoMetadataCachePrefix,\n  withoutHooksBudget,\n} from \"./helpers/cefWindowsEngineHostHistory.mjs\";\nimport {\n",
+        "previous": "import { sisoMetadataCachePrefix } from \"./helpers/cefWindowsEngineHostHistory.mjs\";\nimport {\n"
+      },
+      {
+        "current": "    acquisitionSeconds: 7200,\n    hooksSeconds: 5400,\n    cleanupSeconds: 30,\n",
+        "previous": "    acquisitionSeconds: 7200,\n    hooksSeconds: 3600,\n    cleanupSeconds: 30,\n"
+      },
+      {
+        "current": "  );\n  // The reviewed 3600 s body is the exact whole-file inverse of the current 5400 s hooks cap.\n  source = withoutHooksBudget(\n    source,\n    \"native/windows-arm-full-sdk/full-sdk-source-driver.mjs\",\n  );\n  if (previous) source = fullHooks3600Inverse(source, \"driver\");\n",
+        "previous": "  );\n  if (previous) source = fullHooks3600Inverse(source, \"driver\");\n"
+      },
+      {
+        "current": "  for (const [name, leaf] of Object.entries(names)) {\n    const raw = withoutHooksBudget(\n      (await fs.readFile(path.join(root, prefix, leaf), \"utf8\")).replaceAll(\n        \"\\r\\n\",\n        \"\\n\",\n      ),\n      prefix + leaf,\n    );\n    const mid = fullGraphDiagnosticsInverse(raw, name),\n",
+        "previous": "  for (const [name, leaf] of Object.entries(names)) {\n    const raw = (\n      await fs.readFile(path.join(root, prefix, leaf), \"utf8\")\n    ).replaceAll(\"\\r\\n\", \"\\n\");\n    const mid = fullGraphDiagnosticsInverse(raw, name),\n"
+      },
+      {
+        "current": "  for (const [file, spec] of Object.entries(specs)) {\n    const current = withoutHooksBudget(await read(file), file),\n      previous = withoutRuntimeBudget(current, file);\n",
+        "previous": "  for (const [file, spec] of Object.entries(specs)) {\n    const current = await read(file),\n      previous = withoutRuntimeBudget(current, file);\n"
+      },
+      {
+        "current": "  });\n  // The newer hooks budget (3600 -> 5400) is the only limit that differs from the prior state.\n  assert.deepEqual({ ...full.limits, hooksSeconds: 3600 }, previous.limits);\n  assert.equal(base.limits.installedSeconds, 600);\n",
+        "previous": "  });\n  assert.deepEqual(full.limits, previous.limits);\n  assert.equal(base.limits.installedSeconds, 600);\n"
+      }
+    ],
+    "beforeBytes": 859635,
+    "beforeSha256": "0a372c0ddb8ab91b0f63b8e5fed397292af162c6c32a255ae9e05bbb5f08d82c"
+  },
+  "native/windows-arm-full-sdk/sdk-origin-review.json": {
+    "bytes": 27528,
+    "sha256": "451956162270aa9d3f1d950c1eec4acb0048862fb09092713e03fd077ef3b879",
+    "pairs": [
+      {
+        "current": "{\"bytes\":306889,\"path\":\"native/windows-arm-full-sdk/full-sdk-source-driver.mjs\",\"sha256\":\"5257432c828cceb17c1248db7b67ed4ed8111f8c68cf56fb55eeafd6af3a1b9e\"}",
+        "previous": "{\"bytes\":306889,\"path\":\"native/windows-arm-full-sdk/full-sdk-source-driver.mjs\",\"sha256\":\"bfbac8e30d104555c3f2acf3d51efb5c10c078448a72293a793eb4c0266f51fd\"}"
+      },
+      {
+        "current": "{\"bytes\":11224,\"path\":\"native/windows-arm-full-sdk/full-sdk-source-profile.json\",\"sha256\":\"20ed8980b9fa5e248eafaac3b0216d8d294e113d38a4adb2f99957935e334dc7\"}",
+        "previous": "{\"bytes\":11224,\"path\":\"native/windows-arm-full-sdk/full-sdk-source-profile.json\",\"sha256\":\"7d54f695876d59ce0fd8922a8463a6426b0209a1aad2b32c4dae480b2b043bc0\"}"
+      },
+      {
+        "current": "{\"bytes\":198303,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"a1ea568c876a946b91724f5d9a06f32010dd802e7edc617cfcd9466a7d8337df\"}",
+        "previous": "{\"bytes\":198303,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"15ae76bdffd4d0dff181ba4aa8f96b703800c4afeaee9719a6481288f55e6281\"}"
+      },
+      {
+        "current": "{\"bytes\":36016,\"path\":\"native/windows-arm-full-sdk/full_sdk_source.py\",\"sha256\":\"ef8ff932e17dee474326e8899d7f7f477e073866e8e3efe559c13383fab8ef2e\"}",
+        "previous": "{\"bytes\":36016,\"path\":\"native/windows-arm-full-sdk/full_sdk_source.py\",\"sha256\":\"cd82c363b490d0550d0b154c8486b9b69b06eb426ede2b4d41032e577eacf723\"}"
+      },
+      {
+        "current": "{\"bytes\":526336,\"path\":\"native/windows-arm-full-sdk/test_full_sdk_source.py\",\"sha256\":\"28e6ab7657629111c96d6322060f1e9967bcad8dbbbd7c1a452d00bbb1941ea4\"}",
+        "previous": "{\"bytes\":524168,\"path\":\"native/windows-arm-full-sdk/test_full_sdk_source.py\",\"sha256\":\"98be6c952dd8312e2bea681a8f48083686e720c36b3a2a6bf35f9aedf4922a61\"}"
+      }
+    ],
+    "beforeBytes": 27528,
+    "beforeSha256": "3e93e707ad229f5083a8a8a5aa5901c7780d03ae60ce264fa39a3aa08e2ece9c"
+  }
+}

@@ -1,4 +1,7 @@
-import { sisoMetadataCachePrefix } from "./helpers/cefWindowsEngineHostHistory.mjs";
+import {
+  sisoMetadataCachePrefix,
+  withoutHooksBudget,
+} from "./helpers/cefWindowsEngineHostHistory.mjs";
 import {
   reviewedWindowsImagePrefix,
   withoutReviewedWindowsImage,
@@ -8401,7 +8404,7 @@ test("source qualification assembly pins the disjoint workflow and retains every
     wholeSeconds: 21600,
     sourceSeconds: 14400,
     acquisitionSeconds: 7200,
-    hooksSeconds: 3600,
+    hooksSeconds: 5400,
     cleanupSeconds: 30,
     finalReserveSeconds: 120,
   });
@@ -15186,6 +15189,11 @@ async function fullHooks3600Program(previous = false) {
     "\r\n",
     "\n",
   );
+  // The reviewed 3600 s body is the exact whole-file inverse of the current 5400 s hooks cap.
+  source = withoutHooksBudget(
+    source,
+    "native/windows-arm-full-sdk/full-sdk-source-driver.mjs",
+  );
   if (previous) source = fullHooks3600Inverse(source, "driver");
   const tree = ts.createSourceFile(
     "driver.mjs",
@@ -15374,9 +15382,13 @@ test("FULL hooks3600 finite inverses restore every whole907 source and reject mi
     profile: "full-sdk-source-profile.json",
   };
   for (const [name, leaf] of Object.entries(names)) {
-    const raw = (
-      await fs.readFile(path.join(root, prefix, leaf), "utf8")
-    ).replaceAll("\r\n", "\n");
+    const raw = withoutHooksBudget(
+      (await fs.readFile(path.join(root, prefix, leaf), "utf8")).replaceAll(
+        "\r\n",
+        "\n",
+      ),
+      prefix + leaf,
+    );
     const mid = fullGraphDiagnosticsInverse(raw, name),
       old = fullHooks3600InverseFrom(mid, name),
       spec = FULL_HOOKS_3600_HISTORY[name];
@@ -16846,7 +16858,7 @@ test("FULL-only runtime inventory budget retains exact whole history and unchang
     await read("tests/fixtures/cef/windows_runtime_budget_inverse.json"),
   );
   for (const [file, spec] of Object.entries(specs)) {
-    const current = await read(file),
+    const current = withoutHooksBudget(await read(file), file),
       previous = withoutRuntimeBudget(current, file);
     assert.equal(Buffer.byteLength(previous), spec.beforeBytes);
     assert.equal(sha(previous), spec.beforeSha256);
@@ -16872,7 +16884,8 @@ test("FULL-only runtime inventory budget retains exact whole history and unchang
     installedSeconds: 1800,
     jobSeconds: 1920,
   });
-  assert.deepEqual(full.limits, previous.limits);
+  // The newer hooks budget (3600 -> 5400) is the only limit that differs from the prior state.
+  assert.deepEqual({ ...full.limits, hooksSeconds: 3600 }, previous.limits);
   assert.equal(base.limits.installedSeconds, 600);
   assert.equal(
     full.images["20261103.298.1"].profileSha256,

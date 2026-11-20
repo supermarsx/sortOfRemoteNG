@@ -40,8 +40,42 @@ const capSpecs = JSON.parse(
     "utf8",
   ),
 );
+const hooksSpecs = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../fixtures/cef/windows_hooks_budget_inverse.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
+// Newest layer: the full source hooks/GN stage cap 3600 -> 5400 s. Only an exact
+// whole current file is inverted; every other state proceeds to the older layers.
+export function withoutHooksBudget(text, file) {
+  const spec = hooksSpecs[file];
+  if (!spec) return text;
+  // Only ordinary Git text witnesses (tests/) may expand to CRLF on Windows.
+  const normal = file.startsWith("tests/")
+    ? text.replaceAll("\r\n", "\n")
+    : text;
+  if (sha(normal) !== spec.sha256) return text;
+  text = normal;
+  assert.equal(Buffer.byteLength(text), spec.bytes, "HOOKS_BUDGET_BYTES");
+  for (const pair of spec.pairs) {
+    assert.equal(text.split(pair.current).length, 2, "HOOKS_BUDGET_COUNT");
+    text = text.replace(pair.current, () => pair.previous);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.beforeBytes,
+    "HOOKS_BUDGET_OLD_BYTES",
+  );
+  assert.equal(sha(text), spec.beforeSha256, "HOOKS_BUDGET_OLD_WHOLE");
+  return text;
+}
 // Outermost layer: the optional compile_cap_minutes input in the controller.
 export function withoutCompileCapInput(text, file) {
+  text = withoutHooksBudget(text, file);
   // The accounting-inverse tests address the workflow by its short name.
   if (file === "workflow") file = ".github/workflows/windows-arm-full-sdk.yml";
   const spec = capSpecs[file];

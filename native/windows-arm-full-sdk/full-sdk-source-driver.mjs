@@ -6558,7 +6558,7 @@ class FullSourceProgress {
 async function fullSourceStage(root, budget, stage, maximumSeconds, action) {
   need(
     (stage === "source-acquisition" && maximumSeconds === 7200) ||
-      (stage === "source-hooks-gn" && maximumSeconds === 3600),
+      (stage === "source-hooks-gn" && maximumSeconds === 5400),
     "FULL_SOURCE_STAGE",
   );
   const allowed = Math.min(
@@ -6637,7 +6637,7 @@ async function fullSourceStage(root, budget, stage, maximumSeconds, action) {
 
 const FULL_SOURCE_BODY_ADMITTED = true; // Reviewed source qualification attempt; no engine grant.
 const FULL_SOURCE_PROFILE_SHA256 =
-  "7d54f695876d59ce0fd8922a8463a6426b0209a1aad2b32c4dae480b2b043bc0";
+  "20ed8980b9fa5e248eafaac3b0216d8d294e113d38a4adb2f99957935e334dc7";
 const fullSourceProfiles = new WeakMap();
 // The reviewed generated setup is bootstrap cache, covered by c101 .cipd_client*.
 // No ignore file or clean-check exception is created or changed.
@@ -8022,7 +8022,7 @@ function fullSourceBudget(
     limits.wholeSeconds === 21600 &&
       limits.sourceSeconds === 14400 &&
       limits.acquisitionSeconds === 7200 &&
-      limits.hooksSeconds === 3600 &&
+      limits.hooksSeconds === 5400 &&
       limits.cleanupSeconds === 30 &&
       limits.finalReserveSeconds === 120,
     "FULL_SDK_SOURCE_LIMITS",
@@ -8994,7 +8994,7 @@ async function runFullSourceBody(argv) {
         );
       },
     );
-    await fullSourceStage(root, budget, "source-hooks-gn", 3600, async () => {
+    await fullSourceStage(root, budget, "source-hooks-gn", 5400, async () => {
       stage = executionCommands[1].role;
       const projection = validateHookProjection(
         await checked(() =>

@@ -970,7 +970,7 @@ class Interfaces(unittest.TestCase):
         self.assertIs(self.p['fullModeBodyImplemented'], True)
         self.assertIs(self.p['sourceSessionIssuerImplemented'], True)
         self.assertEqual(self.p['limits'], dict(wholeSeconds=21600, sourceSeconds=14400,
-                         acquisitionSeconds=7200, hooksSeconds=3600,
+                         acquisitionSeconds=7200, hooksSeconds=5400,
                          cleanupSeconds=30, finalReserveSeconds=120))
         with self.assertRaisesRegex(subject.Denied, 'PROFILE_PIN'):
             subject.parse_profile(self.raw + b' ')
@@ -1952,12 +1952,39 @@ class FullRuntimeBudget(unittest.TestCase):
 
     def test_runtime_budget_inverse_is_whole_and_tamper_or_duplicate_denies(self):
         for file in _IMAGE_HISTORY.RUNTIME_BUDGET_SPECS:
-            current=(ROOT/file).read_bytes().replace(b'\r\n',b'\n')
+            # The newest hooks-budget layer is inverted first; the runtime-budget tamper cases then act on that exact state.
+            current=_IMAGE_HISTORY.hooks_prefix((ROOT/file).read_bytes().replace(b'\r\n',b'\n'),file)
             previous=_IMAGE_HISTORY.runtime_budget_inverse(current,file)
             spec=_IMAGE_HISTORY.RUNTIME_BUDGET_SPECS[file]
             self.assertEqual(hashlib.sha256(previous).hexdigest(),spec['beforeSha256'])
             for bad in (current+b'\n',current.replace(spec['pairs'][0]['current'].encode(),b'',1),current+spec['pairs'][0]['current'].encode()):
                 with self.assertRaises(AssertionError):_IMAGE_HISTORY.runtime_budget_inverse(bad,file)
+
+
+    def test_hooks_budget_inverse_is_whole_and_tamper_or_duplicate_denies(self):
+        for file, spec in _IMAGE_HISTORY.HOOKS_SPECS.items():
+            if file not in {'native/windows-arm-full-sdk/'+n for n in ('full-sdk-source-driver.mjs','full-sdk-source-profile.json','full_sdk_control.mjs','full_sdk_source.py')}:
+                continue
+            current=(ROOT/file).read_bytes().replace(b'\r\n',b'\n')
+            self.assertEqual(hashlib.sha256(current).hexdigest(),spec['sha256'])
+            previous=_IMAGE_HISTORY.hooks_prefix(current,file)
+            self.assertEqual(hashlib.sha256(previous).hexdigest(),spec['beforeSha256'])
+            self.assertNotEqual(previous,current)
+            # Only an exact whole current file is inverted; any other state passes through untouched.
+            for other in (current+b'\n',current+spec['pairs'][0]['current'].encode()):
+                self.assertEqual(_IMAGE_HISTORY.hooks_prefix(other,file),other)
+        profile=json.loads(_IMAGE_HISTORY.hooks_prefix((HERE/'full-sdk-source-profile.json').read_bytes(),'native/windows-arm-full-sdk/full-sdk-source-profile.json'))
+        self.assertEqual(profile['limits']['hooksSeconds'],3600)
+        self.assertEqual(self.full['limits']['hooksSeconds'],5400)
+        # Every stage constant that must move together carries the new cap.
+        driver=(HERE/'full-sdk-source-driver.mjs').read_bytes()
+        self.assertIn(b'stage === "source-hooks-gn" && maximumSeconds === 5400',driver)
+        self.assertIn(b'limits.hooksSeconds === 5400 &&',driver)
+        self.assertIn(b'fullSourceStage(root, budget, "source-hooks-gn", 5400, async () => {',driver)
+        self.assertNotIn(b'"source-hooks-gn", 3600',driver)
+        self.assertIn(subject.PROFILE_SHA256.encode(),driver)
+        self.assertIn(subject.PROFILE_SHA256.encode(),(HERE/'full_sdk_control.mjs').read_bytes())
+        self.assertEqual(hashlib.sha256((HERE/'full-sdk-source-profile.json').read_bytes()).hexdigest(),subject.PROFILE_SHA256)
 
 
 if __name__ == '__main__':
