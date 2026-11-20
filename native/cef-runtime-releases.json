@@ -9,6 +9,10 @@
     "x86_64-unknown-linux-gnu": {
       "descriptorUrl": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/cef-patched-8e8641855d7f7ddc63ce7bfd3e9b5adcc5f5ffc64103b0fc469c69608538f279-x86_64-unknown-linux-gnu/runtime.json",
       "descriptorSha256": "5f8c8dd960303b1046d4669b89f4a10c47dd01e70f639a4d6d52ca2c601a7db3"
+    },
+    "aarch64-unknown-linux-gnu": {
+      "descriptorUrl": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/cef-patched-5690461b26b848671a80fcbf68c6974e569f9789476baf106a181b10cd5eb20e-aarch64-unknown-linux-gnu/runtime.json",
+      "descriptorSha256": "4a44eab1bfc849995401951f2db339a96065e85497ad872f38faefb726fd7958"
     }
   }
 }
