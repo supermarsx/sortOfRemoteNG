@@ -126,7 +126,7 @@ class CodecTests(unittest.TestCase):
         self.repo = Path(self.temp.name).resolve() / 'checkout' / 'checkout'
         self.repo.mkdir(parents=True)
         self.original_repo = subject.REPO
-        self.root = self.repo / '.artifacts' / subject.inputs.root_name('20261030.294.1', subject.inputs.SOURCES['20261030.294.1'])
+        self.root = self.repo / '.artifacts' / subject.inputs.root_name('20261103.298.1', subject.inputs.SOURCES['20261103.298.1'])
         self.root.mkdir(parents=True)
         self.patches = [patch.object(subject, 'REPO', self.repo), patch.object(subject.inputs, 'REPO', self.repo)]
         for p in self.patches: p.start()
@@ -165,8 +165,8 @@ class CodecTests(unittest.TestCase):
         path.write_bytes(policy_raw)
         self.source = dict(kind='windows-arm-full-sdk-context', mode='full-sdk-source-gn', repository=subject.REPOSITORY,
                            repositoryId=str(subject.REPOSITORY_ID), workflow=subject.WORKFLOW, ref='refs/heads/main',
-                           event='workflow_dispatch', visibility='public', image='20261030.294.1', target='aarch64-pc-windows-msvc',
-                           sourceId=subject.inputs.SOURCES['20261030.294.1'], head='a' * 40, workflowSha='a' * 40,
+                           event='workflow_dispatch', visibility='public', image='20261103.298.1', target='aarch64-pc-windows-msvc',
+                           sourceId=subject.inputs.SOURCES['20261103.298.1'], head='a' * 40, workflowSha='a' * 40,
                            runId='1234', attempt='1', sources=self.rows, originPolicySha256=subject.sha(policy_raw),
                            wallWholeEnd=subject.time.time() + 5000, monotonicWholeEnd=subject.time.monotonic() + 5000)
         self.source_pin = self.put('context.json', self.source)
@@ -382,8 +382,6 @@ class CodecTests(unittest.TestCase):
         for namespace in (*subject.inputs.NAMESPACES, 'source-inputs'):
             shutil.copytree(old_root / namespace, self.root / namespace)
         shutil.copyfile(old_root / subject.TOOL_FILE, self.root / subject.TOOL_FILE)
-        fresh = dict(self.source, runId='5678', head='b' * 40, workflowSha='b' * 40)
-        fresh_pin = self.put('context.json', fresh)
         download = self.repo.parent.parent / '_temp/sorng-windows-arm-checkpoint-5678-1'
         download.mkdir(parents=True)
         for file in (old_root / subject.OUTPUT).iterdir():
@@ -396,14 +394,47 @@ class CodecTests(unittest.TestCase):
         input_file = self.root / 'source-checkout/src/input.cc'
         original_ns = input_file.stat().st_mtime_ns
         os.utime(input_file, ns=(original_ns + 1000000000, original_ns + 1000000000))
-        result = subject.restore_checkpoint(self.root, self.identity, fresh_pin['sha256'],
-                 dict(bytes=len(ready_raw), sha256=subject.sha(ready_raw)), self.clock, self.fence)
+        ready_pin = dict(bytes=len(ready_raw), sha256=subject.sha(ready_raw))
+        fresh = dict(self.source, runId='5678', head='b' * 40, workflowSha='b' * 40,
+                     checkpointRestore=dict(runId='1234', attempt='1', readyPin=ready_pin))
+        fresh_pin = self.put('context.json', fresh)
+        result = subject.restore_checkpoint(self.root, self.identity, fresh_pin['sha256'], ready_pin, self.clock, self.fence)
         self.assertTrue(result['restored'])
         self.assertFalse(result['sourceQualified'])
-        self.assertEqual(input_file.stat().st_mtime_ns, original_ns)
         self.assertEqual((self.root / subject.OUT / 'partial.obj').read_bytes(), b'fixture object DATA')
         self.assertEqual(result['priorGraph']['files'], 2)
         self.assertTrue((self.root / 'source-checkout/src/out/Release_GN_arm64.fresh-gn').is_dir())
+        # The source-phase restore must NOT apply the input sidecar: the sealed sidecar covers the complete tree
+        # (run 44633550604 died with SIDECAR_NAME_SET here), which only exists after the post-source jobs.
+        self.assertEqual(input_file.stat().st_mtime_ns, original_ns + 1000000000)
+        self.assertFalse((self.root / subject.inputs.SIDECAR).exists())
+        # An incomplete or different tree is denied by name before any timestamp changes.
+        stray = self.root / 'rust/stray.bin'
+        stray.write_bytes(b'not sealed')
+        with self.assertRaisesRegex(ValueError, 'NAME_SET'):
+            subject.apply_restored_inputs(self.root, self.identity, fresh_pin['sha256'], ready_pin, self.clock, self.fence)
+        self.assertEqual(input_file.stat().st_mtime_ns, original_ns + 1000000000)
+        stray.unlink()
+        (self.root / subject.inputs.SIDECAR).unlink()
+        # The engine entry derives the same request from the pinned source context and does the same work.
+        with self.assertRaisesRegex(ValueError, 'SOURCE_CONTEXT_PIN'):
+            subject.apply_restored_from_context(self.root, '0' * 64, self.clock, self.fence)
+        applied = subject.apply_restored_from_context(self.root, fresh_pin['sha256'], self.clock, self.fence)
+        self.assertGreaterEqual(applied['files'], 1)
+        self.assertTrue(applied['sidecarApplied'])
+        os.utime(input_file, ns=(original_ns + 1000000000, original_ns + 1000000000))
+        applied = subject.apply_restored_inputs(self.root, self.identity, fresh_pin['sha256'], ready_pin, self.clock, self.fence)
+        self.assertTrue(applied['sidecarApplied'])
+        self.assertEqual(input_file.stat().st_mtime_ns, original_ns)
+        self.assertFalse((self.root / subject.inputs.SIDECAR).exists())
+        self.assertFalse(applied['executionAdmitted'])
+        # A later seal creates the sidecar again at the same path, so apply must have removed the restored copy.
+        subject.inputs.record_inputs(self.root, subject.identity_header(self.identity)[1], self.clock, self.fence)
+        self.assertTrue((self.root / subject.inputs.SIDECAR).exists())
+
+    def test_engine_entry_is_a_no_op_for_a_first_run_without_a_restore_packet(self):
+        self.assertIsNone(subject.apply_restored_from_context(self.root, self.source_pin['sha256'], self.clock, self.fence))
+        self.assertFalse((self.root / subject.inputs.SIDECAR).exists())
 
     def test_fixed_https_redirect_strips_token_and_foreign_host_or_header_failure_closes(self):
         from email.message import Message

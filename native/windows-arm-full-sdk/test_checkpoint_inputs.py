@@ -397,6 +397,118 @@ class CheckpointInputTests(unittest.TestCase):
         (self.root / subject.BIDI_BIN).write_bytes(b'not a directory')
         self.assertEqual(subject.audit_links(self.root)['violations'][0]['checks'], ['not-directory'])
 
+    def stderr_of(self, action):
+        import contextlib
+        import io
+        buffer = io.StringIO()
+        with contextlib.redirect_stderr(buffer):
+            try:
+                action()
+            except ValueError as error:
+                return str(error), buffer.getvalue()
+        return None, buffer.getvalue()
+
+    def test_continuation_tree_missing_post_source_names_is_reported_by_name_and_mutates_nothing(self):
+        # Run 44633550604: the source-phase restore ran before the post-source jobs had re-created the llvm, rust,
+        # runtime and other namespaces, so the sealed sidecar named files the fresh tree did not have yet.
+        extra = self.root / 'rust/lib.rlib'
+        extra.write_bytes(b'rust data')
+        pin = self.record()
+        self.fresh_times()
+        extra.unlink()
+        self.files[1].unlink()
+        with patch.object(subject, '_set_mtime', side_effect=AssertionError('mutation before the tree was complete')):
+            code, err = self.stderr_of(lambda: self.apply(pin))
+        self.assertEqual(code, 'CHECKPOINT_INPUTS_NAME_SET')
+        self.assertIn('first mismatch at entry', err)
+        self.assertIn('0 names only in the tree, 2 only in the sidecar', err)
+        self.assertIn('only in sidecar: file rust/lib.rlib', err)
+        self.assertIn('only in sidecar: file llvm/tool.exe', err)
+
+    def test_extra_tree_name_is_reported_as_only_in_the_tree(self):
+        pin = self.record()
+        self.fresh_times()
+        (self.root / 'siso/extra.bin').write_bytes(b'x')
+        code, err = self.stderr_of(lambda: self.apply(pin))
+        self.assertEqual(code, 'CHECKPOINT_INPUTS_NAME_SET')
+        self.assertIn('1 names only in the tree, 0 only in the sidecar', err)
+        self.assertIn('only in tree: file siso/extra.bin', err)
+
+    def test_restore_verify_reports_every_changed_file_before_denying_and_never_retimes(self):
+        pin = self.record()
+        self.fresh_times()
+        self.files[0].write_bytes(b'regenerated A\n')
+        self.files[1].write_bytes(b'regenerated B\n')
+        with patch.object(subject, '_set_mtime', side_effect=AssertionError('mutation before full validation')):
+            code, err = self.stderr_of(lambda: self.apply(pin))
+        self.assertEqual(code, 'CHECKPOINT_INPUTS_BYTES')
+        self.assertIn('2 files differ from the sidecar', err)
+        self.assertIn('changed: llvm/tool.exe', err)
+        self.assertIn('changed: source-checkout/src/input.cc', err)
+
+    def test_acquisition_logs_are_name_checked_but_not_byte_checked_or_retimed_on_restore(self):
+        logs = self.root / 'source-checkout/acquisition-logs'
+        logs.mkdir()
+        log = logs / 'chromium-4.stderr.log'
+        log.write_bytes(b'Resolving deltas: 100% (104140/104140)\n')
+        os.utime(log, ns=(self.ns, self.ns))
+        pin = self.record()
+        self.fresh_times()
+        # A new run writes different progress text with a different size and a newer time.
+        log.write_bytes(b'Resolving deltas: 100% (98205/98205), done.\n')
+        stamp = log.stat().st_mtime_ns
+        result = self.apply(pin)
+        self.assertEqual(result['files'], 3)  # retimed files; the exempt log is neither hashed nor retimed
+        self.assertEqual(log.read_bytes(), b'Resolving deltas: 100% (98205/98205), done.\n')
+        self.assertEqual(log.stat().st_mtime_ns, stamp)
+        self.assertTrue(all(file.stat().st_mtime_ns == self.ns for file in self.files))
+        # The exemption is names only: a missing or extra log is still a NAME_SET denial,
+        # and nothing outside the log directory gets the exemption.
+        (logs / 'chromium-5.stderr.log').write_bytes(b'new step')
+        with self.assertRaisesRegex(ValueError, 'NAME_SET'):
+            self.apply(pin)
+        (logs / 'chromium-5.stderr.log').unlink()
+        self.files[0].write_bytes(b'regenerated A\n')
+        with self.assertRaisesRegex(ValueError, 'BYTES'):
+            self.apply(pin)
+        # The seal-side verification never uses the exemption.
+        header = subject._identity(self.identity)
+        guard = subject._Guard(self.root, header, self.clock, self.fence)
+        self.files[0].write_bytes(b'fixed source\n')
+        os.utime(self.files[0], ns=(self.ns, self.ns))
+        with self.assertRaisesRegex(ValueError, 'BYTES'):
+            subject._verify(guard, header, pin)
+
+    def test_apply_reads_every_file_once_and_proves_the_rest_by_metadata(self):
+        pin = self.record()
+        self.fresh_times()
+        real = subject._hash
+        calls = []
+        def counting(path, guard, expected=None, timestamp=False, content=True):
+            calls.append((path.name, content, timestamp))
+            return real(path, guard, expected, timestamp, content)
+        with patch.object(subject, '_hash', counting):
+            result = self.apply(pin)
+        self.assertEqual(result['files'], 3)
+        self.assertEqual(sorted(name for name, content, _ in calls if content), ['empty', 'input.cc', 'tool.exe'])
+        self.assertEqual(sorted(name for name, content, stamp in calls if not content and stamp), ['empty', 'input.cc', 'tool.exe'])
+        self.assertEqual(len(calls), 6)
+        self.assertTrue(all(file.stat().st_mtime_ns == self.ns for file in self.files))
+
+    def test_metadata_mutation_pass_still_denies_a_file_changed_after_the_verify(self):
+        pin = self.record()
+        self.fresh_times()
+        verify = subject._verify
+        def raced(*args, **kwargs):
+            result = verify(*args, **kwargs)
+            if kwargs.get('label') == 'verify-restore':
+                # Sorted namespace llvm is the first file the mutation pass reaches.
+                self.files[1].write_bytes(b'late write')
+            return result
+        with patch.object(subject, '_verify', side_effect=raced), patch.object(subject, '_set_mtime', side_effect=AssertionError('mutated a changed file')):
+            with self.assertRaisesRegex(ValueError, 'CHANGED'):
+                self.apply(pin)
+
 
 class SealProgressTests(CheckpointInputTests):
     def setUp(self):

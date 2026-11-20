@@ -170,6 +170,10 @@ class EngineTests(unittest.TestCase):
 
     def model(self, root, role='probe-clang'):
         value, _ = packet(role)
+        # A first run has no checkpointRestore packet: the engine's restored-sidecar step reads this pinned context.
+        context_raw = engine.canonical(dict(kind='windows-arm-full-sdk-context', checkpointRestore=None)) + bytes([10])
+        (root / 'context.json').write_bytes(context_raw)
+        value['sourceContextSha256'] = engine.digest(context_raw)
         class Clock:
             def remaining(self):
                 return 899.875
@@ -253,6 +257,59 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(sorted(row['path'] for row in report['violations']),
                              ['llvm/tool.exe', 'source-checkout/src/alias.cc'])
             self.assertIn('source-checkout/src/alias.cc [nlink>1] nlink=2', err.getvalue())
+
+    def test_cef_engine_applies_the_restored_sidecar_after_the_audit_and_before_the_compile_job(self):
+        import io
+        from contextlib import redirect_stderr
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.audit_tree(root)
+            state = self.model(root, 'cef-engine')
+            order = []
+            result = dict(success=True, cleanupVerified=True, activeAtEnd=0, rootExit=0, rootReaped=True, logReadersStopped=True)
+            def apply(path, sha, clock, fence):
+                order.append(('apply', Path(path), sha, (root / 'full-sdk-engine-cef-engine-link-audit.json').is_file()))
+                fence()
+                return dict(files=7)
+            def run(*args, **kwargs):
+                order.append('job')
+                return result
+            codec = types.SimpleNamespace(apply_restored_from_context=apply)
+            err = io.StringIO()
+            with patch.dict(sys.modules, job=types.SimpleNamespace(run_job=run), compiled_checkpoint=codec), redirect_stderr(err):
+                self.assertIs(engine._run(state), result)
+            # Audit record exists first, then the sidecar is applied against the pinned source context, then the compile.
+            self.assertEqual(order, [('apply', root, state['context']['sourceContextSha256'], True), 'job'])
+            self.assertIn('restored input sidecar applied: 7 files', err.getvalue())
+            engine._ACTIVE.clear()
+            engine._BIRTHS.clear()
+            (root / 'full-sdk-engine-cef-engine-link-audit.json').unlink()
+            (root / 'full-sdk-engine-cef-engine-launch.json').unlink()
+            state = self.model(root, 'cef-engine')
+            order.clear()
+            def refuse(*_args):
+                raise ValueError('CHECKPOINT_INPUTS_NAME_SET')
+            codec.apply_restored_from_context = refuse
+            with patch.dict(sys.modules, job=types.SimpleNamespace(run_job=run), compiled_checkpoint=codec):
+                with self.assertRaisesRegex(ValueError, 'NAME_SET'):
+                    engine._run(state)
+            self.assertEqual(order, [], 'the compile job must not start when the restored inputs do not match')
+
+    def test_first_run_engine_does_no_sidecar_work_and_other_roles_never_apply(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.audit_tree(root)
+            state = self.model(root, 'cef-engine')
+            result = dict(success=True, cleanupVerified=True, activeAtEnd=0, rootExit=0, rootReaped=True, logReadersStopped=True)
+            with patch.dict(sys.modules, job=types.SimpleNamespace(run_job=lambda *a, **k: result)):
+                self.assertIs(engine._run(state), result)  # real codec: context has no checkpointRestore
+            self.assertFalse((root / 'full-sdk-checkpoint-inputs.jsonl').exists())
+            engine._ACTIVE.clear()
+            engine._BIRTHS.clear()
+            state = self.model(root, 'probe-clang')
+            codec = types.SimpleNamespace(apply_restored_from_context=lambda *a: self.fail('only cef-engine applies the sidecar'))
+            with patch.dict(sys.modules, job=types.SimpleNamespace(run_job=lambda *a, **k: result), compiled_checkpoint=codec):
+                engine._run(state)
 
     def test_other_roles_do_not_run_the_early_link_audit(self):
         with tempfile.TemporaryDirectory() as directory:

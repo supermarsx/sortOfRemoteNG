@@ -405,6 +405,26 @@ def _early_link_audit(state):
 # END EARLY LINK AUDIT
 
 
+# BEGIN RESTORED INPUT SIDECAR
+def _apply_restored_inputs(state):
+    """After a checkpoint restore, verify the re-created input tree against the sealed sidecar and put the sealed
+    mtimes back, immediately before the compile so ninja resumes the restored out directory.
+
+    The sidecar covers the complete sealed tree (cef-gn output, materialized SDK/LLVM/Rust/runtime/GN/Siso
+    namespaces), which only exists once the source phase and its post-source jobs have finished. A first run,
+    which restored nothing, does no work here.
+    """
+    import compiled_checkpoint as codec
+    root = state['root']
+    result = codec.apply_restored_from_context(root, state['context']['sourceContextSha256'], state['clock'],
+                                               lambda: _state(root=root))
+    _state(root=root)
+    if result is not None:
+        print('restored input sidecar applied: %d files verified and re-timed' % result['files'], file=sys.stderr)
+    return result
+# END RESTORED INPUT SIDECAR
+
+
 def _run(state):
     import job
     role, root = state['context']['role'], state['root']
@@ -417,6 +437,7 @@ def _run(state):
     _state(root=root)
     if role == 'cef-engine':
         _early_link_audit(state)
+        _apply_restored_inputs(state)
     seconds = math.floor(min(CAPS[role], state['clock'].remaining()))
     need(seconds > 0, 'DEADLINE')
     state['assignedSeconds'] = seconds

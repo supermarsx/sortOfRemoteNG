@@ -1347,14 +1347,7 @@ def transport_upload(client, image, clock, fence):
                 artifactName=seal_name(str(current['id']), str(current['run_attempt'])))
 
 
-def restore_checkpoint(root, identity, source_context_sha256, ready_pin, clock, fence):
-    guard, identity, basic = guard_for(root, identity, clock, fence)
-    source, source_pin = _source(guard, identity)
-    need(source_pin['sha256'] == source_context_sha256, 'RESTORE_SOURCE_PIN')
-    need(not any((guard.root / path).exists() for path in ('full-sdk-engine-probe', 'jobs/probe-clang',
-             'full-sdk-engine-cef-engine-context.json', 'full-metadata-result.json', 'full-source-gn-result.json')), 'RESTORE_ORDER')
-    need(source.get('image') == identity['image'] and source.get('sourceId') == identity['sourceId'] and
-         producer_digest(source['sources']) == identity['producerSha256'], 'RESTORE_SOURCE')
+def _read_ready(guard, source, identity, ready_pin):
     download = REPO.parent.parent / '_temp' / ('sorng-windows-arm-checkpoint-' + source['runId'] + '-' + source['attempt'])
     inputs._directory(download.lstat())
     # The only external read root is this fixed dedicated transport handoff.
@@ -1365,6 +1358,18 @@ def restore_checkpoint(root, identity, source_context_sha256, ready_pin, clock, 
     ready = strict_json(raw)
     need(ready.get('kind') == 'windows-arm-full-sdk-checkpoint-download' and ready.get('currentRunId') == source['runId'] and
          ready.get('currentAttempt') == source['attempt'] and canonical(ready['identity']) == canonical(identity), 'READY_SCOPE')
+    return download, ready
+
+
+def restore_checkpoint(root, identity, source_context_sha256, ready_pin, clock, fence):
+    guard, identity, basic = guard_for(root, identity, clock, fence)
+    source, source_pin = _source(guard, identity)
+    need(source_pin['sha256'] == source_context_sha256, 'RESTORE_SOURCE_PIN')
+    need(not any((guard.root / path).exists() for path in ('full-sdk-engine-probe', 'jobs/probe-clang',
+             'full-sdk-engine-cef-engine-context.json', 'full-metadata-result.json', 'full-source-gn-result.json')), 'RESTORE_ORDER')
+    need(source.get('image') == identity['image'] and source.get('sourceId') == identity['sourceId'] and
+         producer_digest(source['sources']) == identity['producerSha256'], 'RESTORE_SOURCE')
+    download, ready = _read_ready(guard, source, identity, ready_pin)
     # Rehold every downloaded asset into a fixed root-owned import directory;
     # no archive extraction is allowed to use caller-supplied paths.
     imported = guard.root / 'full-sdk-checkpoint-import'
@@ -1413,11 +1418,61 @@ def restore_checkpoint(root, identity, source_context_sha256, ready_pin, clock, 
             original.rename(original.with_name('Release_GN_arm64.fresh-gn'))
         restored.rename(original)
         guard.check()
-    with stage('sidecar-apply'):
-        _copy(guard, 'full-sdk-checkpoint-import/inputs.jsonl', inputs.SIDECAR, record['inputSidecar'], inputs.MAX_SIDECAR)
-        inputs.apply_inputs(root, basic, record['inputSidecar'], clock, fence)
+    # The input sidecar describes the COMPLETE sealed tree: the sealing run recorded it after cef-gn, the post-source
+    # materialize/sdk/llvm/rust/runtime/gn/siso jobs and the compile. None of those exist yet while this source-phase
+    # restore runs (run 44633550604 died here with SIDECAR_NAME_SET on the first missing namespace), so the sidecar is
+    # applied by apply_restored_inputs, the cef-engine launcher's first step, once the tree is complete again.
     return dict(dataOnly=True, restored=True, graphPin=identity['graphPin'], priorGraph=graph, sourceQualified=False,
                 checkpointAdmission=False, executionAdmitted=False)
+
+
+def apply_restored_inputs(root, identity, source_context_sha256, ready_pin, clock, fence):
+    """Verify the complete re-created input tree against the restored sidecar, then restore its mtimes.
+
+    Runs after the source phase and the post-source jobs, immediately before the native compile, so unchanged
+    inputs keep their sealed mtimes and ninja resumes instead of rebuilding. The sidecar copy is removed again
+    because the next seal creates its own at the same fixed root path.
+    """
+    guard, identity, basic = guard_for(root, identity, clock, fence)
+    source, source_pin = _source(guard, identity)
+    need(source_pin['sha256'] == source_context_sha256, 'RESTORE_SOURCE_PIN')
+    need(source.get('image') == identity['image'] and source.get('sourceId') == identity['sourceId'] and
+         producer_digest(source['sources']) == identity['producerSha256'], 'RESTORE_SOURCE')
+    _, ready = _read_ready(guard, source, identity, ready_pin)
+    _, record_raw = held(guard, 'full-sdk-checkpoint-import/checkpoint.json', MAX_RECORD, ready['record'])
+    record = strict_json(record_raw)
+    validate_record(record, identity)
+    with stage('sidecar-apply'):
+        _copy(guard, 'full-sdk-checkpoint-import/inputs.jsonl', inputs.SIDECAR, record['inputSidecar'], inputs.MAX_SIDECAR)
+        applied = inputs.apply_inputs(root, basic, record['inputSidecar'], clock, fence)
+        sidecar = guard.root / inputs.SIDECAR
+        os.unlink(sidecar)
+        need(not os.path.lexists(sidecar), 'TREE_PATH')
+    return dict(dataOnly=True, sidecarApplied=True, files=applied['files'], sourceQualified=False,
+                checkpointAdmission=False, executionAdmitted=False)
+
+
+def _restore_request(source):
+    restore = source.get('checkpointRestore')
+    need(type(restore) is dict and set(restore) == {'runId', 'attempt', 'readyPin'} and
+         re.fullmatch('[1-9][0-9]{0,19}', restore['runId']) and re.fullmatch('[1-9][0-9]{0,8}', restore['attempt']) and
+         re.fullmatch('[1-9][0-9]{0,19}', source['runId']) and re.fullmatch('[1-9][0-9]{0,8}', source['attempt']), 'RESTORE_PACKET')
+    ready_file = REPO.parent.parent / '_temp' / ('sorng-windows-arm-checkpoint-' + source['runId'] + '-' + source['attempt']) / 'ready.json'
+    ready = strict_json(bootstrap_read(ready_file, MAX_RECORD, pin(restore['readyPin'])))
+    need(ready.get('priorRunId') == restore['runId'] and ready.get('priorAttempt') == restore['attempt'], 'RESTORE_PRIOR_RUN')
+    return restore, ready
+
+
+def apply_restored_from_context(root, source_context_sha256, clock, fence):
+    """Engine entry: apply the restored sidecar when this run restored a checkpoint, else do nothing."""
+    root = Path(root)
+    raw = bootstrap_read(root / 'context.json', 131072)
+    need(len(raw) <= 131072 and sha(raw) == source_context_sha256, 'SOURCE_CONTEXT_PIN')
+    source = strict_json(raw, 131072)
+    if source.get('checkpointRestore') is None:
+        return None
+    restore, ready = _restore_request(source)
+    return apply_restored_inputs(root, ready['identity'], source_context_sha256, restore['readyPin'], clock, fence)
 
 
 class _TransportClock:
@@ -1505,13 +1560,7 @@ def main(argv=None):
             guard = guard_for(root, identity, Original(), lambda: None)[0]
             result_pin = write(guard, 'full-sdk-checkpoint-seal-result.json', report)
             return dict(**report, result=result_pin)
-        restore = source.get('checkpointRestore')
-        need(type(restore) is dict and set(restore) == {'runId', 'attempt', 'readyPin'} and
-             re.fullmatch('[1-9][0-9]{0,19}', restore['runId']) and re.fullmatch('[1-9][0-9]{0,8}', restore['attempt']) and
-             re.fullmatch('[1-9][0-9]{0,19}', source['runId']) and re.fullmatch('[1-9][0-9]{0,8}', source['attempt']), 'RESTORE_PACKET')
-        ready_file = REPO.parent.parent / '_temp' / ('sorng-windows-arm-checkpoint-' + source['runId'] + '-' + source['attempt']) / 'ready.json'
-        ready = strict_json(bootstrap_read(ready_file, MAX_RECORD, pin(restore['readyPin'])))
-        need(ready.get('priorRunId') == restore['runId'] and ready.get('priorAttempt') == restore['attempt'], 'RESTORE_PRIOR_RUN')
+        restore, ready = _restore_request(source)
         # The source Node's genuine bootstrap authority owns process creation;
         # this token-free codec performs only bounded file/data work.
         result = restore_checkpoint(argv[1], ready['identity'], argv[2], restore['readyPin'], Original(), lambda: None)

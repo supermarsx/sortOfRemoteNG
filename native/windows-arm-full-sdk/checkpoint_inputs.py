@@ -541,7 +541,9 @@ def _walk(guard):
 
 
 @contextmanager
-def _hash(path, guard, expected=None, timestamp=False):
+def _hash(path, guard, expected=None, timestamp=False, content=True):
+    # content=False opens the same pinned handle and re-proves it by metadata only (apply's mutation pass; the
+    # bytes were hashed moments earlier by the complete verify, and every identity/size/mtime field must match).
     parent = path.parent
     while parent != guard.root:
         relative = parent.relative_to(guard.root).as_posix()
@@ -554,7 +556,7 @@ def _hash(path, guard, expected=None, timestamp=False):
         fd_before = _signature(os.fstat(stream.fileno()))
         need(_shared(fd_before) == _shared(before), 'IDENTITY')
         digest, size, first = hashlib.sha256(), 0, True
-        while True:
+        while content:
             # _file just ran guard.check() with only the fstat above in between; later reads re-check each time.
             if not first:
                 guard.check()
@@ -565,9 +567,11 @@ def _hash(path, guard, expected=None, timestamp=False):
             size += len(chunk)
             need(size <= MAX_FILE and size <= before[3], 'GROWTH')
             digest.update(chunk)
+        if not content:
+            size = before[3]
         need(size == before[3] and _signature(os.fstat(stream.fileno())) == fd_before and
              _signature(path.lstat()) == before, 'CHANGED')
-        yield stream, before, digest.hexdigest()
+        yield stream, before, digest.hexdigest() if content else None
         # _file runs guard.check() again right after closing the stream; nothing happens in between.
 
 
@@ -632,13 +636,64 @@ def record_inputs(root, identity, clock, fence):
     return dict(dataOnly=True, sidecar=pin, entries=count, files=files, rawBytes=raw_bytes)
 
 
-def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify', total_entries=None, content=True):
+NAME_SET_LISTING = 25
+
+
+def _name_set_report(read, walker, fresh, row, count):
+    """Name the namespace difference on stderr before NAME_SET denies (diagnostics only, bounded, never raises).
+
+    The tree walk and the sidecar rows run in lockstep, so everything before this entry matched; the rest of
+    both sides is drained to list exactly which names exist only in the tree or only in the sidecar.
+    """
+    try:
+        tree = [(fresh['kind'], fresh['path'])]
+        side = [(row.get('kind'), row.get('path'))] if type(row) is dict and 'path' in row else []
+        for item, _ in walker:
+            tree.append((item['kind'], item['path']))
+        while True:
+            more = read()
+            if type(more) is not dict or 'path' not in more:
+                break
+            side.append((more.get('kind'), more.get('path')))
+        only_tree, only_side = sorted(set(tree) - set(side)), sorted(set(side) - set(tree), key=str)
+        print('checkpoint inputs NAME_SET: first mismatch at entry %d: tree=%r sidecar=%r' %
+              (count, tree[0], side[0] if side else None), file=sys.stderr)
+        print('checkpoint inputs NAME_SET: %d names only in the tree, %d only in the sidecar' %
+              (len(only_tree), len(only_side)), file=sys.stderr)
+        for label, names in (('only in tree', only_tree), ('only in sidecar', only_side)):
+            for item in names[:NAME_SET_LISTING]:
+                print('checkpoint inputs NAME_SET: %s: %s %s' % (label, item[0], str(item[1])[:300]), file=sys.stderr)
+            if len(names) > NAME_SET_LISTING:
+                print('checkpoint inputs NAME_SET: %s: ... %d more' % (label, len(names) - NAME_SET_LISTING), file=sys.stderr)
+    except BaseException:
+        pass
+
+
+# Written by the acquisition step and regenerated with different bytes on every run (git progress counters, pids;
+# run 44552110281 vs 44633550604 differ in size). Diagnostic logs, never a compile input: a restore compares only
+# their names and does not retime them. Seals still record them and every same-run seal pass still verifies them.
+VOLATILE_PREFIX = 'source-checkout/acquisition-logs/'
+
+
+def _changed_report(changed):
+    try:
+        print('checkpoint inputs BYTES: %d files differ from the sidecar' % len(changed), file=sys.stderr)
+        for name in changed[:NAME_SET_LISTING]:
+            print('checkpoint inputs BYTES: changed: %s' % name[:300], file=sys.stderr)
+        if len(changed) > NAME_SET_LISTING:
+            print('checkpoint inputs BYTES: ... %d more' % (len(changed) - NAME_SET_LISTING), file=sys.stderr)
+    except BaseException:
+        pass
+
+
+def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify', total_entries=None, content=True, restore=False):
     # collect=False (seal-only passes) drops the per-file signature list that only apply_inputs consumes.
     # content=False (the final seal pass) re-walks and compares names, sizes and mtimes without re-reading file bytes.
+    # restore=True (apply_inputs only) exempts VOLATILE_PREFIX bytes and reports every changed file before denying.
     _pin(pin)
     PROGRESS.stage(label, total_entries=total_entries)
     sidecar = guard.root / SIDECAR
-    signatures, count, files, raw_bytes, total = [], 0, 0, 0, 0
+    signatures, count, files, raw_bytes, total, changed = [], 0, 0, 0, 0, []
     digest = hashlib.sha256()
     with _file(sidecar, guard) as stream:
         before = _signature(os.fstat(stream.fileno()))
@@ -654,17 +709,27 @@ def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify
             digest.update(raw)
             return _parse(raw)
         need(_line(read()) == _line(header), 'HEADER')
-        for fresh, signature in _walk(guard):
+        walker = _walk(guard)
+        for fresh, signature in walker:
             row = read()
+            if not (type(row) is dict and row.get('kind') == fresh['kind'] and row.get('path') == fresh['path']):
+                _name_set_report(read, walker, fresh, row, count)
             need(type(row) is dict and row.get('kind') == fresh['kind'] and row.get('path') == fresh['path'], 'NAME_SET')
             count += 1
             if fresh['kind'] == 'file':
                 need(set(row) == {'kind', 'path', 'bytes', 'sha256', 'mtimeNs'} and type(row['bytes']) is int and
                      type(row['mtimeNs']) is int and 0 <= row['mtimeNs'] <= 253402300799999999999 and
                      (os.name != 'nt' or row['mtimeNs'] % 100 == 0), 'ROW')
-                if content:
+                exempt = restore and fresh['path'].startswith(VOLATILE_PREFIX)
+                if exempt:
+                    pass
+                elif content:
                     with _hash(guard.root / fresh['path'], guard, signature) as (_, before_file, sha):
-                        need(row['bytes'] == before_file[3] and row['sha256'] == sha, 'BYTES')
+                        same = row['bytes'] == before_file[3] and row['sha256'] == sha
+                        if restore and not same:
+                            changed.append(fresh['path'])
+                        else:
+                            need(same, 'BYTES')
                         if require_mtime:
                             need(before_file[4] == row['mtimeNs'], 'MTIME')
                 else:
@@ -674,11 +739,14 @@ def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify
                 files += 1
                 raw_bytes += row['bytes']
                 need(raw_bytes <= MAX_RAW, 'RAW_BOUND')
-                if collect:
+                if collect and not exempt:
                     signatures.append((fresh['path'], signature, row['mtimeNs'], sha))
             else:
                 need(row == fresh, 'ROW')
             PROGRESS.tick(count, files, raw_bytes)
+        if changed:
+            _changed_report(changed)
+        need(not changed, 'BYTES')
         need(_line(read()) == _line(dict(kind='end', entries=count, files=files, rawBytes=raw_bytes)), 'END')
         need(stream.read(1) == b'' and total == pin['bytes'] and digest.hexdigest() == pin['sha256'] and
              _signature(os.fstat(stream.fileno())) == before and _signature(sidecar.lstat()) == path_before, 'SIDECAR_CHANGED')
@@ -688,18 +756,21 @@ def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify
 def apply_inputs(root, identity, sidecar_pin, clock, fence):
     header = _identity(identity)
     guard = _Guard(root, header, clock, fence)
-    # Complete namespace/byte/identity validation precedes the first mutation.
-    signatures = _verify(guard, header, sidecar_pin)
+    # Complete namespace/byte/identity validation precedes the first mutation. This is the only pass that reads
+    # file bytes: re-hashing the 29 GB tree for the timestamp pass and again for the final check cost ~53 minutes
+    # each (the seal's record walk took 3156 s), so both later passes prove the tree by metadata instead.
+    signatures = _verify(guard, header, sidecar_pin, label='verify-restore', restore=True)
     for name, signature, nanoseconds, sha in signatures:
         path = guard.root / name
-        with _hash(path, guard, signature, timestamp=True) as (stream, before, actual):
-            need(actual == sha, 'BYTES')
+        # The pass-1 signature pins size, mtime, file id and birth; a replaced or rewritten file fails CHANGED.
+        with _hash(path, guard, signature, timestamp=True, content=False) as (stream, before, _):
             guard.check()
             _set_mtime(stream, nanoseconds)
             after = _signature(os.fstat(stream.fileno()))
             need(_shared(after)[:4] == _shared(before)[:4] and _shared(after)[5:] == _shared(before)[5:] and after[4] == nanoseconds and
                  _shared(_signature(path.lstat())) == _shared(after), 'MTIME_CHANGED')
     # A changed sidecar/tree or uncertain close cannot publish successful DATA.
-    final = _verify(guard, header, sidecar_pin, require_mtime=True)
-    return dict(dataOnly=True, timestampsApplied=True, files=len(final), sidecar=dict(sidecar_pin),
+    _verify(guard, header, sidecar_pin, require_mtime=True, collect=False, content=False, label='verify-after-apply',
+            total_entries=len(signatures), restore=True)
+    return dict(dataOnly=True, timestampsApplied=True, files=len(signatures), sidecar=dict(sidecar_pin),
                 sourceQualified=False, checkpointAdmission=False, executionAdmitted=False)
