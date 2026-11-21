@@ -1016,7 +1016,7 @@ function parseRecord(record) {
   need(record.raw.length > 0, "SOURCE_RECORD_EMPTY");
   return JSON.parse(record.raw.toString("utf8"));
 }
-function inspectJob(record, large) {
+function inspectJob(record, large, cpuRate = 2500) {
   const value = parseRecord(record),
     p = value.policyReadback;
   need(
@@ -1049,7 +1049,7 @@ function inspectJob(record, large) {
       p.activeProcessLimit === (large ? 64 : 8) &&
       p.jobMemoryBytes === String(large ? 8589934592 : 536870912) &&
       p.cpuFlags === 5 &&
-      p.cpuRate === 2500 &&
+      p.cpuRate === cpuRate &&
       p.inheritedHandles === 3 &&
       p.affinityChanged === false,
     "SOURCE_JOB_PROOF",
@@ -5249,7 +5249,8 @@ async function verifyEnginePhase(token, phase, packetPin, packet) {
     state.nativeSliceFact = fact; // Only this actual creator/readback path writes it.
     return fact;
   }
-  inspectJob(jobRecord, true);
+  // Engine roles run at 75 % CPU (cpuRate 7500); source stages stay at 25 %.
+  inspectJob(jobRecord, true, 7500);
   if (role === "cef-engine")
     need(closed.completion === "success", "ENGINE_CEF_COMPLETION");
   const resultRecord = await read(`full-sdk-engine-${role}-result.json`),

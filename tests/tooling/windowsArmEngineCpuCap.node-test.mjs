@@ -47,7 +47,15 @@ test("engine Job CPU cap is 7500 end to end and the source stages keep 2500", as
   // Source and data policies are untouched.
   for (const leaf of ["producer.py", "full_sdk_source.py"])
     assert.match(await read(leaf), /'cpuRate': 2500\}/);
-  assert.match(await read("full_sdk_control.mjs"), /p\.cpuRate === 2500 &&/);
+  // The controller proves each Job receipt against its role rate: source stages
+  // 2500 (the default), the engine roles 7500.
+  const control = await read("full_sdk_control.mjs");
+  assert.match(
+    control,
+    /function inspectJob\(record, large, cpuRate = 2500\) \{/,
+  );
+  assert.match(control, /p\.cpuRate === cpuRate &&/);
+  assert.match(control, /inspectJob\(jobRecord, true, 7500\);/);
 });
 
 test("checkpoint seal reserve keeps the seal inside the original lease with margin", async () => {

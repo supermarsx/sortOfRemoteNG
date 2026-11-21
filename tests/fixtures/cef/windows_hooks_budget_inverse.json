@@ -72,9 +72,21 @@
     "beforeSha256": "7d54f695876d59ce0fd8922a8463a6426b0209a1aad2b32c4dae480b2b043bc0"
   },
   "native/windows-arm-full-sdk/full_sdk_control.mjs": {
-    "bytes": 198579,
-    "sha256": "d5247a6faa0fc3158e32c36b2ac16ea30fd77c3b5a8f461d52b595a33851b37b",
+    "bytes": 198682,
+    "sha256": "c7d4b9ce58c5cad19c50dd36b237d7541d032ec69a31175c7ff19d7c52f863d5",
     "pairs": [
+      {
+        "current": "function inspectJob(record, large, cpuRate = 2500) {",
+        "previous": "function inspectJob(record, large) {"
+      },
+      {
+        "current": "p.cpuRate === cpuRate &&",
+        "previous": "p.cpuRate === 2500 &&"
+      },
+      {
+        "current": "  // Engine roles run at 75 % CPU (cpuRate 7500); source stages stay at 25 %.\n  inspectJob(jobRecord, true, 7500);\n",
+        "previous": "  inspectJob(jobRecord, true);\n"
+      },
       {
         "current": "const leases = new WeakMap();\nconst controls = new WeakMap();\nconst sources = Object.freeze({\n  \"20261116.315.1\": Object.freeze({\n    id: \"e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d\",\n    profile: \"218e300d66ff17e08a894547fb9cdb0c9ab4c751aabef6687c93ff37fbb67b1c\",\n  }),\n  \"20261021.278.1\": Object.freeze({\n    id: \"fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa\",\n    profile: \"67a7467762339db88d90f3ab4fbc3f030a81f3fd374deb9a62d94f9dc20c398b\",\n  }),\n});\nfunction need(value, code) {\n",
         "previous": "const leases = new WeakMap();\nconst controls = new WeakMap();\nconst sources = Object.freeze({\n  \"20261103.298.1\": Object.freeze({\n    id: \"e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90\",\n    profile: \"5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd\",\n  }),\n  \"20261021.278.1\": Object.freeze({\n    id: \"fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa\",\n    profile: \"442dde898498335536d158a1c39ca61abec5564bd72437ea43cd5745df0de3a6\",\n  }),\n});\nfunction need(value, code) {\n"
@@ -309,8 +321,12 @@
   },
   "native/windows-arm-full-sdk/sdk-origin-review.json": {
     "bytes": 27528,
-    "sha256": "7106f1125c6e9a46f7571946753012545e755ab89d5670d9c40b3a646b982904",
+    "sha256": "19d1c35cd44501c46cc5c486008bfa2dd8e6869165ff8a5ec61870006231612b",
     "pairs": [
+      {
+        "current": "{\"bytes\":198682,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"c7d4b9ce58c5cad19c50dd36b237d7541d032ec69a31175c7ff19d7c52f863d5\"}",
+        "previous": "{\"bytes\":198579,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"d5247a6faa0fc3158e32c36b2ac16ea30fd77c3b5a8f461d52b595a33851b37b\"}"
+      },
       {
         "current": "\"20261116.315.1\":{\"sourceLockIdentity\":\"e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d\",\"sourceProfileSha256\":\"218e300d66ff17e08a894547fb9cdb0c9ab4c751aabef6687c93ff37fbb67b1c\"",
         "previous": "\"20261103.298.1\":{\"sourceLockIdentity\":\"e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90\",\"sourceProfileSha256\":\"5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd\""
