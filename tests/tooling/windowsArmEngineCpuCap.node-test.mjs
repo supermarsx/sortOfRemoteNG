@@ -65,12 +65,12 @@ test("checkpoint seal reserve keeps the seal inside the original lease with marg
   );
   assert.ok(match);
   const reserveMs = Number(match[1]);
-  assert.equal(reserveMs, 4500000);
-  // Measured seal: about 73 min serial on the 29 GB tree, about 50 min with the
-  // parallel content hashing (1.4-1.5x) and more with three cores; the checkpoint
-  // upload is included. Keep at least 15 min of margin over the slower estimate.
-  const sealMinutes = 50;
-  assert.ok(reserveMs / 60000 - sealMinutes >= 15);
+  assert.equal(reserveMs, 4800000);
+  // Measured seal (run 44853666176): 4146 s of Job time, 4429 s from the compile
+  // end to the seal finishing; with a 75 min reserve it ended 79 s past the lease
+  // deadline. Keep at least 3 min of margin over that.
+  const sealFromCompileEndMinutes = 74;
+  assert.ok(reserveMs / 60000 - 2.5 - sealFromCompileEndMinutes >= 3);
   // The controller still requires the compile end to respect the older bound.
   assert.ok(reserveMs >= 3600000);
   // A fresh run reaches the compile after about 140 min (73 min acquisition +

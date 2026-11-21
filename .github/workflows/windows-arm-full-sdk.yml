@@ -62,6 +62,16 @@ jobs:
           node-version-file: ".node-version"
           architecture: x64
           cache: ""
+      - name: Enable Win32 long paths for the native compile
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # The Release_GN_arm64 checkout root is 144 characters, so third_party/dawn directx-shader-compiler
+          # tblgen outputs pass 260. The fixed checkout path cannot be shortened; processes started after this
+          # step honor long paths (their manifests are longPathAware).
+          $fsKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem'
+          Set-ItemProperty -Path $fsKey -Name LongPathsEnabled -Type DWord -Value 1
+          if ((Get-ItemPropertyValue -Path $fsKey -Name LongPathsEnabled) -ne 1) { throw 'FULL_SDK_LONG_PATHS' }
       - name: Start detached off-box runner telemetry sampler
         shell: pwsh
         env:

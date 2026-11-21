@@ -52,11 +52,15 @@ const hooksSpecs = JSON.parse(
 // Newest layer: the full source hooks/GN stage cap 3600 -> 5400 s. Only an exact
 // whole current file is inverted; every other state proceeds to the older layers.
 export function withoutHooksBudget(text, file) {
+  // The accounting-inverse tests address the workflow by its short name.
+  if (file === "workflow") file = ".github/workflows/windows-arm-full-sdk.yml";
   const spec = hooksSpecs[file];
   if (!spec) return text;
-  // Only ordinary Git text witnesses (tests/) may expand to CRLF on Windows.
+  // Only ordinary Git text witnesses (tests/) and the LF-indexed workflow may expand to CRLF on Windows.
   const normal =
-    file.startsWith("tests/") || file.startsWith("scripts/")
+    file.startsWith("tests/") ||
+    file.startsWith("scripts/") ||
+    file.endsWith(".yml")
       ? text.replaceAll("\r\n", "\n")
       : text;
   if (sha(normal) !== spec.sha256) return text;
