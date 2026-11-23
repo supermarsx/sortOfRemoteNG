@@ -300,6 +300,17 @@ function computeSessionStyles(
   return styles;
 }
 
+/** Hosted pages draw in another window; nothing of them shows here. */
+const HOSTED_STYLE: SessionStyle = {
+  position: "absolute",
+  left: "0",
+  top: "0",
+  width: "0",
+  height: "0",
+  visibility: "hidden",
+  zIndex: 0,
+};
+
 /* ── Main Component ──────────────────────────────────── */
 
 interface TabLayoutManagerProps {
@@ -311,6 +322,10 @@ interface TabLayoutManagerProps {
   onSessionClose: (sessionId: string) => void;
   onSessionDetach: (sessionId: string) => void;
   renderSession: (session: ConnectionSession) => React.ReactNode;
+  /** Sessions detached from this window whose live native page is displayed in
+   * their own window. They stay mounted (hidden here, never a tab or tile) so
+   * the page keeps its owner and is not reloaded. */
+  hostedSessions?: ConnectionSession[];
   middleClickCloseTab?: boolean;
   maxMountedSshViewers?: number;
 }
@@ -324,6 +339,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
   onSessionClose,
   onSessionDetach,
   renderSession,
+  hostedSessions,
   middleClickCloseTab = true,
   maxMountedSshViewers,
 }) => {
@@ -334,6 +350,17 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
     [rawSessions],
   );
   const layout = React.useMemo(() => dedupeTabLayout(rawLayout), [rawLayout]);
+  const hostedOnly = React.useMemo(
+    () =>
+      uniqueSessionsById(hostedSessions ?? []).filter(
+        (session) => !sessions.some((visible) => visible.id === session.id),
+      ),
+    [hostedSessions, sessions],
+  );
+  const hostedIds = React.useMemo(
+    () => new Set(hostedOnly.map((session) => session.id)),
+    [hostedOnly],
+  );
   const mgr = useTabLayoutManager(
     sessions,
     activeSessionId,
@@ -408,16 +435,19 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
         the native actor remains alive and replays into a fresh viewer on focus.
       */}
       <div ref={mgr.containerRef} className="flex-1 overflow-hidden relative">
-        {sessions.map((session) => {
-          const style = sessionStyles.get(session.id);
+        {/* One list so a session keeps its React identity when it becomes hosted. */}
+        {[...sessions, ...hostedOnly].map((session) => {
+          const hosted = hostedIds.has(session.id);
+          const style = hosted ? HOSTED_STYLE : sessionStyles.get(session.id);
           if (!style) return null;
-          const isActive = session.id === activeSessionId;
+          const isActive = !hosted && session.id === activeSessionId;
           const slotIndex = layout.sessions.findIndex(
             (s) => s.sessionId === session.id,
           );
           const isVisibleTile =
             mosaicMode && style.visibility === "visible" && slotIndex >= 0;
-          const isRendererActive = isVisibleTile || (isTabsMode && isActive);
+          const isRendererActive =
+            hosted || isVisibleTile || (isTabsMode && isActive);
           const isViewerMounted =
             !isSuspendableSshViewer(session) ||
             sshViewerMountBudget.mountedSessionIds.has(session.id);

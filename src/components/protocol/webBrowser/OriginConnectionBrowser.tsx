@@ -33,6 +33,8 @@ import {
   type OriginBrowserDataOutcome,
 } from "../../../services/originBrowserData";
 import { useSessionRenderActivity } from "../../../contexts/SessionRenderActivityContext";
+import { useNativeDisplayEntry } from "../../../utils/session/nativeBrowserDisplay";
+import { useNativeBrowserDisplayHost } from "../../../hooks/protocol/useNativeBrowserDisplayHost";
 import {
   useOriginBrowser,
   type OriginBrowserRestartReason,
@@ -250,7 +252,17 @@ export default function OriginConnectionBrowser({
       lifetime.current = false;
     };
   }, []);
-  const overlays = useOriginBrowserOverlays(isActive);
+  // A page displayed in a detached window keeps its owner here but is clipped
+  // by that window's overlays, not this window's.
+  const display = useNativeDisplayEntry(session.id);
+  const localOverlays = useOriginBrowserOverlays(isActive);
+  const overlays = display
+    ? {
+        blocked: display.slot?.blocked ?? false,
+        rectangles: display.slot?.rectangles ?? [],
+        refresh: localOverlays.refresh,
+      }
+    : localOverlays;
   const hide = overlays.refresh;
   // A pending security prompt for this tab hides its native view outright
   // instead of only clipping it, so nothing native can sit above the prompt.
@@ -1468,6 +1480,60 @@ export default function OriginConnectionBrowser({
     setFinishing(false);
   };
 
+  const displayState = useMemo(
+    () => ({
+      title: rootSnapshot?.title ?? "",
+      url: rootSnapshot?.currentUrl ?? rootSnapshot?.displayUrl ?? "",
+      loading: rootSnapshot?.loading === true,
+      canGoBack: rootSnapshot?.canGoBack === true,
+      canGoForward: rootSnapshot?.canGoForward === true,
+      phase,
+    }),
+    [rootSnapshot, phase],
+  );
+  useNativeBrowserDisplayHost({
+    sessionId: session.id,
+    identity: rootSnapshot?.identity ?? null,
+    attached: phase === "attached" && nativeAttached,
+    // Prompts and failures render only in this window's shell.
+    needsOwnerWindow:
+      awaitingConfirmation !== null ||
+      phase === "error" ||
+      phase === "unavailable",
+    state: displayState,
+    actions: {
+      navigate: (url) => browser.navigate(url),
+      back: () => browser.back(),
+      forward: () => browser.forward(),
+      reload: () => browser.reload(),
+      stop: () => browser.stop(),
+    },
+    restoreSession: () => {
+      // The page's owner never moved; only the tab returns to this window.
+      dispatchSession({
+        type: "UPDATE_SESSION",
+        payload: {
+          id: session.id,
+          layout: {
+            x: session.layout?.x ?? 0,
+            y: session.layout?.y ?? 0,
+            width: session.layout?.width ?? 100,
+            height: session.layout?.height ?? 100,
+            zIndex: session.layout?.zIndex ?? 1,
+            isDetached: false,
+            windowId: undefined,
+          },
+        },
+      });
+      try {
+        localStorage.removeItem(`detached-session-${session.id}`);
+      } catch {
+        // Display-only metadata; nothing depends on its removal.
+      }
+    },
+    notify: (message) => toast.warning(message),
+  });
+
   return (
     <div
       className="flex flex-col flex-1 min-h-0 min-w-0 bg-[var(--color-background)] text-[var(--color-text)]"
@@ -2078,6 +2144,16 @@ export default function OriginConnectionBrowser({
         preserveRenderingUnderOverlays={awaitingConfirmation === null}
         awaitingConfirmation={awaitingConfirmation}
         controller={{ ...browser, state: viewportState }}
+        remote={
+          display
+            ? {
+                bounds:
+                  display.phase === "claimed"
+                    ? (display.slot?.bounds ?? null)
+                    : null,
+              }
+            : null
+        }
         active={isActive}
         ownerAvailable={ownerAvailable}
         dialogOpen={overlayOpen}

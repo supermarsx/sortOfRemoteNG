@@ -44,6 +44,8 @@ pub(crate) fn build() -> InvokeHandler {
         crate::origin_browser_commands::origin_browser_navigate,
         crate::origin_browser_commands::origin_browser_control,
         crate::origin_browser_commands::origin_browser_close,
+        crate::origin_browser_commands::origin_browser_reparent,
+        crate::origin_browser_commands::origin_browser_reparent_capability,
         crate::origin_browser_commands::origin_browser_automation,
         crate::origin_browser_commands::origin_browser_downloads,
         crate::origin_browser_commands::origin_browser_download_control,

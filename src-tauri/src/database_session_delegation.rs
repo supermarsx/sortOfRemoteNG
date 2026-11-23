@@ -74,6 +74,15 @@ fn require_app_window<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), Strin
     Ok(())
 }
 
+/// Display-only consumers (native browser reparent) share this exact target
+/// proof: a different `detached-*` window whose URL is a trusted local app page.
+pub fn require_detached_app_window<R: Runtime>(
+    source: &WebviewWindow<R>,
+    target: &str,
+) -> Result<WebviewWindow<R>, String> {
+    require_target(source, target)
+}
+
 fn require_target<R: Runtime>(
     source: &WebviewWindow<R>,
     target: &str,

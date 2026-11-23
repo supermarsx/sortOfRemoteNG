@@ -111,6 +111,7 @@ import { AppToolbar } from "./components/app/AppToolbar";
 import { AppBottomBars } from "./components/app/AppBottomBars";
 import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
 import { useSessionDetach } from "./hooks/session/useSessionDetach";
+import { useNativeDisplayedSessionIds } from "./utils/session/nativeBrowserDisplay";
 import { useRuntimeConnectionLaunch } from "./hooks/session/useRuntimeConnectionLaunch";
 import { useUpdaterAutoCheck } from "./hooks/updater/useUpdaterAutoCheck";
 import { useStartupFailureAlerts } from "./hooks/app/useStartupFailureAlerts";
@@ -638,6 +639,17 @@ const AppContent: React.FC = () => {
         state.sessions.filter((session) => !session.layout?.isDetached),
       ),
     [state.sessions],
+  );
+
+  // Real-origin pages shown in a detached window: still owned and mounted here.
+  const displayedElsewhereIds = useNativeDisplayedSessionIds();
+  const displayedElsewhereSessions = useMemo(
+    () =>
+      state.sessions.filter(
+        (session) =>
+          session.layout?.isDetached && displayedElsewhereIds.has(session.id),
+      ),
+    [state.sessions, displayedElsewhereIds],
   );
 
   const { handleSessionDetach, handleReattachRdpSession } = useSessionDetach(
@@ -1221,10 +1233,7 @@ const AppContent: React.FC = () => {
       if (!connection) return;
       // A mounted SSH terminal reconnects in place (keeps the tab, buffer and
       // replay cursor), including from a dead/failed transport state.
-      if (
-        session.protocol === "ssh" &&
-        requestInPlaceSshReconnect(sessionId)
-      ) {
+      if (session.protocol === "ssh" && requestInPlaceSshReconnect(sessionId)) {
         return;
       }
       const closed = await handleSessionClose(sessionId);
@@ -2012,7 +2021,8 @@ const AppContent: React.FC = () => {
                 activeSessionId ? `session-tab-${activeSessionId}` : undefined
               }
             >
-              {visibleSessions.length > 0 ? (
+              {visibleSessions.length > 0 ||
+              displayedElsewhereSessions.length > 0 ? (
                 <TabLayoutManager
                   sessions={visibleSessions}
                   activeSessionId={activeSessionId}
@@ -2021,6 +2031,7 @@ const AppContent: React.FC = () => {
                   onSessionSelect={setActiveSessionId}
                   onSessionClose={handleSessionClose}
                   onSessionDetach={handleSessionDetach}
+                  hostedSessions={displayedElsewhereSessions}
                   renderSession={(session) => (
                     <SessionViewer
                       session={session}

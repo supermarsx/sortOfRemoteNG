@@ -20,6 +20,8 @@ import {
   ConnectionSession,
 } from "../../src/types/connection/connection";
 import { SessionViewer } from "../../src/components/session/SessionViewer";
+import { NativeBrowserDetachedSlot } from "../../src/components/protocol/webBrowser/NativeBrowserDetachedSlot";
+import { isNativeOriginBrowserSession } from "../../src/utils/session/nativeBrowserDisplay";
 import { SessionRenderActivityProvider } from "../../src/components/session/SessionRenderActivity";
 import {
   RDP_INTERNALS_PROTOCOL,
@@ -2264,11 +2266,17 @@ export const DetachedSessionContent: React.FC<{
                 <SessionRenderActivityProvider
                   isActive={candidate.id === activeSession.id}
                 >
-                  <SessionViewer
-                    session={candidate}
-                    onActivateSession={setActiveTabId}
-                    onCloseSession={emitCloseSession}
-                  />
+                  {isNativeOriginBrowserSession(candidate) ? (
+                    // The live page is owned and drawn by the main window's
+                    // native view; this window supplies only its slot.
+                    <NativeBrowserDetachedSlot session={candidate} />
+                  ) : (
+                    <SessionViewer
+                      session={candidate}
+                      onActivateSession={setActiveTabId}
+                      onCloseSession={emitCloseSession}
+                    />
+                  )}
                 </SessionRenderActivityProvider>
               </div>
             ))}

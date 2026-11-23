@@ -12,10 +12,14 @@ import {
   hasSessionLifecycleActorAttempt,
 } from "../../utils/session/sessionLifecycle";
 import { hasNoLiveTransport } from "../../utils/session/sessionClassification";
+import {
+  isNativeOriginBrowserSession,
+  NATIVE_DISPLAY_FAILED_MESSAGE,
+  nativeDisplayStore,
+  probeNativeDisplaySupport,
+} from "../../utils/session/nativeBrowserDisplay";
 import { ToastContext } from "../../contexts/ToastContext";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
-import { SettingsManager } from "../../utils/settings/settingsManager";
-import { normalizeWebBrowserSettings } from "../../utils/settings/webBrowserSettings";
 import {
   RDP_INTERNALS_PROTOCOL,
   RDP_INTERNALS_WINDOW_MESSAGE,
@@ -34,22 +38,8 @@ export const DETACH_REFUSED_BACKEND_MESSAGE =
 export const DETACH_REFUSED_NATIVE_BROWSER_MESSAGE =
   "A real-origin browser page lives in a native view bound to this window. Detaching would reload it and lose the sign-in, so it stays here; use another tab or window arrangement instead.";
 const DETACHED_SESSION_METADATA_VERSION = 2;
+export { isNativeOriginBrowserSession };
 
-/** A real-origin page is one native browser instance parented to the window
- * that created it. A second window cannot adopt it, only start a new page. */
-function isNativeOriginBrowserSession(session: ConnectionSession): boolean {
-  if (session.protocol !== "http" && session.protocol !== "https") return false;
-  try {
-    return (
-      normalizeWebBrowserSettings(
-        SettingsManager.getInstance().getSettings().webBrowser,
-      ).engine !== "legacy"
-    );
-  } catch {
-    // Unreadable settings never select the legacy engine for a page.
-    return true;
-  }
-}
 const MAX_OPAQUE_ID_LENGTH = 512;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -173,12 +163,19 @@ export function useSessionDetach(
         `[detach] session=${session.id}, protocol=${session.protocol}, backendSessionId=${session.backendSessionId}, connectionId=${session.connectionId}`,
       );
 
+      // Set only by the caller that registered the native display request.
+      let nativeDisplay = false;
       // A refused handoff must tell the user why instead of silently no-op'ing.
       const refuseDetach = (
         logDetail: string,
         reason: string = DETACH_REFUSED_IN_FLIGHT_MESSAGE,
       ) => {
         console.warn(`[detach] aborted: ${logDetail}`);
+        if (nativeDisplay) {
+          // The page never moved; its viewer simply stays in this window.
+          nativeDisplay = false;
+          nativeDisplayStore.clear(session.id);
+        }
         const toast = toastRef.current?.toast;
         if (toast) {
           toast.warning(reason);
@@ -198,13 +195,54 @@ export function useSessionDetach(
         );
         return;
       }
+      // A real-origin page can be *displayed* in the detached window without
+      // moving its owner, but only where native reports the capability and the
+      // page is attached. Otherwise the refusal below stays in force.
       if (isNativeOriginBrowserSession(session)) {
-        refuseDetach(
-          "the native browser instance cannot move to another window",
-          DETACH_REFUSED_NATIVE_BROWSER_MESSAGE,
-        );
-        return;
+        if (
+          session.status !== "connected" ||
+          !(await probeNativeDisplaySupport())
+        ) {
+          refuseDetach(
+            "the native browser instance cannot move to another window",
+            DETACH_REFUSED_NATIVE_BROWSER_MESSAGE,
+          );
+          return;
+        }
+        // Registered before the tab leaves the main layout so the page stays
+        // mounted (hidden) here and is never closed or reloaded.
+        if (!nativeDisplayStore.request(session.id, windowLabel)) {
+          refuseDetach("the native browser is already being moved");
+          return;
+        }
+        nativeDisplay = true;
       }
+      const abortNativeDisplay = (logDetail: string) => {
+        if (!nativeDisplay) return;
+        // The page never moved: put the tab back and say why, as a popup.
+        const latest = getLatestSession() ?? session;
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: {
+            ...latest,
+            layout: {
+              x: latest.layout?.x ?? 0,
+              y: latest.layout?.y ?? 0,
+              width: latest.layout?.width ?? 100,
+              height: latest.layout?.height ?? 100,
+              zIndex: latest.layout?.zIndex ?? 1,
+              isDetached: false,
+              windowId: undefined,
+            },
+          },
+        });
+        try {
+          localStorage.removeItem(`detached-session-${session.id}`);
+        } catch {
+          // Metadata only.
+        }
+        refuseDetach(logDetail, NATIVE_DISPLAY_FAILED_MESSAGE);
+      };
       if (session.protocol === CREDENTIAL_VAULT_PROTOCOL) {
         refuseDetach(
           "Credential vault private drafts are window-local",
@@ -414,10 +452,14 @@ export function useSessionDetach(
         );
         return;
       }
-      const currentSession = advanceSessionLifecycleAuthority(
-        getLatestSession() ?? session,
-        windowLabel,
-      );
+      // A displayed page keeps its lifecycle authority in this window: the
+      // detached window only shows it.
+      const currentSession = nativeDisplay
+        ? (getLatestSession() ?? session)
+        : advanceSessionLifecycleAuthority(
+            getLatestSession() ?? session,
+            windowLabel,
+          );
       const currentConnection = getLatestConnection(currentSession);
       const detachedSession: ConnectionSession = {
         ...currentSession,
@@ -443,6 +485,10 @@ export function useSessionDetach(
           console.error(
             "Failed to persist detached session metadata: invalid opaque identifier",
           );
+          if (nativeDisplay) {
+            nativeDisplay = false;
+            nativeDisplayStore.clear(session.id);
+          }
           return;
         }
         const payload = {
@@ -531,7 +577,10 @@ export function useSessionDetach(
           }
         } catch (error) {
           console.error("Failed to detach session window:", error);
+          abortNativeDisplay("the detached window could not be created");
         }
+      } else if (nativeDisplay) {
+        abortNativeDisplay("a detached native browser needs the desktop app");
       } else {
         window.open(url, "_blank", "noopener,noreferrer");
       }

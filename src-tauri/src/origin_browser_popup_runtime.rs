@@ -46,7 +46,7 @@ fn apply_presentation(
     input_blocked: bool,
 ) -> Result<(), String> {
     let id = &view.attempt.identity;
-    let scale = view.window.scale_factor().map_err(|_| UNAVAILABLE)?;
+    let scale = view.display_window().scale_factor().map_err(|_| UNAVAILABLE)?;
     let resize = bounds.filter(|bounds| view.presentation_bounds != Some((*bounds, scale)));
     let was_visible = view.visible;
     let result = with_target(view, view.popups.selected.as_deref(), |host| {

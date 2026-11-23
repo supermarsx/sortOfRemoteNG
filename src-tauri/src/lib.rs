@@ -67,6 +67,9 @@ mod origin_browser_entry;
 mod origin_browser_network_probe;
 #[cfg(feature = "native-browser")]
 mod origin_browser_runtime;
+// Pure lease/handoff state machine for the display-only page reparent.
+#[cfg_attr(not(feature = "native-browser"), allow(dead_code))]
+mod origin_browser_reparent_state;
 #[cfg(feature = "native-browser")]
 mod origin_browser_startup_diagnostics;
 mod origin_browser_startup_task;

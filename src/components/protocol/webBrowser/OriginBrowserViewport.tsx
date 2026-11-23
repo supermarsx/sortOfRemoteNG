@@ -11,7 +11,10 @@ import {
 } from "lucide-react";
 import type { OriginBrowserController } from "../../../hooks/protocol/useOriginBrowser";
 import type { SettingsTabId } from "../../SettingsDialog/settingsConstants";
-import { originBrowserBounds } from "../../../types/protocols/originBrowser";
+import {
+  originBrowserBounds,
+  type OriginBrowserBounds,
+} from "../../../types/protocols/originBrowser";
 import { getOriginBrowserFailureDetails } from "../../../hooks/protocol/originBrowserFailureDetails";
 import type { OriginBrowserConfirmationKind } from "../../../hooks/protocol/originBrowserConfirmations";
 
@@ -43,6 +46,9 @@ export interface OriginBrowserViewportProps {
   /** Detailed failure presentation supplied by the owning browser shell. */
   errorDetails?: React.ReactNode;
   className?: string;
+  /** The page is shown in another window of this app: this element is only a
+   * hidden anchor and the other window's slot decides the bounds. */
+  remote?: { bounds: OriginBrowserBounds | null } | null;
 }
 
 /** Layout anchor for a native child. Remote content never enters the app DOM. */
@@ -61,7 +67,10 @@ export function OriginBrowserViewport({
   errorActions,
   errorDetails,
   className,
+  remote: remoteDisplay = null,
 }: OriginBrowserViewportProps) {
+  const remoteActive = remoteDisplay !== null;
+  const remoteBounds = remoteDisplay?.bounds ?? null;
   const element = useRef<HTMLDivElement>(null);
   const { setViewport, focus, close, state } = controller;
   const unavailableDetail =
@@ -127,6 +136,12 @@ export function OriginBrowserViewport({
     const node = element.current;
     if (!node) return;
     const measure = () => {
+      if (remoteActive) {
+        setViewport(
+          active && ownerAvailable && !hiddenForOverlay ? remoteBounds : null,
+        );
+        return;
+      }
       if (
         !active ||
         !ownerAvailable ||
@@ -168,7 +183,14 @@ export function OriginBrowserViewport({
       window.visualViewport?.removeEventListener("scroll", measure);
       setViewport(null);
     };
-  }, [active, ownerAvailable, hiddenForOverlay, setViewport]);
+  }, [
+    active,
+    ownerAvailable,
+    hiddenForOverlay,
+    setViewport,
+    remoteActive,
+    remoteBounds,
+  ]);
 
   // Sibling layout can move this slot without changing its own dimensions.
   useLayoutEffect(() => {

@@ -18,6 +18,10 @@ import {
   resetSessionLifecycleAllocatorForTests,
 } from "../../src/utils/session/sessionLifecycle";
 import {
+  nativeDisplayStore,
+  setNativeDisplayTransportForTests,
+} from "../../src/utils/session/nativeBrowserDisplay";
+import {
   DETACH_REFUSED_EVENT,
   DETACH_REFUSED_IN_FLIGHT_MESSAGE,
   DETACH_REFUSED_NATIVE_BROWSER_MESSAGE,
@@ -233,7 +237,14 @@ describe("useSessionDetach", () => {
     expect(mockWebviewCreate).not.toHaveBeenCalled();
     expect(localStorage.getItem(`detached-session-${tab.id}`)).toBeNull();
   });
-  it("keeps a real-origin browser page in its window: no hand-off, unmount or new window", async () => {
+  it("keeps a real-origin browser page in its window when native cannot display it elsewhere: no hand-off, unmount or new window", async () => {
+    setNativeDisplayTransportForTests({
+      capability: async () => false,
+      move: vi.fn(),
+      claim: vi.fn(),
+      release: vi.fn(),
+    });
+    nativeDisplayStore.reset();
     const refusal = vi.fn();
     window.addEventListener(DETACH_REFUSED_EVENT, refusal);
     try {
@@ -247,6 +258,7 @@ describe("useSessionDetach", () => {
         expect(dispatch).not.toHaveBeenCalled();
         expect(registerWindow).not.toHaveBeenCalled();
         expect(mockWebviewCreate).not.toHaveBeenCalled();
+        expect(nativeDisplayStore.get(tab.id)).toBeUndefined();
         expect(localStorage.getItem(`detached-session-${tab.id}`)).toBeNull();
       }
       expect(refusal).toHaveBeenCalledTimes(2);
@@ -256,6 +268,110 @@ describe("useSessionDetach", () => {
     } finally {
       window.removeEventListener(DETACH_REFUSED_EVENT, refusal);
     }
+  });
+  describe("display-only native browser detach", () => {
+    const supported = () =>
+      setNativeDisplayTransportForTests({
+        capability: async () => true,
+        move: vi.fn(),
+        claim: vi.fn(),
+        release: vi.fn(),
+      });
+    beforeEach(() => nativeDisplayStore.reset());
+
+    it("registers the display request, opens the window and never creates, navigates or closes the page", async () => {
+      supported();
+      const tab = makeSession("web1", "https");
+      const { result, dispatch, registerWindow } = renderDetach({
+        sessions: [tab],
+        visibleSessions: [tab],
+        activeSessionId: "web1",
+      });
+      await act(async () => result.current.handleSessionDetach(tab.id));
+      expect(nativeDisplayStore.get("web1")).toEqual({
+        phase: "requested",
+        target: "detached-web1",
+        slot: null,
+      });
+      expect(registerWindow).toHaveBeenCalledWith("detached-web1", ["web1"]);
+      expect(mockWebviewCreate).toHaveBeenCalledWith(
+        "detached-web1",
+        expect.objectContaining({ url: "/detached?sessionId=web1" }),
+      );
+      // No native browser command from the detach path: the page keeps its
+      // instance; only the capability probe ran.
+      expect(
+        (invoke as Mock).mock.calls.filter(([name]) =>
+          String(name).startsWith("origin_browser_"),
+        ),
+      ).toEqual([]);
+      const update = dispatch.mock.calls
+        .map(([action]) => action)
+        .find((action) => action.type === "UPDATE_SESSION");
+      expect(update.payload.layout).toEqual(
+        expect.objectContaining({
+          isDetached: true,
+          windowId: "detached-web1",
+        }),
+      );
+      // Authority never moves to the detached window.
+      expect(update.payload.lifecycleWriterId).toBeUndefined();
+    });
+
+    it("needs an attached page: a connecting tab keeps the refusal", async () => {
+      supported();
+      const tab = makeSession("web2", "https", { status: "connecting" });
+      const { result, dispatch } = renderDetach({
+        sessions: [tab],
+        visibleSessions: [tab],
+      });
+      await act(async () => result.current.handleSessionDetach(tab.id));
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(mockWebviewCreate).not.toHaveBeenCalled();
+      expect(nativeDisplayStore.get("web2")).toBeUndefined();
+    });
+
+    it("window creation failure keeps the main viewer, restores the tab and shows a popup notice", async () => {
+      supported();
+      const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+      (WebviewWindow.getByLabel as Mock).mockRejectedValueOnce(
+        new Error("no window"),
+      );
+      const toast = { warning: vi.fn() } as any;
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(
+          ToastContext.Provider,
+          { value: { toast } as any },
+          children,
+        );
+      const tab = makeSession("web3", "https");
+      const dispatch = vi.fn();
+      const { result } = renderHook(
+        () =>
+          useSessionDetach(
+            [tab],
+            connections,
+            [tab],
+            "web3",
+            dispatch,
+            vi.fn(),
+            vi.fn(),
+            vi.fn(),
+          ),
+        { wrapper },
+      );
+      await act(async () => result.current.handleSessionDetach(tab.id));
+      expect(nativeDisplayStore.get("web3")).toBeUndefined();
+      const layouts = dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === "UPDATE_SESSION")
+        .map((action) => action.payload.layout);
+      expect(layouts[layouts.length - 1]).toEqual(
+        expect.objectContaining({ isDetached: false }),
+      );
+      expect(toast.warning).toHaveBeenCalledOnce();
+      expect(localStorage.getItem("detached-session-web3")).toBeNull();
+    });
   });
   it("keeps the private vault in main with actionable guidance before unmount or handoff", async () => {
     const tab = createSecurityToolSession("credentialVault", undefined, "db-a");

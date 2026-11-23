@@ -133,6 +133,8 @@ pub(crate) fn is_command(command: &str) -> bool {
             | "origin_browser_navigate"
             | "origin_browser_control"
             | "origin_browser_close"
+            | "origin_browser_reparent"
+            | "origin_browser_reparent_capability"
             | "origin_browser_automation"
             | "origin_browser_downloads"
             | "origin_browser_download_control"
@@ -750,6 +752,43 @@ pub(crate) async fn origin_browser_close(
     }
 }
 
+/// Display-only: show the owner window's live page in its detached window.
+/// Only the page's owner window may call this; it moves no authority.
+#[tauri::command]
+pub(crate) async fn origin_browser_reparent(
+    window: WebviewWindow,
+    request: serde_json::Value,
+) -> Result<(), String> {
+    #[cfg(feature = "native-browser")]
+    {
+        crate::application_log_commands::require_shell(&window)?;
+        let request: crate::origin_browser_runtime::reparent::ReparentRequest =
+            serde_json::from_value(request)
+                .map_err(|_| "Detach request is invalid".to_owned())?;
+        request.validate()?;
+        crate::origin_browser_runtime::reparent::command(window, request).await
+    }
+    #[cfg(not(feature = "native-browser"))]
+    {
+        let _ = (window, request);
+        Err(UNAVAILABLE.into())
+    }
+}
+
+/// Whether this build and platform can display a page in a second window.
+#[tauri::command]
+pub(crate) fn origin_browser_reparent_capability(window: WebviewWindow) -> Result<bool, String> {
+    crate::application_log_commands::require_shell(&window)?;
+    #[cfg(feature = "native-browser")]
+    {
+        Ok(crate::origin_browser_runtime::reparent::supported())
+    }
+    #[cfg(not(feature = "native-browser"))]
+    {
+        Ok(false)
+    }
+}
+
 #[tauri::command]
 pub(crate) async fn origin_browser_automation(
     window: WebviewWindow,
@@ -834,6 +873,8 @@ mod tests {
             "origin_browser_navigate",
             "origin_browser_control",
             "origin_browser_close",
+            "origin_browser_reparent",
+            "origin_browser_reparent_capability",
             "origin_browser_automation",
             "origin_browser_downloads",
             "origin_browser_download_control",

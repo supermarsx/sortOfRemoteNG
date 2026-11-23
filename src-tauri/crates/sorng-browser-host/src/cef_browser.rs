@@ -3357,6 +3357,36 @@ impl<'a> CefBrowserHost<'a> {
         Ok(())
     }
 
+    /// Display-only: move the page's native child under another app window.
+    /// The owner window, lease, sink and every authority stay unchanged; the
+    /// child is left hidden and input-fenced until the owner re-presents it.
+    #[cfg(target_os = "windows")]
+    pub fn reparent(&self, identity: &BrowserIdentity, parent: usize) -> Result<(), BrowserError> {
+        let browser = self.check(identity)?;
+        let host = self.native_host(&browser)?;
+        if native_surface::reparent(host.window_handle(), parent).is_err() {
+            // Nothing moved: the page stays presented where it was.
+            return Err(BrowserError::NativeSurface);
+        }
+        // Hidden and fenced until the owner presents it in its new window.
+        self.shared.input_blocked.store(true, Ordering::Release);
+        host.close_dev_tools();
+        host.set_focus(0);
+        host.notify_move_or_resize_started();
+        Ok(())
+    }
+
+    /// Only a Win32 child HWND can be reparented; other platforms keep the
+    /// page in its window.
+    #[cfg(not(target_os = "windows"))]
+    pub fn reparent(&self, _identity: &BrowserIdentity, _parent: usize) -> Result<(), BrowserError> {
+        Err(BrowserError::NativeSurface)
+    }
+
+    pub fn reparent_supported() -> bool {
+        cfg!(target_os = "windows")
+    }
+
     pub fn occlude(
         &self,
         identity: &BrowserIdentity,
@@ -3990,6 +4020,8 @@ mod native_surface {
         fn ShowWindow(window: *mut c_void, command: i32) -> i32;
         fn EnableWindow(window: *mut c_void, enable: i32) -> i32;
         fn DestroyWindow(window: *mut c_void) -> i32;
+        fn SetParent(child: *mut c_void, parent: *mut c_void) -> *mut c_void;
+        fn GetParent(child: *mut c_void) -> *mut c_void;
         fn SetWindowPos(
             window: *mut c_void,
             after: *mut c_void,
@@ -4050,6 +4082,32 @@ mod native_surface {
         } else {
             Ok(())
         }
+    }
+    /// Display-only reparent of the CEF-owned child onto another app window's
+    /// HWND. The child is hidden first so no frame paints at a stale rectangle;
+    /// the caller re-applies bounds, occlusion and visibility afterwards.
+    pub fn reparent(window: cef::sys::cef_window_handle_t, parent: usize) -> Result<(), BrowserError> {
+        let child: *mut c_void = window.0.cast();
+        let parent = parent as *mut c_void;
+        if parent.is_null() {
+            return Err(BrowserError::NativeSurface);
+        }
+        unsafe {
+            if IsWindow(child) == 0 || IsWindow(parent) == 0 {
+                return Err(BrowserError::NativeSurface);
+            }
+            if GetParent(child) == parent {
+                return Ok(());
+            }
+            // SetParent returns the previous parent, or null on failure; a
+            // failed move leaves the page exactly as it was.
+            if SetParent(child, parent).is_null() {
+                return Err(BrowserError::NativeSurface);
+            }
+            EnableWindow(child, 0);
+            ShowWindow(child, 0);
+        }
+        Ok(())
     }
     pub fn destroy(window: cef::sys::cef_window_handle_t) -> Result<(), BrowserError> {
         // No ancestor lookup or posted WM_CLOSE: only the CEF-owned child.

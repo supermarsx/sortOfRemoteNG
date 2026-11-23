@@ -93,6 +93,8 @@ pub(crate) mod http_cache;
 mod retention_flow;
 #[path = "origin_browser_interception.rs"]
 mod interception;
+#[path = "origin_browser_reparent.rs"]
+pub(crate) mod reparent;
 
 const UNAVAILABLE: &str =
     "The packaged real-origin browser is unavailable; no direct-network fallback was used.";
@@ -686,6 +688,17 @@ struct View {
     presentation_bounds: Option<(sorng_browser_host::ipc::OriginBrowserBounds, f64)>,
     start: Option<Start>,
     checkpoint: retention_flow::Checkpoint,
+    // Display-only reparent. The owner (`window`, lease, sink, downloads) never
+    // changes; `display` is only the window whose pixels the page occupies.
+    reparent: crate::origin_browser_reparent_state::State,
+    display: Option<WebviewWindow>,
+}
+
+impl View {
+    /// The window whose client area (and DPI scale) the native child occupies.
+    fn display_window(&self) -> &WebviewWindow {
+        self.display.as_ref().unwrap_or(&self.window)
+    }
 }
 
 fn begin_normal_close(view: &mut View) {
@@ -1065,6 +1078,9 @@ pub(crate) fn on_event(app: &tauri::AppHandle, event: &tauri::RunEvent) {
             event: tauri::WindowEvent::CloseRequested { api, .. },
             ..
         } => {
+            // A page displayed in this window goes back to its owner first;
+            // closing a display window never destroys the owner's page.
+            reparent::display_closing(label);
             UI.with(|slot| {
                 if let Some(ui) = slot.borrow_mut().as_mut() {
                     for view in ui
@@ -1102,7 +1118,13 @@ pub(crate) fn on_event(app: &tauri::AppHandle, event: &tauri::RunEvent) {
             label,
             event: tauri::WindowEvent::Destroyed,
             ..
-        } => revoke_window(label),
+        } => {
+            // Already returned on CloseRequested; a window destroyed without
+            // it can only close the page (the reparent state machine fails
+            // the return and retires the view).
+            reparent::display_closing(label);
+            revoke_window(label)
+        }
         tauri::RunEvent::ExitRequested { code, api, .. } => {
             if shutdown().is_err() {
                 *shared()
@@ -2284,7 +2306,7 @@ async fn operate(
                                 return Ok(());
                             }
                             view.presentation = revision;
-                            let scale = view.window.scale_factor().map_err(|_| UNAVAILABLE)?;
+                            let scale = view.display_window().scale_factor().map_err(|_| UNAVAILABLE)?;
                             if let Some(bounds) = bounds {
                                 if view.presentation_bounds != Some((bounds, scale)) {
                                     view.host
@@ -2800,6 +2822,8 @@ pub(crate) fn tick() {
                                 response: pending.response,
                             }),
                             checkpoint: retention_flow::Checkpoint::new(attempt.retention_durable),
+                            reparent: crate::origin_browser_reparent_state::State::Held,
+                            display: None,
                         },
                     );
                 }
@@ -2821,6 +2845,7 @@ pub(crate) fn tick() {
                 let _ = view.host.poll_session_health();
             }
             popups::poll(view);
+            reparent::tick(view);
             let address_expired = view.attempt.address_watch.lock().unwrap_or_else(|error| error.into_inner())
                 .take_expired(Instant::now(), Duration::from_secs(view.attempt.preferences.document_ready_timeout_seconds));
             if address_expired && view.attempt.current() {
