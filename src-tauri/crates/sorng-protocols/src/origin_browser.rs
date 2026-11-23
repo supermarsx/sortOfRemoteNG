@@ -27,6 +27,7 @@ use uuid::Uuid;
 /// attempt. Dynamic network permissions do not inherit this capture limit.
 /// Supplied static/restore lists are bounded before validation or deduplication.
 pub const MAX_ALLOWED_ORIGINS: usize = 128;
+pub const MAX_HTTP_TYPING_ORIGINS: usize = 32;
 
 /// Native-only network admission captured from the saved connection policy.
 /// Receives canonical HTTP(S) origins, never arbitrary URLs. This is not login,
@@ -167,6 +168,7 @@ pub struct OriginBrowserPolicy {
     source_origin: String,
     authority: Authority,
     allowed_origins: Vec<String>,
+    http_typing_origins: Vec<String>,
     allowed_authorities: Vec<Authority>,
     network_origin_grant: Option<NetworkOriginGrant>,
     relay_endpoint: Arc<OnceLock<SocketAddr>>,
@@ -247,6 +249,7 @@ impl OriginBrowserPolicy {
                 overflowed: false,
             })),
             allowed_origins: origins,
+            http_typing_origins: Vec::new(),
             allowed_authorities: authorities,
             network_origin_grant: None,
             relay_endpoint: Arc::new(OnceLock::new()),
@@ -267,6 +270,34 @@ impl OriginBrowserPolicy {
     /// Canonical exact origins, source first; no credential or login consent.
     pub fn allowed_origins(&self) -> &[String] {
         &self.allowed_origins
+    }
+    /// Exact plain-HTTP origins the user explicitly allowed for manual typing.
+    /// This is not network policy: it never admits navigation, redirects or
+    /// resources, and HTTPS needs no entry. Canonical, deduplicated, at most
+    /// `MAX_HTTP_TYPING_ORIGINS`; anything else (HTTPS, wildcards, paths,
+    /// credentials, malformed text) is dropped rather than widened.
+    pub fn with_http_typing_origins<I, S>(mut self, origins: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut accepted: Vec<String> = Vec::new();
+        for value in origins {
+            let Ok((origin, _)) = parse_http_origin(value.as_ref()) else {
+                continue;
+            };
+            if origin.starts_with("http://")
+                && !accepted.contains(&origin)
+                && accepted.len() < MAX_HTTP_TYPING_ORIGINS
+            {
+                accepted.push(origin);
+            }
+        }
+        self.http_typing_origins = accepted;
+        self
+    }
+    pub fn http_typing_origins(&self) -> &[String] {
+        &self.http_typing_origins
     }
     pub fn profile_key(&self) -> &str {
         &self.profile_key
@@ -951,6 +982,30 @@ mod tests {
             allowed_origins,
         )
         .unwrap()
+    }
+    #[test]
+    fn http_typing_origins_are_exact_canonical_http_only_and_not_network_policy() {
+        let allowed = policy("http://device.test:8080").with_http_typing_origins([
+            "http://other.test:9000",
+            "http://other.test:9000/",
+            "http://OTHER.test:9000",
+            "http://plain.test:80",
+            "http://plain.test",
+            "https://secure.test",
+            "http://*.wild.test",
+            "http://user@cred.test",
+            "http://path.test/x",
+            "not an origin",
+        ]);
+        assert_eq!(
+            allowed.http_typing_origins(),
+            ["http://other.test:9000", "http://plain.test"]
+        );
+        // Never widens the network grant.
+        assert_eq!(allowed.allowed_origins(), ["http://device.test:8080"]);
+        assert!(!allowed.permits_network_origin("http://other.test:9000"));
+        let none = policy("http://device.test:8080");
+        assert!(none.http_typing_origins().is_empty());
     }
     fn dialer() -> Arc<dyn RouteDialer> {
         Arc::new(|_: Authority| -> DialFuture {

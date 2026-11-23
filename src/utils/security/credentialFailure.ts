@@ -55,6 +55,8 @@ const sentences = {
   "typing-not-confirmed": "Typing stopped or was not confirmed.",
   "typing-unavailable":
     "Typing is unavailable for this website field. Choose Type to try again in an empty field on an allowed origin. HTTP typing is limited to the configured origin, including its port.",
+  "typing-origin-not-allowed":
+    "Typing is blocked on this plain-HTTP page because its origin is not allowed for typing. Allow it from the notification, or open the page over HTTPS.",
   // The last six mirror the reasons `origin_browser_manual_input` rejects with.
   "typing-timed-out":
     "Typing timed out waiting for an empty website field. Choose Type to try again.",

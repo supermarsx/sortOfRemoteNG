@@ -19,6 +19,9 @@ pub enum ManualInputReason {
     TimedOut,
     Cancelled,
     Stale,
+    /// Plain-HTTP document that is neither the saved source nor a user-allowed
+    /// origin. Fixed wire text only; the page origin is never echoed.
+    OriginNotAllowed,
 }
 impl ManualInputReason {
     pub fn wire(self) -> &'static str {
@@ -29,6 +32,7 @@ impl ManualInputReason {
             Self::TimedOut => "timed-out",
             Self::Cancelled => "cancelled",
             Self::Stale => "stale",
+            Self::OriginNotAllowed => "origin-not-allowed",
         }
     }
     pub fn parse(value: &str) -> Option<Self> {
@@ -39,17 +43,37 @@ impl ManualInputReason {
             "timed-out" => Some(Self::TimedOut),
             "cancelled" => Some(Self::Cancelled),
             "stale" => Some(Self::Stale),
+            "origin-not-allowed" => Some(Self::OriginNotAllowed),
             _ => None,
         }
     }
 }
 
 /// HTTPS retains the existing manual-entry policy. HTTP must be the immutable
-/// saved source, never a redirect or a destination admitted by network grants.
+/// saved source or an exact origin the user explicitly allowed for typing
+/// (`typing_origins`, canonical; no wildcard, subdomain or port leakage), never
+/// a redirect or a destination admitted by network grants alone.
 #[cfg(any(feature = "cef-host", test))]
-pub(crate) fn document_allowed(source_origin: &str, document_url: &str) -> bool {
+pub(crate) fn document_allowed(
+    source_origin: &str,
+    typing_origins: &[String],
+    document_url: &str,
+) -> bool {
+    crate::native_features::browser_origin(document_url).is_some_and(|origin| {
+        origin.starts_with("https://")
+            || origin == source_origin
+            || typing_origins.iter().any(|allowed| *allowed == origin)
+    })
+}
+
+/// The refusal for a document that failed `document_allowed`: the distinct
+/// `origin-not-allowed` only for an HTTP document, otherwise `None` so the
+/// caller keeps its existing generic reason.
+#[cfg(any(feature = "cef-host", test))]
+pub(crate) fn refusal_for_document(document_url: &str) -> Option<&'static str> {
     crate::native_features::browser_origin(document_url)
-        .is_some_and(|origin| origin.starts_with("https://") || origin == source_origin)
+        .filter(|origin| origin.starts_with("http://"))
+        .map(|_| ManualInputReason::OriginNotAllowed.wire())
 }
 
 #[derive(Deserialize)]
@@ -193,6 +217,7 @@ mod tests {
             TimedOut,
             Cancelled,
             Stale,
+            OriginNotAllowed,
         ] {
             let value = serde_json::to_value(reason).unwrap();
             assert_eq!(value.as_str(), Some(reason.wire()));
@@ -211,10 +236,12 @@ mod tests {
         let source = "http://device.test:8080";
         assert!(document_allowed(
             source,
+            &[],
             "http://device.test:8080/login?q=x#f"
         ));
         assert!(document_allowed(
             "http://device.test",
+            &[],
             "http://device.test:80/login"
         ));
         for (source, url) in [
@@ -228,14 +255,73 @@ mod tests {
             (source, "file:///login.html"),
             (source, "about:blank"),
         ] {
-            assert!(!document_allowed(source, url), "{source} -> {url}");
+            assert!(!document_allowed(source, &[], url), "{source} -> {url}");
         }
         // HTTPS destinations retain their existing manual-entry semantics.
-        assert!(document_allowed(source, "https://other.test:8443/login"));
+        assert!(document_allowed(source, &[], "https://other.test:8443/login"));
         assert!(document_allowed(
             "https://device.test",
+            &[],
             "https://other.test/login"
         ));
+    }
+
+    #[test]
+    fn user_allowed_http_origin_is_exact_scheme_host_and_port() {
+        let source = "http://device.test:8080";
+        let allowed = vec!["http://other.test:9000".to_string()];
+        assert!(document_allowed(
+            source,
+            &allowed,
+            "http://other.test:9000/login?q=1#f"
+        ));
+        // The saved source keeps working next to the allow-list.
+        assert!(document_allowed(source, &allowed, "http://device.test:8080/"));
+        for url in [
+            "http://other.test/login",
+            "http://other.test:9001/login",
+            "http://other.test:80/login",
+            "http://sub.other.test:9000/login",
+            "http://other.test.evil.test:9000/login",
+            "http://evil.other.test:9000/login",
+            "https://other.test:9000/login",
+            "http://user:pass@other.test:9000/login",
+            "http://other.test:9000@evil.test/login",
+            "file:///login.html",
+            "about:blank",
+        ] {
+            // HTTPS is allowed regardless; everything else must stay refused.
+            assert_eq!(
+                document_allowed(source, &allowed, url),
+                url.starts_with("https://"),
+                "{url}"
+            );
+        }
+        // A wildcard or non-canonical entry is a literal that never matches.
+        for entry in [
+            "http://*.other.test:9000",
+            "http://other.test:9000/",
+            "other.test",
+        ] {
+            assert!(
+                !document_allowed(source, &[entry.to_string()], "http://other.test:9000/x"),
+                "{entry}"
+            );
+        }
+        // HTTPS destinations are unaffected by the list.
+        assert!(document_allowed(source, &allowed, "https://anything.test/login"));
+        assert!(document_allowed(source, &[], "https://anything.test/login"));
+    }
+
+    #[test]
+    fn origin_not_allowed_is_only_for_http_documents() {
+        assert_eq!(
+            refusal_for_document("http://other.test:9000/login"),
+            Some("origin-not-allowed")
+        );
+        assert_eq!(refusal_for_document("https://other.test/login"), None);
+        assert_eq!(refusal_for_document("about:blank"), None);
+        assert_eq!(refusal_for_document("file:///login.html"), None);
     }
 
     #[test]

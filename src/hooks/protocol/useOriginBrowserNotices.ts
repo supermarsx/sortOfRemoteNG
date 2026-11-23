@@ -4,10 +4,17 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import type { OriginBrowserIdentity } from "../../types/protocols/originBrowser";
 
-type NoticeKind = "document-slow-load" | "cookie-retention-failed";
+type NoticeKind =
+  | "document-slow-load"
+  | "cookie-retention-failed"
+  | "typing-origin-not-allowed";
 interface BrowserNotice {
   id: number;
   kind: NoticeKind;
+  /** Exact HTTP origin a typing refusal was about (typing-origin-not-allowed). */
+  origin?: string;
+  allowing?: boolean;
+  allowFailed?: boolean;
   reloading: boolean;
   reloadFailed: boolean;
   stopping: boolean;
@@ -24,6 +31,10 @@ interface Options {
   canStop?: boolean;
   /** Native loading state; a finished load retires the slow-load notice. */
   loading?: boolean;
+  /** Saves `origin` to the connection's typing allow-list; the saved change
+   * then reloads the page. Rejects when the save cannot be confirmed. Only an
+   * explicit click on a notice ever calls it. */
+  allowTypingOrigin?: (origin: string) => Promise<void>;
 }
 
 function identityKey(value: unknown): string | null {
@@ -239,10 +250,79 @@ export function useOriginBrowserNotices(options: Options) {
           ),
     );
   };
+  /** Offer (never apply) the exact HTTP origin typing was refused on. */
+  const offerTypingOrigin = (origin: string) => {
+    if (
+      !latest.current.allowTypingOrigin ||
+      !authorized(scope) ||
+      liveNotices.current.some(
+        (notice) =>
+          notice.kind === "typing-origin-not-allowed" &&
+          notice.origin === origin,
+      )
+    )
+      return;
+    publish([
+      ...liveNotices.current.filter(
+        (notice) => notice.kind !== "typing-origin-not-allowed",
+      ),
+      {
+        id: ++serial.current,
+        kind: "typing-origin-not-allowed",
+        origin,
+        reloading: false,
+        reloadFailed: false,
+        stopping: false,
+        stopFailed: false,
+      },
+    ]);
+  };
+  const allowTypingOrigin = async (id: number) => {
+    const notice = liveNotices.current.find((item) => item.id === id);
+    const allow = latest.current.allowTypingOrigin;
+    if (
+      !notice ||
+      notice.kind !== "typing-origin-not-allowed" ||
+      !notice.origin ||
+      notice.allowing ||
+      !allow ||
+      !authorized(scope)
+    )
+      return;
+    const revision = epoch.current;
+    const origin = notice.origin;
+    publish(
+      liveNotices.current.map((item) =>
+        item.id === id ? { ...item, allowing: true, allowFailed: false } : item,
+      ),
+    );
+    let saved = false;
+    try {
+      await allow(origin);
+      saved = true;
+    } catch {
+      /* Fixed UI copy only. */
+    }
+    // The saved change restarts the page, which replaces this scope and its
+    // notices; a stale completion must not touch the replacement's.
+    if (revision !== epoch.current) return;
+    publish(
+      saved
+        ? liveNotices.current.filter((item) => item.id !== id)
+        : liveNotices.current.map((item) =>
+            item.id === id
+              ? { ...item, allowing: false, allowFailed: true }
+              : item,
+          ),
+    );
+  };
   return {
     notices,
+    offerTypingOrigin,
+    allowTypingOrigin,
     stop,
     canStop: !!options.stop && !!options.canStop && options.enabled,
+    canAllowTypingOrigin: !!options.allowTypingOrigin && options.enabled,
     listenerFailed,
     dismiss,
     reload,

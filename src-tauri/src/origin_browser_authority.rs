@@ -1126,6 +1126,24 @@ fn saved_login(
     }
 }
 
+/// The connection's explicit per-connection allow-list of plain-HTTP origins
+/// for manual typing. Absent or malformed means none; the policy canonicalises
+/// and drops anything that is not an exact HTTP origin.
+fn saved_http_typing_origins(connection: &Value) -> Vec<String> {
+    connection
+        .get("httpTypingOrigins")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .take(sorng_protocols::origin_browser::MAX_HTTP_TYPING_ORIGINS)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub async fn authorize_create<R: Runtime>(
     window: &WebviewWindow<R>,
     state: &EncryptionState,
@@ -1233,7 +1251,8 @@ async fn authorize_create_inner<R: Runtime>(
     })?
     .with_network_origin_grant(request_network_grant(
         permissions.clone(), initial_url.origin().ascii_serialization(),
-    ));
+    ))
+    .with_http_typing_origins(saved_http_typing_origins(&connection));
     let ssh_route = ssh_route::prepare(
         window,
         state,
@@ -2435,6 +2454,16 @@ mod tests {
         test::{mock_builder, mock_context, noop_assets, MockRuntime},
         WebviewUrl, WebviewWindowBuilder,
     };
+
+    #[test]
+    fn saved_typing_origins_default_to_none_and_ignore_malformed_values() {
+        assert!(saved_http_typing_origins(&connection()).is_empty());
+        assert!(saved_http_typing_origins(&json!({"httpTypingOrigins": "http://a.test"})).is_empty());
+        assert_eq!(
+            saved_http_typing_origins(&json!({"httpTypingOrigins": ["http://a.test:81", 7, null]})),
+            ["http://a.test:81"]
+        );
+    }
 
     pub(super) fn connection() -> Value {
         json!({"id":"saved", "isGroup":false, "protocol":"https", "httpsTrustPolicy":"strict",

@@ -539,6 +539,60 @@ describe("native manual typing says why it stopped", () => {
       }
     },
   );
+  describe("origin-not-allowed", () => {
+    async function refuse(reason: string, documentUrl?: string) {
+      const onOriginNotAllowed = vi.fn();
+      const test = setup({ documentUrl, onOriginNotAllowed });
+      test.transport.mockRejectedValueOnce(reason);
+      test.open();
+      const action = vi.fn(async () => {});
+      const { pending } = await start(test, action);
+      await finish(pending);
+      return { test, action, onOriginNotAllowed };
+    }
+    it("names its own cause and offers the exact page origin, never allowing it itself", async () => {
+      const { test, action, onOriginNotAllowed } = await refuse(
+        "origin-not-allowed",
+        "http://device.test:8080/login?x=1#f",
+      );
+      expect(test.result.current.notice).toContain("not allowed for typing");
+      expect(test.result.current.notice).not.toContain("device.test");
+      expect(onOriginNotAllowed).toHaveBeenCalledExactlyOnceWith(
+        "http://device.test:8080",
+      );
+      expect(action).not.toHaveBeenCalled();
+      // Only the capture was attempted: nothing was typed or retried.
+      expect(
+        test.transport.mock.calls.filter(([r]) => r.action.kind === "type"),
+      ).toHaveLength(0);
+      expect(test.transport.mock.calls.length).toBe(1);
+    });
+    it("offers nothing when the page is not plain HTTP or unknown", async () => {
+      for (const url of ["https://device.test/", "about:blank", undefined]) {
+        const { onOriginNotAllowed, test } = await refuse(
+          "origin-not-allowed",
+          url,
+        );
+        expect(onOriginNotAllowed).not.toHaveBeenCalled();
+        test.unmount();
+      }
+    });
+    it.each([
+      "field-not-empty",
+      "unsupported-frame",
+      "focus-lost",
+      "stale",
+      "timed-out",
+      "cancelled",
+      "page supplied text",
+    ])("does not offer an origin for %s", async (reason) => {
+      const { onOriginNotAllowed } = await refuse(
+        reason,
+        "http://device.test:8080/",
+      );
+      expect(onOriginNotAllowed).not.toHaveBeenCalled();
+    });
+  });
   it.each([
     ["focus-lost", "The app or the website field lost focus.", true],
     ["cancelled", "Typing was cancelled before it finished.", true],

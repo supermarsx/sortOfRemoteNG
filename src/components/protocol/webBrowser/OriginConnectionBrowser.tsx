@@ -77,6 +77,7 @@ import { useNativeBrowserRecording } from "../../../hooks/protocol/useNativeBrow
 import { useOriginWebsiteAutomation } from "../../../hooks/protocol/useOriginWebsiteAutomation";
 import OriginAutomationControls from "./OriginAutomationControls";
 import { useOriginBrowserNotices } from "../../../hooks/protocol/useOriginBrowserNotices";
+import { saveHttpTypingOrigin } from "../../../utils/connection/httpTypingOrigins";
 import OriginBrowserNotices from "./OriginBrowserNotices";
 import NativeBrowserDownloads from "./NativeBrowserDownloads";
 import { useOriginSelectedDownloads } from "../../../hooks/protocol/useOriginSelectedDownloads";
@@ -1025,7 +1026,38 @@ export default function OriginConnectionBrowser({
     enabled: selectedViewAvailable,
     assertOwner: assertShellOwner,
   });
+  // Explicit click only. Saving the exact origin changes the connection's
+  // authority signature, so the page restarts from the saved row by itself
+  // (see the "source-changed" restart above) and reads the new allow-list.
+  const allowTypingOrigin = async (origin: string) => {
+    assertShellOwner();
+    const scope = context.databaseAvailability;
+    const current =
+      canEdit && connection && scope?.status === "ready"
+        ? context
+            .getCurrentConnections?.({
+              databaseId: session.ownerDatabaseId!,
+              generation: scope.generation,
+            })
+            ?.find((row) => row.id === connection.id)
+        : undefined;
+    if (!connection) throw new Error("The saved website changed.");
+    await saveHttpTypingOrigin({
+      connection,
+      current,
+      origin,
+      write: (updated) =>
+        context.dispatchAndFlush({
+          type: "UPDATE_CONNECTION",
+          payload: updated,
+        }),
+    });
+    toast.success(
+      `Allowed ${origin} for typing on this connection. The page is reloading; choose Type again once it has loaded.`,
+    );
+  };
   const notices = useOriginBrowserNotices({
+    allowTypingOrigin: canEdit ? allowTypingOrigin : undefined,
     identity: snapshot?.identity ?? null,
     enabled:
       ownerAvailable &&
@@ -1627,6 +1659,8 @@ export default function OriginConnectionBrowser({
               viewId: selectedPopupId,
               enabled: selectedViewAvailable && !snapshot?.loading,
               interactive: attached,
+              documentUrl: snapshot?.currentUrl ?? snapshot?.displayUrl,
+              onOriginNotAllowed: notices.offerTypingOrigin,
               documentKey: JSON.stringify([
                 identity,
                 snapshot?.currentUrl ?? snapshot?.displayUrl,

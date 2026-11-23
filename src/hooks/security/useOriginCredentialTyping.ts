@@ -17,6 +17,7 @@ import {
   settleWithin,
   type CredentialFailureCode,
 } from "../../utils/security/credentialFailure";
+import { httpTypingOrigin } from "../../utils/connection/httpTypingOrigins";
 import {
   assertCredentialText,
   type CredentialTypingTarget,
@@ -42,6 +43,7 @@ const nativeReasons = new Map<unknown, CredentialFailureCode>([
   ["timed-out", "typing-timed-out"],
   ["cancelled", "typing-cancelled"],
   ["stale", "typing-stale"],
+  ["origin-not-allowed", "typing-origin-not-allowed"],
 ]);
 /** Reasons after which part of the value may already be in the field. */
 const interruptions: ReadonlySet<CredentialFailureCode> = new Set([
@@ -119,6 +121,11 @@ export interface OriginCredentialTypingOptions {
   documentKey: string;
   enabled: boolean;
   interactive: boolean;
+  /** The page address native reports; names the origin a refusal is about. */
+  documentUrl?: string;
+  /** Typing was refused only because this exact HTTP origin is not allowed. It
+   * is never allowed automatically: the caller offers an explicit action. */
+  onOriginNotAllowed?: (origin: string) => void;
   open: boolean;
   assertOwner: () => void;
   runInteractive: (
@@ -540,11 +547,18 @@ export function useOriginCredentialTyping(
       }
     } catch (error) {
       // A rejecting action reports why the credential could not be prepared.
-      if (alive.current && sequence.current === ticket)
-        setNotice(
-          typingFailure(error, job.typingStarted, Date.now() >= deadline)
-            .message,
+      if (alive.current && sequence.current === ticket) {
+        const failure = typingFailure(
+          error,
+          job.typingStarted,
+          Date.now() >= deadline,
         );
+        setNotice(failure.message);
+        if (failure.code === "typing-origin-not-allowed") {
+          const origin = httpTypingOrigin(latest.current.documentUrl);
+          if (origin) latest.current.onOriginNotAllowed?.(origin);
+        }
+      }
     } finally {
       if (work.current === job) {
         captured.current?.dispose();

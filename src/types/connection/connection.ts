@@ -341,6 +341,10 @@ export interface Connection
   /** Explicit form controls and timing. Extra field values may contain secrets. */
   httpFormAutomation?: HttpFormAutomation;
   httpAutoMfa?: HttpAutoMfaSettings;
+  /** Exact plain-HTTP origins (scheme, host, port) where typing a credential is
+   * allowed besides the saved source, added only by an explicit user action.
+   * HTTPS needs no entry. Native reads this when the browser is created. */
+  httpTypingOrigins?: string[];
   httpAutomation?: import("./sessionQuickActions").HttpAutomationConfig;
   sshQuickActions?: import("./sessionQuickActions").SshQuickActionsConfig;
 
