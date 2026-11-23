@@ -4,12 +4,14 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import type { OriginBrowserIdentity } from "../../types/protocols/originBrowser";
 
-type NoticeKind = "document-load-timeout" | "cookie-retention-failed";
+type NoticeKind = "document-slow-load" | "cookie-retention-failed";
 interface BrowserNotice {
   id: number;
   kind: NoticeKind;
   reloading: boolean;
   reloadFailed: boolean;
+  stopping: boolean;
+  stopFailed: boolean;
 }
 interface Options {
   identity: OriginBrowserIdentity | null;
@@ -17,6 +19,11 @@ interface Options {
   canReload: boolean;
   assertOwner: () => void;
   reload: () => Promise<boolean>;
+  /** User-chosen stop of the unfinished load. Never invoked automatically. */
+  stop?: () => Promise<boolean>;
+  canStop?: boolean;
+  /** Native loading state; a finished load retires the slow-load notice. */
+  loading?: boolean;
 }
 
 function identityKey(value: unknown): string | null {
@@ -93,7 +100,7 @@ export function useOriginBrowserNotices(options: Options) {
             const row = payload as Record<string, unknown>;
             if (
               identityKey(row.identity) !== scope ||
-              (row.kind !== "document-load-timeout" &&
+              (row.kind !== "document-slow-load" &&
                 row.kind !== "cookie-retention-failed")
             )
               return;
@@ -117,6 +124,8 @@ export function useOriginBrowserNotices(options: Options) {
                 kind,
                 reloading: false,
                 reloadFailed: false,
+                stopping: false,
+                stopFailed: false,
               },
             ]);
           });
@@ -142,6 +151,20 @@ export function useOriginBrowserNotices(options: Options) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, options.enabled]);
 
+  const wasLoading = useRef(options.loading);
+  useLayoutEffect(() => {
+    const was = wasLoading.current;
+    wasLoading.current = options.loading;
+    // The page finished (or was stopped elsewhere): the slow warning is stale.
+    if (was === true && options.loading === false)
+      publish(
+        liveNotices.current.filter(
+          (notice) => notice.kind !== "document-slow-load",
+        ),
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options.loading]);
+
   const dismiss = (id: number) => {
     if (authorized(scope))
       publish(liveNotices.current.filter((notice) => notice.id !== id));
@@ -150,7 +173,7 @@ export function useOriginBrowserNotices(options: Options) {
     const notice = liveNotices.current.find((item) => item.id === id);
     if (
       !notice ||
-      notice.kind !== "document-load-timeout" ||
+      notice.kind !== "document-slow-load" ||
       notice.reloading ||
       !authorized(scope) ||
       !latest.current.canReload ||
@@ -182,8 +205,44 @@ export function useOriginBrowserNotices(options: Options) {
           ),
     );
   };
+  const stop = async (id: number) => {
+    const notice = liveNotices.current.find((item) => item.id === id);
+    if (
+      !notice ||
+      notice.kind !== "document-slow-load" ||
+      notice.stopping ||
+      !latest.current.stop ||
+      !latest.current.canStop ||
+      !authorized(scope)
+    )
+      return;
+    const revision = epoch.current;
+    publish(
+      liveNotices.current.map((item) =>
+        item.id === id ? { ...item, stopping: true, stopFailed: false } : item,
+      ),
+    );
+    let accepted = false;
+    try {
+      accepted = await latest.current.stop();
+    } catch {
+      /* Fixed UI copy only. */
+    }
+    if (revision !== epoch.current || !authorized(scope)) return;
+    publish(
+      accepted
+        ? liveNotices.current.filter((item) => item.id !== id)
+        : liveNotices.current.map((item) =>
+            item.id === id
+              ? { ...item, stopping: false, stopFailed: true }
+              : item,
+          ),
+    );
+  };
   return {
     notices,
+    stop,
+    canStop: !!options.stop && !!options.canStop && options.enabled,
     listenerFailed,
     dismiss,
     reload,

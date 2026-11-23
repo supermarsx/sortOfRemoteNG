@@ -14,6 +14,7 @@ const boundary = vi.hoisted(() => ({
   listen: vi.fn(),
   reload: vi.fn(),
   stop: vi.fn(),
+  stop_load: vi.fn(),
   accessible: true,
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
@@ -41,6 +42,8 @@ function Fixture({
     enabled,
     canReload,
     reload: boundary.reload,
+    stop: boundary.stop_load,
+    canStop: true,
     assertOwner: () => {
       if (!boundary.accessible) throw new Error("PRIVATE_NATIVE_ERROR");
     },
@@ -51,6 +54,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   boundary.accessible = true;
   boundary.reload.mockResolvedValue(true);
+  boundary.stop_load.mockResolvedValue(true);
   boundary.listen.mockImplementation(async (_event, callback) => {
     receive = callback;
     return boundary.stop;
@@ -64,7 +68,7 @@ async function mount() {
 }
 const emit = (payload: unknown) => act(() => receive({ payload }));
 const timeout = (owner = identity) =>
-  emit({ identity: owner, kind: "document-load-timeout" });
+  emit({ identity: owner, kind: "document-slow-load" });
 
 describe("attempt-scoped native browser notifications", () => {
   it("shows one themed timeout toast and reloads only on a mounted action", async () => {
@@ -75,8 +79,12 @@ describe("attempt-scoped native browser notifications", () => {
       name: "Browser notifications",
     });
     expect(notice).toHaveTextContent(
-      "The page took too long to load. Loading was stopped.",
+      "This page is taking a long time to load.",
     );
+    expect(notice).not.toHaveTextContent("Loading was stopped");
+    expect(
+      notice.querySelector("[data-native-browser-occlusion]"),
+    ).not.toBeNull();
     expect(screen.getAllByRole("button", { name: "Reload page" })).toHaveLength(
       1,
     );
@@ -84,6 +92,26 @@ describe("attempt-scoped native browser notifications", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reload page" }));
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
     expect(boundary.reload).toHaveBeenCalledExactlyOnceWith();
+  });
+  it("never stops the load itself; Stop loading is a user action", async () => {
+    await mount();
+    timeout();
+    expect(boundary.stop_load).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Stop loading" }));
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    expect(boundary.stop_load).toHaveBeenCalledExactlyOnceWith();
+  });
+  it("keeps the notice with a fixed message when Stop is not accepted", async () => {
+    boundary.stop_load.mockResolvedValueOnce(false);
+    await mount();
+    timeout();
+    fireEvent.click(screen.getByRole("button", { name: "Stop loading" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Stop was not accepted",
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Stop loading" })).toBeEnabled();
   });
   it("accepts only known kinds for the complete issuing identity and ignores native diagnostic fields", async () => {
     await mount();
@@ -100,13 +128,13 @@ describe("attempt-scoped native browser notifications", () => {
       {},
       { identity },
       { identity, kind: "unknown" },
-      { identity: {}, kind: "document-load-timeout" },
+      { identity: {}, kind: "document-slow-load" },
     ])
       emit(payload);
     expect(screen.queryByRole("status")).toBeNull();
     emit({
       identity,
-      kind: "document-load-timeout",
+      kind: "document-slow-load",
       url: "https://secret.invalid/?token=PRIVATE_TOKEN",
       message: "PRIVATE_NATIVE_ERROR",
     });
@@ -156,7 +184,7 @@ describe("attempt-scoped native browser notifications", () => {
     view.rerender(<Fixture owner={successor} />);
     await waitFor(() => expect(boundary.listen).toHaveBeenCalledTimes(2));
     act(() =>
-      oldReceive({ payload: { identity, kind: "document-load-timeout" } }),
+      oldReceive({ payload: { identity, kind: "document-slow-load" } }),
     );
     timeout();
     fireEvent.click(oldAction);

@@ -49,7 +49,10 @@ import {
 import { useOriginBrowserOwner } from "../../../hooks/protocol/useOriginBrowserOwner";
 import { useOriginBrowserSshTrust } from "../../../hooks/protocol/useOriginBrowserSshTrust";
 import { useOriginQuickConnection } from "../../../hooks/protocol/useOriginQuickConnection";
-import { useOriginBrowserOverlays } from "../../../hooks/protocol/useOriginBrowserOverlays";
+import {
+  nativeBrowserOcclusion,
+  useOriginBrowserOverlays,
+} from "../../../hooks/protocol/useOriginBrowserOverlays";
 import { useOriginBrowserConfirmation } from "../../../hooks/protocol/originBrowserConfirmations";
 import {
   originBrowserConnectionTarget,
@@ -1032,6 +1035,9 @@ export default function OriginConnectionBrowser({
     canReload: attached,
     assertOwner: assertShellOwner,
     reload: browser.reload,
+    stop: browser.stop,
+    canStop: attached,
+    loading,
   });
   const automation = useOriginWebsiteAutomation({
     connection: isTemporary ? undefined : connection,
@@ -1950,63 +1956,71 @@ export default function OriginConnectionBrowser({
           </div>
         </div>
       )}
-      {proxyStuck && (
-        // In the layout flow: a native child surface paints above DOM overlays.
-        <div
-          role="alert"
-          aria-label="Browser proxy stuck"
-          className="sor-alert-warning mx-3 mt-2 flex shrink-0 min-w-0 items-start gap-2 text-sm text-[var(--color-text)]"
-        >
-          <RotateCw size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <p className="min-w-0 flex-1">
-            {t(
-              "originBrowser.proxyStuckRestartApp",
-              "The browser engine still could not reach a fresh private proxy, so its network connection is stuck. Restart the app to restore browsing in this tab.",
-            )}
-          </p>
-        </div>
-      )}
-      {restartNotice &&
-        lastRestart &&
-        !(
-          lastRestart.reason === "proxy-unreachable" &&
-          (restartStage === "done" || restartStage === "failed")
-        ) && (
-          // In the layout flow: a native child surface paints above DOM overlays.
+      {/* Floating notice stack: out of layout flow so the native viewport never
+          resizes; each toast opts into native occlusion so it paints above it. */}
+      <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[min(34rem,calc(100vw-2rem))] min-w-0 flex-col items-end gap-2">
+        {proxyStuck && (
           <div
-            role="status"
-            aria-label="Browser reconnection"
-            className={`mx-3 mt-2 flex shrink-0 min-w-0 items-start gap-2 text-sm text-[var(--color-text)] ${
-              restartStage === "failed"
-                ? "sor-alert-warning"
-                : "rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
-            }`}
+            role="alert"
+            aria-label="Browser proxy stuck"
+            className="sor-alert-warning pointer-events-auto flex min-w-0 items-start gap-2 text-sm text-[var(--color-text)] shadow-lg"
+            {...nativeBrowserOcclusion()}
           >
-            {restartStage === "running" ? (
-              <LoaderCircle
-                size={16}
-                className="mt-0.5 shrink-0 animate-spin motion-reduce:animate-none"
-                aria-hidden="true"
-              />
-            ) : (
-              <RotateCw
-                size={16}
-                className="mt-0.5 shrink-0"
-                aria-hidden="true"
-              />
-            )}
-            <p className="min-w-0 flex-1">{restartNotice}</p>
-            <button
-              type="button"
-              className="sor-btn sor-icon-btn-sm shrink-0"
-              aria-label="Dismiss reconnection notice"
-              onClick={() => setDismissedRestart(lastRestart.serial)}
-            >
-              <X size={14} aria-hidden="true" />
-            </button>
+            <RotateCw
+              size={16}
+              className="mt-0.5 shrink-0"
+              aria-hidden="true"
+            />
+            <p className="min-w-0 flex-1">
+              {t(
+                "originBrowser.proxyStuckRestartApp",
+                "The browser engine still could not reach a fresh private proxy, so its network connection is stuck. Restart the app to restore browsing in this tab.",
+              )}
+            </p>
           </div>
         )}
-      <OriginBrowserNotices notices={notices} />
+        {restartNotice &&
+          lastRestart &&
+          !(
+            lastRestart.reason === "proxy-unreachable" &&
+            (restartStage === "done" || restartStage === "failed")
+          ) && (
+            <div
+              role="status"
+              aria-label="Browser reconnection"
+              {...nativeBrowserOcclusion()}
+              className={`pointer-events-auto flex min-w-0 items-start gap-2 text-sm text-[var(--color-text)] shadow-lg ${
+                restartStage === "failed"
+                  ? "sor-alert-warning"
+                  : "rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+              }`}
+            >
+              {restartStage === "running" ? (
+                <LoaderCircle
+                  size={16}
+                  className="mt-0.5 shrink-0 animate-spin motion-reduce:animate-none"
+                  aria-hidden="true"
+                />
+              ) : (
+                <RotateCw
+                  size={16}
+                  className="mt-0.5 shrink-0"
+                  aria-hidden="true"
+                />
+              )}
+              <p className="min-w-0 flex-1">{restartNotice}</p>
+              <button
+                type="button"
+                className="sor-btn sor-icon-btn-sm shrink-0"
+                aria-label="Dismiss reconnection notice"
+                onClick={() => setDismissedRestart(lastRestart.serial)}
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
+            </div>
+          )}
+        <OriginBrowserNotices notices={notices} />
+      </div>
       {browserConfig.showLoadingProgress && (
         // Native child surfaces paint above DOM overlays. Reserve shell space
         // outside the measured viewport, even between loads, to avoid jitter.

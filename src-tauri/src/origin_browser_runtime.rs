@@ -2823,15 +2823,14 @@ pub(crate) fn tick() {
             popups::poll(view);
             let address_expired = view.attempt.address_watch.lock().unwrap_or_else(|error| error.into_inner())
                 .take_expired(Instant::now(), Duration::from_secs(view.attempt.preferences.document_ready_timeout_seconds));
-            if address_expired
-                && view.attempt.current()
-                && matches!(view.host.address_timeout(&view.attempt.identity), Ok(true))
-            {
+            if address_expired && view.attempt.current() {
+                // Slow, not failed: never stop the load on the user's behalf.
+                // The UI offers Stop and Reload and the page keeps loading.
                 let _ = view.window.emit(
                     "origin-browser-notice",
                     serde_json::json!({
                         "identity": OriginBrowserIdentity::from_native(&view.attempt.identity),
-                        "kind": "document-load-timeout",
+                        "kind": "document-slow-load",
                     }),
                 );
             }
@@ -2870,14 +2869,13 @@ pub(crate) fn tick() {
                 }
             };
             if load_expired && view.attempt.current() {
-                // Abort only this unfinished document, not its owning database
-                // or browser session. The user can retry using Reload.
-                let _ = view.host.stop(&view.attempt.identity);
+                // Alert only. The load is never aborted automatically; the
+                // user may choose Stop (or Reload) from the slow-load notice.
                 let _ = view.window.emit(
                     "origin-browser-notice",
                     serde_json::json!({
                         "identity": OriginBrowserIdentity::from_native(&view.attempt.identity),
-                        "kind": "document-load-timeout",
+                        "kind": "document-slow-load",
                     }),
                 );
             }

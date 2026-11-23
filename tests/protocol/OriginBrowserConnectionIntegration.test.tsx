@@ -2078,14 +2078,14 @@ describe("real-origin connection-tab integration", () => {
       f.noticeListener?.({
         payload: {
           identity: snapshot().identity,
-          kind: "document-load-timeout",
+          kind: "document-slow-load",
           url: "https://private.invalid/?token=SECRET",
         },
       }),
     );
     expect(
       screen.getByRole("status", { name: "Browser notifications" }),
-    ).toHaveTextContent("Loading was stopped");
+    ).toHaveTextContent("taking a long time to load");
     expect(
       screen.getByRole("status", { name: "Browser notifications" }),
     ).not.toHaveTextContent(/SECRET|private/);
@@ -2116,7 +2116,7 @@ describe("real-origin connection-tab integration", () => {
       old({
         payload: {
           identity: snapshot().identity,
-          kind: "document-load-timeout",
+          kind: "document-slow-load",
         },
       }),
     );
@@ -2129,7 +2129,7 @@ describe("real-origin connection-tab integration", () => {
       old({
         payload: {
           identity: snapshot().identity,
-          kind: "document-load-timeout",
+          kind: "document-slow-load",
         },
       }),
     );
@@ -2137,7 +2137,7 @@ describe("real-origin connection-tab integration", () => {
       f.noticeListener?.({
         payload: {
           identity: snapshot().identity,
-          kind: "document-load-timeout",
+          kind: "document-slow-load",
         },
       }),
     );
