@@ -14,6 +14,8 @@ import {
 import { hasNoLiveTransport } from "../../utils/session/sessionClassification";
 import { ToastContext } from "../../contexts/ToastContext";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
+import { SettingsManager } from "../../utils/settings/settingsManager";
+import { normalizeWebBrowserSettings } from "../../utils/settings/webBrowserSettings";
 import {
   RDP_INTERNALS_PROTOCOL,
   RDP_INTERNALS_WINDOW_MESSAGE,
@@ -29,7 +31,25 @@ export const DETACH_REFUSED_IN_FLIGHT_MESSAGE =
   "Cannot detach while the connection attempt is still in flight — wait for it to finish or close the tab";
 export const DETACH_REFUSED_BACKEND_MESSAGE =
   "Cannot detach: the native session refused the window handoff — try again or close the tab";
+export const DETACH_REFUSED_NATIVE_BROWSER_MESSAGE =
+  "A real-origin browser page lives in a native view bound to this window. Detaching would reload it and lose the sign-in, so it stays here; use another tab or window arrangement instead.";
 const DETACHED_SESSION_METADATA_VERSION = 2;
+
+/** A real-origin page is one native browser instance parented to the window
+ * that created it. A second window cannot adopt it, only start a new page. */
+function isNativeOriginBrowserSession(session: ConnectionSession): boolean {
+  if (session.protocol !== "http" && session.protocol !== "https") return false;
+  try {
+    return (
+      normalizeWebBrowserSettings(
+        SettingsManager.getInstance().getSettings().webBrowser,
+      ).engine !== "legacy"
+    );
+  } catch {
+    // Unreadable settings never select the legacy engine for a page.
+    return true;
+  }
+}
 const MAX_OPAQUE_ID_LENGTH = 512;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -175,6 +195,13 @@ export function useSessionDetach(
         refuseDetach(
           "Take Control is a source-window-owned view",
           WEB_POPUP_WINDOW_MESSAGE,
+        );
+        return;
+      }
+      if (isNativeOriginBrowserSession(session)) {
+        refuseDetach(
+          "the native browser instance cannot move to another window",
+          DETACH_REFUSED_NATIVE_BROWSER_MESSAGE,
         );
         return;
       }

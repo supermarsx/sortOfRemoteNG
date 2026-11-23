@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { TabLayoutManager } from "../../src/components/session/TabLayoutManager";
@@ -152,5 +153,38 @@ describe("TabLayoutManager", () => {
     for (const [key, fallback] of ownedFallbacks) {
       expect(tabLayoutT).toHaveBeenCalledWith(key, fallback);
     }
+  });
+  it("keeps every viewer instance mounted across tab switches and layout changes", () => {
+    const lifecycle = { mounts: 0, unmounts: 0 };
+    function Viewer({ id }: { id: string }) {
+      useEffect(() => {
+        lifecycle.mounts += 1;
+        return () => {
+          lifecycle.unmounts += 1;
+        };
+      }, []);
+      return <div data-testid={`life-${id}`} />;
+    }
+    const element = (active: string, mode: TabLayout["mode"]) => (
+      <TabLayoutManager
+        sessions={sessions}
+        activeSessionId={active}
+        layout={{ mode, sessions: [] }}
+        onLayoutChange={vi.fn()}
+        onSessionSelect={vi.fn()}
+        onSessionClose={vi.fn()}
+        onSessionDetach={vi.fn()}
+        renderSession={(session) => <Viewer id={session.id} />}
+      />
+    );
+    const view = render(element("s1", "tabs"));
+    expect(lifecycle).toEqual({ mounts: 2, unmounts: 0 });
+    view.rerender(element("s2", "tabs"));
+    view.rerender(element("s1", "tabs"));
+    view.rerender(element("s1", "miniMosaic"));
+    view.rerender(element("s2", "tabs"));
+    expect(lifecycle).toEqual({ mounts: 2, unmounts: 0 });
+    view.unmount();
+    expect(lifecycle.unmounts).toBe(2);
   });
 });

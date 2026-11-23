@@ -20,6 +20,7 @@ import {
 import {
   DETACH_REFUSED_EVENT,
   DETACH_REFUSED_IN_FLIGHT_MESSAGE,
+  DETACH_REFUSED_NATIVE_BROWSER_MESSAGE,
 } from "../../src/hooks/session/useSessionDetach";
 
 // ── Mocks ──────────────────────────────────────────────────────────
@@ -231,6 +232,30 @@ describe("useSessionDetach", () => {
     expect(registerWindow).not.toHaveBeenCalled();
     expect(mockWebviewCreate).not.toHaveBeenCalled();
     expect(localStorage.getItem(`detached-session-${tab.id}`)).toBeNull();
+  });
+  it("keeps a real-origin browser page in its window: no hand-off, unmount or new window", async () => {
+    const refusal = vi.fn();
+    window.addEventListener(DETACH_REFUSED_EVENT, refusal);
+    try {
+      for (const protocol of ["http", "https"]) {
+        const tab = makeSession(`web-${protocol}`, protocol);
+        const { result, dispatch, registerWindow } = renderDetach({
+          sessions: [tab],
+        });
+        await act(async () => result.current.handleSessionDetach(tab.id));
+        expect(invoke).not.toHaveBeenCalled();
+        expect(dispatch).not.toHaveBeenCalled();
+        expect(registerWindow).not.toHaveBeenCalled();
+        expect(mockWebviewCreate).not.toHaveBeenCalled();
+        expect(localStorage.getItem(`detached-session-${tab.id}`)).toBeNull();
+      }
+      expect(refusal).toHaveBeenCalledTimes(2);
+      expect((refusal.mock.calls[0][0] as CustomEvent).detail.reason).toBe(
+        DETACH_REFUSED_NATIVE_BROWSER_MESSAGE,
+      );
+    } finally {
+      window.removeEventListener(DETACH_REFUSED_EVENT, refusal);
+    }
   });
   it("keeps the private vault in main with actionable guidance before unmount or handoff", async () => {
     const tab = createSecurityToolSession("credentialVault", undefined, "db-a");
