@@ -130,8 +130,15 @@ export const PopoverSurface: React.FC<PopoverSurfaceProps> = ({
 
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node | null;
-      if (popoverRef.current?.contains(target || null)) return;
-      if (anchorRef.current?.contains(target || null)) return;
+      // React flushes a discrete handler's state before this document listener
+      // runs, so a nested menu option that closed itself on mousedown is
+      // already detached and `contains(target)` would call it "outside". The
+      // dispatch-time path still names the surface the gesture started in.
+      const path = event.composedPath?.() ?? [];
+      const inside = (node: Node | null) =>
+        !!node && (node.contains(target || null) || path.includes(node));
+      if (inside(popoverRef.current)) return;
+      if (inside(anchorRef.current)) return;
       onClose();
     };
 

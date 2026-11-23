@@ -1,4 +1,5 @@
 import React from "react";
+import { flushSync } from "react-dom";
 import { describe, it, expect, vi } from "vitest";
 import {
   act,
@@ -114,5 +115,39 @@ describe("PopoverSurface", () => {
     expect(screen.getByTestId("popover-surface")).toBeInTheDocument();
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByTestId("popover-surface")).not.toBeInTheDocument();
+  });
+});
+
+describe("PopoverSurface detached mousedown targets", () => {
+  it("does not treat a target removed by its own handler as an outside click", () => {
+    const onClose = vi.fn();
+    function Host() {
+      const anchor = React.useRef<HTMLButtonElement>(null);
+      const [shown, setShown] = React.useState(true);
+      const [ready, setReady] = React.useState(false);
+      React.useEffect(() => setReady(true), []);
+      return (
+        <>
+          <button ref={anchor}>anchor</button>
+          <PopoverSurface isOpen={ready} onClose={onClose} anchorRef={anchor}>
+            {shown && (
+              <div data-testid="item" onMouseDown={() => setShown(false)}>
+                item
+              </div>
+            )}
+          </PopoverSurface>
+        </>
+      );
+    }
+    const { getByTestId, queryByTestId } = render(<Host />);
+    const item = getByTestId("item");
+    // A browser's microtask checkpoint renders React's sync lane between
+    // listeners; emulate it before the document-level outside-click listener.
+    const checkpoint = () => flushSync(() => undefined);
+    document.body.addEventListener("mousedown", checkpoint);
+    item.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    document.body.removeEventListener("mousedown", checkpoint);
+    expect(queryByTestId("item")).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

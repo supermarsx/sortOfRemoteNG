@@ -1,4 +1,5 @@
 import React from "react";
+import { flushSync } from "react-dom";
 import {
   act,
   cleanup,
@@ -678,5 +679,108 @@ describe("native extension controls", () => {
     act(() => outside.focus());
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(outside).toHaveFocus();
+  });
+});
+
+describe("customize this connection popup stays open", () => {
+  function uiController() {
+    const hook = renderHook(() => useNativeBrowserExtensions(options()), {
+      wrapper,
+    });
+    return { ...hook.result.current, save: vi.fn().mockResolvedValue(true) };
+  }
+  /**
+   * Dispatch like a browser: after React's own listener returns, the engine
+   * runs a microtask checkpoint, so the sync-lane render has already detached
+   * the clicked option before the later document listeners see the event.
+   */
+  function nativeMouseDown(node: Element) {
+    const checkpoint = () => flushSync(() => undefined);
+    document.body.addEventListener("mousedown", checkpoint);
+    try {
+      node.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+      );
+    } finally {
+      document.body.removeEventListener("mousedown", checkpoint);
+    }
+  }
+  async function openAppearance(controller: ReturnType<typeof uiController>) {
+    render(
+      <>
+        <NativeBrowserExtensionControls controller={controller} />
+        <button>Outside</button>
+      </>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Website extensions" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Website extensions",
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Appearance" }));
+    return dialog;
+  }
+
+  it("survives the option mousedown that closes the nested menu, and its controls work", async () => {
+    const controller = uiController();
+    const dialog = await openAppearance(controller);
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Appearance settings" }),
+    );
+    const option = screen.getByRole("option", {
+      name: "Customize this connection",
+    });
+    nativeMouseDown(option);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: "Appearance settings" }),
+      ).toHaveTextContent("Customize this connection"),
+    );
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeVisible();
+
+    // Focus changes inside the popup (and to nowhere) keep it open.
+    act(() =>
+      screen.getByRole("combobox", { name: "Appearance settings" }).focus(),
+    );
+    act(() => (document.activeElement as HTMLElement).blur());
+    expect(screen.getByRole("dialog")).toBeVisible();
+
+    // The customized fields are interactive and edit this connection's draft.
+    expect(
+      screen.getByRole("checkbox", { name: "Follow app theme colors" }),
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole("combobox", { name: "Conversion mode" }));
+    nativeMouseDown(screen.getByRole("option", { name: "Filter" }));
+    expect(
+      screen.getByRole("combobox", { name: "Conversion mode" }),
+    ).toHaveTextContent("Filter");
+    expect(screen.getByRole("dialog")).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Follow app theme colors" }),
+    );
+    fireEvent.change(screen.getByLabelText("Background color"), {
+      target: { value: "#223344" },
+    });
+    expect(screen.getByRole("dialog")).toBeVisible();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save appearance" }));
+    });
+    expect(controller.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "appearance",
+        configuration: expect.objectContaining({ useGlobalDefaults: false }),
+      }),
+    );
+  });
+
+  it("still closes on Escape and on a real outside click", async () => {
+    const controller = uiController();
+    await openAppearance(controller);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Website extensions" }));
+    await screen.findByRole("dialog");
+    act(() => nativeMouseDown(screen.getByRole("button", { name: "Outside" })));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
