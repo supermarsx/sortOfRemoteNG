@@ -73,16 +73,8 @@
   },
   "native/windows-arm-full-sdk/full_sdk_control.mjs": {
     "bytes": 198682,
-    "sha256": "742bb3e010987b1cf33eca8f0aec09df1b9c91d77a2f1340c5ad86bda6ae5f5f",
+    "sha256": "09af5e2beb669e3198753c307ed693845c428ae272d292ee195d9f19f963904d",
     "pairs": [
-      {
-        "current": "wallEnd - 6300000 &&\n        phase.nativeMonoEnd <= leases.get(state.leaseToken).monoEnd - 6300000,",
-        "previous": "wallEnd - 4800000 &&\n        phase.nativeMonoEnd <= leases.get(state.leaseToken).monoEnd - 4800000,"
-      },
-      {
-        "current": "\"cef-engine\" ? 6300000 : 150000,",
-        "previous": "\"cef-engine\" ? 4800000 : 150000,"
-      },
       {
         "current": "wallEnd - 4800000 &&\n        phase.nativeMonoEnd <= leases.get(state.leaseToken).monoEnd - 4800000,",
         "previous": "wallEnd - 3600000 &&\n        phase.nativeMonoEnd <= leases.get(state.leaseToken).monoEnd - 3600000,"
@@ -337,16 +329,8 @@
   },
   "native/windows-arm-full-sdk/sdk-origin-review.json": {
     "bytes": 27528,
-    "sha256": "e02ad4d8a90a4cec13f629e3c33f3631942c1430eeec51a66aa3202030b811e7",
+    "sha256": "6b86890d01fbe85ab7508a5903aa71e907990dc997e5e829e3cf2c272e2b5785",
     "pairs": [
-      {
-        "current": "{\"bytes\":198682,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"742bb3e010987b1cf33eca8f0aec09df1b9c91d77a2f1340c5ad86bda6ae5f5f\"}",
-        "previous": "{\"bytes\":198682,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"09af5e2beb669e3198753c307ed693845c428ae272d292ee195d9f19f963904d\"}"
-      },
-      {
-        "current": "\"workflowPin\":{\"bytes\":12353,\"sha256\":\"885196da089ade6566232ff18c478241551533a4ba23e22488986a905ed71fae\"}",
-        "previous": "\"workflowPin\":{\"bytes\":12330,\"sha256\":\"0c4582d1f568fc4a2258536a59d7007c1a68a86244ddd70175c05fc3d7833e48\"}"
-      },
       {
         "current": "{\"bytes\":198682,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"09af5e2beb669e3198753c307ed693845c428ae272d292ee195d9f19f963904d\"}",
         "previous": "{\"bytes\":198682,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"c7d4b9ce58c5cad19c50dd36b237d7541d032ec69a31175c7ff19d7c52f863d5\"}"
@@ -1024,13 +1008,9 @@
     "beforeSha256": "6dc79f277efc50c6105aa737bc348aec04a1c9aa45854630462606664e83dda5"
   },
   ".github/workflows/windows-arm-full-sdk.yml": {
-    "bytes": 12353,
-    "sha256": "885196da089ade6566232ff18c478241551533a4ba23e22488986a905ed71fae",
+    "bytes": 12330,
+    "sha256": "0c4582d1f568fc4a2258536a59d7007c1a68a86244ddd70175c05fc3d7833e48",
     "pairs": [
-      {
-        "current": "if ($LASTEXITCODE -ne 0) { Write-Host $resultRaw; exit $LASTEXITCODE }\n          $result = $resultRaw",
-        "previous": "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n          $result = $resultRaw"
-      },
       {
         "current": "      - name: Enable Win32 long paths for the native compile\n        shell: pwsh\n        run: |\n          $ErrorActionPreference = 'Stop'\n          # The Release_GN_arm64 checkout root is 144 characters, so third_party/dawn directx-shader-compiler\n          # tblgen outputs pass 260. The fixed checkout path cannot be shortened; processes started after this\n          # step honor long paths (their manifests are longPathAware).\n          $fsKey = 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem'\n          Set-ItemProperty -Path $fsKey -Name LongPathsEnabled -Type DWord -Value 1\n          if ((Get-ItemPropertyValue -Path $fsKey -Name LongPathsEnabled) -ne 1) { throw 'FULL_SDK_LONG_PATHS' }\n",
         "previous": ""

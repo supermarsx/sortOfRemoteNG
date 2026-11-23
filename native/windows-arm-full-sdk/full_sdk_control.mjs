@@ -5229,8 +5229,8 @@ async function verifyEnginePhase(token, phase, packetPin, packet) {
       closed.completion === "native-slice-ended" &&
         closed.receiptPin?.bytes === jobRecord.pin.bytes &&
         closed.receiptPin?.sha256 === jobRecord.pin.sha256 &&
-        phase.nativeWallEnd <= leases.get(state.leaseToken).wallEnd - 6300000 &&
-        phase.nativeMonoEnd <= leases.get(state.leaseToken).monoEnd - 6300000,
+        phase.nativeWallEnd <= leases.get(state.leaseToken).wallEnd - 4800000 &&
+        phase.nativeMonoEnd <= leases.get(state.leaseToken).monoEnd - 4800000,
       "ENGINE_SLICE_CLOSE",
     );
     await engineBoundary(token, phase);
@@ -5378,7 +5378,7 @@ async function runEnginePhase(token, role) {
     });
   // The compile must end 75 min before the job does: the checkpoint seal (about 73 min serial on the 29 GB tree, about 50 with the
   // parallel hashing, with its artifact upload) runs in what is left, so a late compile start shortens the slice instead of starving the seal.
-  const reserve = role === "cef-engine" ? 6300000 : 150000,
+  const reserve = role === "cef-engine" ? 4800000 : 150000,
     cap = checkpoint ? 6000000 : ENGINE_CAPS_MS[index];
   const nativeWallEnd =
       index <= 1

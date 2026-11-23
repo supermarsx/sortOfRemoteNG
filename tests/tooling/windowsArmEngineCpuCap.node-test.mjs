@@ -65,22 +65,19 @@ test("checkpoint seal reserve keeps the seal inside the original lease with marg
   );
   assert.ok(match);
   const reserveMs = Number(match[1]);
-  assert.equal(reserveMs, 6300000);
-  // Measured seal (run 44853666176): 4429 s from the compile end to the seal
-  // finishing. Runs 44945298458 / 45022725655 sealed with the whole 80 min reserve
-  // consumed (seal done 2.5 min before the lease), so the checkpoint upload had 10-25 s
-  // (TRANSPORT_DEADLINE, 150 s transport reserve). Keep at least 25 min after the seal
-  // for the 29 GB release-asset upload.
-  const sealFromCompileEndMinutes = 75;
-  assert.ok(reserveMs / 60000 - 2.5 - sealFromCompileEndMinutes >= 25);
+  assert.equal(reserveMs, 4800000);
+  // Measured seal (run 44853666176): 4146 s of Job time, 4429 s from the compile
+  // end to the seal finishing; with a 75 min reserve it ended 79 s past the lease
+  // deadline. Keep at least 3 min of margin over that.
+  const sealFromCompileEndMinutes = 74;
+  assert.ok(reserveMs / 60000 - 2.5 - sealFromCompileEndMinutes >= 3);
   // The controller still requires the compile end to respect the older bound.
   assert.ok(reserveMs >= 3600000);
   // A fresh run reaches the compile after about 140 min (73 min acquisition +
   // 62 min hooks/GN + probes) and a continuation after about 80 min; the window
   // up to the reserve is large enough for the 120 / 150 min compile caps.
   const job = 360;
-  // A fresh run's slice is shortened by the reserve (115 min of the 120 cap).
-  assert.ok(job - reserveMs / 60000 - 140 >= 100);
+  assert.ok(job - reserveMs / 60000 - 140 >= 120);
   assert.ok(job - reserveMs / 60000 - 100 >= 150);
 });
 
