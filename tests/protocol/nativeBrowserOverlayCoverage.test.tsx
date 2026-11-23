@@ -1,4 +1,5 @@
 import { act, cleanup, render, renderHook } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -243,5 +244,36 @@ describe("pending security confirmations", () => {
     expect(getOriginBrowserConfirmation("tab")).toBe("certificate");
     release();
     expect(getOriginBrowserConfirmation("tab")).toBeNull();
+  });
+});
+
+describe("hand-rolled modal scrims", () => {
+  it("blocks for a fixed inset-0 bg-black scrim with no dialog role, then restores", () => {
+    const scrim = add({
+      class:
+        "fixed inset-0 z-[9999] flex items-center justify-center bg-black/30",
+    });
+    const { result } = renderHook(() => useOriginBrowserOverlays(true));
+    expect(result.current).toMatchObject({ blocked: true, rectangles: [box] });
+    scrim.remove();
+    act(() => mutation());
+    flush();
+    expect(result.current).toMatchObject({ blocked: false, rectangles: [] });
+  });
+
+  it("ignores transparent full-window click-away catchers", () => {
+    add({ class: "fixed inset-0 z-40" });
+    const { result } = renderHook(() => useOriginBrowserOverlays(true));
+    expect(result.current).toMatchObject({ blocked: false, rectangles: [] });
+  });
+
+  it("keeps the New Tab Group dialog declared as a modal dialog", () => {
+    const source = readFileSync(
+      "src/components/session/SessionTabs.tsx",
+      "utf8",
+    ).replace(/\r\n/g, "\n");
+    expect(source).toMatch(
+      /role="dialog"\n\s+aria-modal="true"\n\s+aria-label="New Tab Group"/,
+    );
   });
 });

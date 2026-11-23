@@ -2199,6 +2199,9 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
           onClick={handleCancelNewGroup}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="New Tab Group"
             className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl p-4 min-w-[280px]"
             onClick={(e) => e.stopPropagation()}
           >

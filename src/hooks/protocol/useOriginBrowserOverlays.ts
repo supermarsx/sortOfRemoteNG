@@ -22,12 +22,15 @@ export function nativeBrowserOcclusion(mode: "clip" | "blocking" = "clip"): {
   };
 }
 
-const overlays =
-  '[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="menu"], [role="listbox"], [role="tooltip"], .sor-popover-surface, .sor-modal-backdrop, [data-native-browser-occlusion]';
+// A hand-rolled modal scrim: a full-window fixed layer tinted with bg-black/NN.
+// It is a dialog whether or not its author remembered the dialog role, so it is
+// caught here instead of painting underneath the native child. Transparent
+// click-away catchers carry no bg-black and are deliberately not matched.
+const modalScrim = '[class~="fixed"][class~="inset-0"][class*="bg-black"]';
+const overlays = `[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="menu"], [role="listbox"], [role="tooltip"], .sor-popover-surface, .sor-modal-backdrop, [data-native-browser-occlusion], ${modalScrim}`;
 // Inline failure screens clip retained native content without becoming a dialog.
 // Blocking here would hide their viewport ancestor and oscillate their clipping.
-const blockingOverlays =
-  '[role="alertdialog"], [aria-modal="true"], .sor-modal-backdrop:not(.sor-modal-toast-backdrop), [data-native-browser-occlusion="blocking"]';
+const blockingOverlays = `[role="alertdialog"], [aria-modal="true"], .sor-modal-backdrop:not(.sor-modal-toast-backdrop), [data-native-browser-occlusion="blocking"], ${modalScrim}`;
 
 function blocksNativeInput(node: HTMLElement): boolean {
   if (node.matches(blockingOverlays)) return true;
