@@ -38,3 +38,34 @@ body {
   background-color: var(--color-background);
   color: var(--color-text);
 }
+
+/*
+ * Legacy / alias tokens referenced by components (var(--color-bg) etc.).
+ * Declared on body (not :root) so they resolve against the ThemeManager's
+ * body-level overrides for every theme. Every alias ends at an opaque token;
+ * an undefined variable makes the surface transparent in dark themes.
+ * tests/styles/themeTokens.test.ts guards this list.
+ */
+body {
+  --color-bg: var(--color-background);
+  --color-bgPrimary: var(--color-background);
+  --color-backgroundSecondary: var(--color-surface);
+  --color-bg-tertiary: var(--color-surfaceHover);
+  --color-surfaceElevated: var(--color-surfaceHover);
+  --color-hover: var(--color-surfaceHover);
+  --color-inputBackground: var(--color-input);
+  --color-textPrimary: var(--color-text);
+  --color-text-muted: var(--color-textMuted);
+  --color-textTertiary: var(--color-textMuted);
+  --color-muted: var(--color-textMuted);
+  --color-borderActive: var(--color-primary);
+  --color-borderHover: var(--color-textMuted);
+  --color-border-hover: var(--color-textMuted);
+  --color-primaryHover: var(--color-primary);
+  --color-danger: var(--color-error);
+  --color-dangerBg: color-mix(
+    in srgb,
+    var(--color-error) 16%,
+    var(--color-surface)
+  );
+}
