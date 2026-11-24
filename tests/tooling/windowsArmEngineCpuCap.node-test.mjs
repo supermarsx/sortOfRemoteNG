@@ -65,20 +65,28 @@ test("checkpoint seal reserve keeps the seal inside the original lease with marg
   );
   assert.ok(match);
   const reserveMs = Number(match[1]);
-  assert.equal(reserveMs, 4800000);
-  // Measured seal (run 44853666176): 4146 s of Job time, 4429 s from the compile
-  // end to the seal finishing; with a 75 min reserve it ended 79 s past the lease
-  // deadline. Keep at least 3 min of margin over that.
-  const sealFromCompileEndMinutes = 74;
-  assert.ok(reserveMs / 60000 - 2.5 - sealFromCompileEndMinutes >= 3);
+  assert.equal(reserveMs, 5700000);
+  // The ENGINE_SLICE_CLOSE bound must be the same reserve, or an exact-reserve compile end is refused.
+  assert.equal(control.match(/(?:wallEnd|monoEnd) - 5700000/g).length, 2);
+  assert.doesNotMatch(control, /(?:wallEnd|monoEnd) - 4800000/);
+  // Measured seal on the ~29 GB tree: 75.4 min from the compile end to the seal finishing (sealed run 45056284779),
+  // then 77 s to upload it; continuation trees are larger. The reserve minus the 2.5 min job-clock tail must hold
+  // both with at least 15 min of margin.
+  const sealFromCompileEndMinutes = 75.4;
+  const uploadMinutes = 1.3;
+  assert.ok(
+    reserveMs / 60000 - 2.5 - sealFromCompileEndMinutes - uploadMinutes >= 15,
+  );
   // The controller still requires the compile end to respect the older bound.
   assert.ok(reserveMs >= 3600000);
-  // A fresh run reaches the compile after about 140 min (73 min acquisition +
-  // 62 min hooks/GN + probes) and a continuation after about 80 min; the window
-  // up to the reserve is large enough for the 120 / 150 min compile caps.
+  // Compile window = min(lease - reserve - compile start, compile cap). A fresh run reaches the compile after about
+  // 140 min (73 min acquisition + 62 min hooks/GN + probes): 125 min, so the 120 min fresh cap is not shortened. A
+  // continuation reaches it after source re-acquisition (~120 min) + checkpoint restore (~16 min) + input apply
+  // (~55 min) = ~191 min: 74 min, clamped under its 150 min cap, still a real compile slice.
   const job = 360;
   assert.ok(job - reserveMs / 60000 - 140 >= 120);
-  assert.ok(job - reserveMs / 60000 - 100 >= 150);
+  assert.equal(job - reserveMs / 60000 - (120 + 16 + 55), 74);
+  assert.ok(job - reserveMs / 60000 - (120 + 16 + 55) >= 60);
 });
 
 test("engine CPU cap history layers invert every changed file exactly", async () => {

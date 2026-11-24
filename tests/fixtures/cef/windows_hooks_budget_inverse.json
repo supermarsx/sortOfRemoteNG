@@ -72,9 +72,17 @@
     "beforeSha256": "7d54f695876d59ce0fd8922a8463a6426b0209a1aad2b32c4dae480b2b043bc0"
   },
   "native/windows-arm-full-sdk/full_sdk_control.mjs": {
-    "bytes": 198682,
-    "sha256": "09af5e2beb669e3198753c307ed693845c428ae272d292ee195d9f19f963904d",
+    "bytes": 198672,
+    "sha256": "f644bede8fc4456f191c9a4a3dcb18af55922db8df41b62dbbe2027562823ef4",
     "pairs": [
+      {
+        "current": "        closed.receiptPin?.sha256 === jobRecord.pin.sha256 &&\n        phase.nativeWallEnd <= leases.get(state.leaseToken).wallEnd - 5700000 &&\n        phase.nativeMonoEnd <= leases.get(state.leaseToken).monoEnd - 5700000,\n      \"ENGINE_SLICE_CLOSE\",\n",
+        "previous": "        closed.receiptPin?.sha256 === jobRecord.pin.sha256 &&\n        phase.nativeWallEnd <= leases.get(state.leaseToken).wallEnd - 4800000 &&\n        phase.nativeMonoEnd <= leases.get(state.leaseToken).monoEnd - 4800000,\n      \"ENGINE_SLICE_CLOSE\",\n"
+      },
+      {
+        "current": "    });\n  // The compile must end 95 min before the job does: the checkpoint seal (75.4 min measured on the 29 GB tree, larger on a continuation)\n  // and the 77 s artifact upload run in what is left, so a late compile start shortens the slice instead of starving the seal.\n  const reserve = role === \"cef-engine\" ? 5700000 : 150000,\n    cap = checkpoint ? 6000000 : ENGINE_CAPS_MS[index];\n",
+        "previous": "    });\n  // The compile must end 75 min before the job does: the checkpoint seal (about 73 min serial on the 29 GB tree, about 50 with the\n  // parallel hashing, with its artifact upload) runs in what is left, so a late compile start shortens the slice instead of starving the seal.\n  const reserve = role === \"cef-engine\" ? 4800000 : 150000,\n    cap = checkpoint ? 6000000 : ENGINE_CAPS_MS[index];\n"
+      },
       {
         "current": "wallEnd - 4800000 &&\n        phase.nativeMonoEnd <= leases.get(state.leaseToken).monoEnd - 4800000,",
         "previous": "wallEnd - 3600000 &&\n        phase.nativeMonoEnd <= leases.get(state.leaseToken).monoEnd - 3600000,"
@@ -329,8 +337,20 @@
   },
   "native/windows-arm-full-sdk/sdk-origin-review.json": {
     "bytes": 27528,
-    "sha256": "6b86890d01fbe85ab7508a5903aa71e907990dc997e5e829e3cf2c272e2b5785",
+    "sha256": "57c68ffa225334a1869aa4882e1b6f9457ba72d5a1bd3298e2b10dcf8e189fbd",
     "pairs": [
+      {
+        "current": "{\"bytes\":43459,\"path\":\"native/windows-arm-full-sdk/checkpoint_inputs.py\",\"sha256\":\"11a56868b1e40646f1f69f4d8803b5114c93b8bc2ba82c7d03bbfbdf83cede88\"}",
+        "previous": "{\"bytes\":42509,\"path\":\"native/windows-arm-full-sdk/checkpoint_inputs.py\",\"sha256\":\"547cc66719fa9d3c446fb338f014d0a061ee984f65b3f584318f8f2d3861b537\"}"
+      },
+      {
+        "current": "{\"bytes\":198672,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"f644bede8fc4456f191c9a4a3dcb18af55922db8df41b62dbbe2027562823ef4\"}",
+        "previous": "{\"bytes\":198682,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"09af5e2beb669e3198753c307ed693845c428ae272d292ee195d9f19f963904d\"}"
+      },
+      {
+        "current": "\"workflowPin\":{\"bytes\":12353,\"sha256\":\"885196da089ade6566232ff18c478241551533a4ba23e22488986a905ed71fae\"}",
+        "previous": "\"workflowPin\":{\"bytes\":12330,\"sha256\":\"0c4582d1f568fc4a2258536a59d7007c1a68a86244ddd70175c05fc3d7833e48\"}"
+      },
       {
         "current": "{\"bytes\":198682,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"09af5e2beb669e3198753c307ed693845c428ae272d292ee195d9f19f963904d\"}",
         "previous": "{\"bytes\":198682,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"c7d4b9ce58c5cad19c50dd36b237d7541d032ec69a31175c7ff19d7c52f863d5\"}"
@@ -496,9 +516,29 @@
     "beforeSha256": "3e93e707ad229f5083a8a8a5aa5901c7780d03ae60ce264fa39a3aa08e2ece9c"
   },
   "native/windows-arm-full-sdk/checkpoint_inputs.py": {
-    "bytes": 42509,
-    "sha256": "547cc66719fa9d3c446fb338f014d0a061ee984f65b3f584318f8f2d3861b537",
+    "bytes": 43459,
+    "sha256": "11a56868b1e40646f1f69f4d8803b5114c93b8bc2ba82c7d03bbfbdf83cede88",
     "pairs": [
+      {
+        "current": "                identity=json.loads(json.dumps(value)), canonicalRoot=name, namespaces=list(NAMESPACES),\n                exclusions=['source-checkout/**/.git', 'source-checkout/src/out', BIDI_BIN, CIPD_PKGS],\n                bounds=dict(entries=MAX_ENTRIES, fileBytes=MAX_FILE, rawBytes=MAX_RAW, sidecarBytes=MAX_SIDECAR))\n",
+        "previous": "                identity=json.loads(json.dumps(value)), canonicalRoot=name, namespaces=list(NAMESPACES),\n                exclusions=['source-checkout/**/.git', 'source-checkout/src/out', BIDI_BIN],\n                bounds=dict(entries=MAX_ENTRIES, fileBytes=MAX_FILE, rawBytes=MAX_RAW, sidecarBytes=MAX_SIDECAR))\n"
+      },
+      {
+        "current": "\n# CIPD client bookkeeping: pkgs/<slot>/<instance id>/.cipdpkg (empty directories) and pkgs/<slot>/_current.txt. The slot\n# number is assigned in install order, so two acquisitions of the same pinned instance ids number their slots differently\n# (runs 45226927056..45253778895: 96 names only on each side, CHECKPOINT_INPUTS_NAME_SET). The package files themselves\n# are copied into the checkout (those paths stay hashed), and a restore never writes the tree, so the fresh acquisition's\n# own self-consistent pkgs directory is left exactly as CIPD wrote it. Never hashed, sealed or restored.\nCIPD_PKGS = 'source-checkout/.cipd/pkgs'\nCIPD_PKGS_PARENT, CIPD_PKGS_CHILD = CIPD_PKGS.rsplit('/', 1)\nCIPD_PKGS_PARTS = CIPD_PKGS.split('/')\n\nAUDIT_CAP = 200\n",
+        "previous": "\nAUDIT_CAP = 200\n"
+      },
+      {
+        "current": "                excluded(path, name, namespace, child, True)\n            elif (name == BIDI_BIN_PARENT and child == BIDI_BIN_CHILD) or (name == CIPD_PKGS_PARENT and child == CIPD_PKGS_CHILD):\n                excluded(path, name, namespace, child, True)\n",
+        "previous": "                excluded(path, name, namespace, child, True)\n            elif name == BIDI_BIN_PARENT and child == BIDI_BIN_CHILD:\n                excluded(path, name, namespace, child, True)\n"
+      },
+      {
+        "current": "         not (len(parts) >= 3 and parts[:3] == ['source-checkout', 'src', 'out']) and\n         '/'.join(parts[:len(BIDI_BIN.split('/'))]) != BIDI_BIN and\n         parts[:len(CIPD_PKGS_PARTS)] != CIPD_PKGS_PARTS, 'NAMESPACE')\n    return unicodedata.normalize('NFC', name).casefold()\n",
+        "previous": "         not (len(parts) >= 3 and parts[:3] == ['source-checkout', 'src', 'out']) and\n         '/'.join(parts[:len(BIDI_BIN.split('/'))]) != BIDI_BIN, 'NAMESPACE')\n    return unicodedata.normalize('NFC', name).casefold()\n"
+      },
+      {
+        "current": "                    continue\n                if ((name == 'source-checkout/src' and child == 'out') or (name == BIDI_BIN_PARENT and child == BIDI_BIN_CHILD) or\n                        (name == CIPD_PKGS_PARENT and child == CIPD_PKGS_CHILD)):\n                    _directory((path / child).lstat())\n",
+        "previous": "                    continue\n                if (name == 'source-checkout/src' and child == 'out') or (name == BIDI_BIN_PARENT and child == BIDI_BIN_CHILD):\n                    _directory((path / child).lstat())\n"
+      },
       {
         "current": "MAX_RAW = 256 * 1024**3\nMAX_SIDECAR = 1536 * 1024**2\nNAMESPACES = ('source-checkout', 'Windows Kits', 'llvm', 'rust', 'siso', 'gn', 'custom-vs', 'runtime')\nSOURCES = {'20261116.315.1': 'e66c1c435f112de7ce33eea582a51e1c76b71944884dc67aea0ada956dc8f37d',\n           '20261021.278.1': 'fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa'}\n\n\n",
         "previous": "MAX_RAW = 256 * 1024**3\nMAX_SIDECAR = 1536 * 1024**2\nNAMESPACES = ('source-checkout', 'Windows Kits', 'llvm', 'rust', 'siso', 'gn', 'custom-vs', 'runtime')\nSOURCES = {'20261103.298.1': 'e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90',\n           '20261021.278.1': 'fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa'}\n\n\n"
@@ -1008,9 +1048,13 @@
     "beforeSha256": "6dc79f277efc50c6105aa737bc348aec04a1c9aa45854630462606664e83dda5"
   },
   ".github/workflows/windows-arm-full-sdk.yml": {
-    "bytes": 12330,
-    "sha256": "0c4582d1f568fc4a2258536a59d7007c1a68a86244ddd70175c05fc3d7833e48",
+    "bytes": 12353,
+    "sha256": "885196da089ade6566232ff18c478241551533a4ba23e22488986a905ed71fae",
     "pairs": [
+      {
+        "current": "          $resultRaw = & 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe' -I -B native/windows-arm-full-sdk/compiled_checkpoint.py --upload $env:CEF_FULLSDK_OUTPUT_ROOT $env:CEF_FULLSDK_CONTEXT_SHA\n          if ($LASTEXITCODE -ne 0) { Write-Host $resultRaw; exit $LASTEXITCODE }\n          $result = $resultRaw | ConvertFrom-Json -AsHashtable\n",
+        "previous": "          $resultRaw = & 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe' -I -B native/windows-arm-full-sdk/compiled_checkpoint.py --upload $env:CEF_FULLSDK_OUTPUT_ROOT $env:CEF_FULLSDK_CONTEXT_SHA\n          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n          $result = $resultRaw | ConvertFrom-Json -AsHashtable\n"
+      },
       {
         "current": "      - name: Enable Win32 long paths for the native compile\n        shell: pwsh\n        run: |\n          $ErrorActionPreference = 'Stop'\n          # The Release_GN_arm64 checkout root is 144 characters, so third_party/dawn directx-shader-compiler\n          # tblgen outputs pass 260. The fixed checkout path cannot be shortened; processes started after this\n          # step honor long paths (their manifests are longPathAware).\n          $fsKey = 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem'\n          Set-ItemProperty -Path $fsKey -Name LongPathsEnabled -Type DWord -Value 1\n          if ((Get-ItemPropertyValue -Path $fsKey -Name LongPathsEnabled) -ne 1) { throw 'FULL_SDK_LONG_PATHS' }\n",
         "previous": ""

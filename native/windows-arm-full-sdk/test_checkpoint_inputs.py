@@ -483,6 +483,71 @@ class CheckpointInputTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'BYTES'):
             subject._verify(guard, header, pin)
 
+    def cipd_slots(self, layout):
+        # layout: {slot: instance id}; each slot holds its instance directory with an empty .cipdpkg and _current.txt.
+        pkgs = self.root / subject.CIPD_PKGS
+        if pkgs.exists():
+            import shutil
+            shutil.rmtree(pkgs)
+        for slot, instance in layout.items():
+            (pkgs / str(slot) / instance / '.cipdpkg').mkdir(parents=True)
+            (pkgs / str(slot) / '_current.txt').write_bytes(instance.encode())
+
+    def test_cipd_pkgs_slot_numbering_swap_between_acquisitions_restores_without_touching_the_fresh_pkgs(self):
+        # Runs 45226927056..45253778895: the same pinned CIPD instance ids landed in different .cipd/pkgs/<slot>
+        # directories on the sealed tree and on a fresh acquisition (96 names only on each side, NAME_SET).
+        (self.root / 'source-checkout/.cipd').mkdir()
+        (self.root / 'source-checkout/.cipd/bin.txt').write_bytes(b'kept cipd file')
+        self.cipd_slots({12: 'UB3hiL4vCifYE_0MXYJmntCZUrhE2NTDr4-zIAgqOz8C', 13: 'z4AuegxVH2KJS6heF4IWjKUm_JdQxTFul0dqZUiYir4C'})
+        pin = self.record()
+        rows = [json.loads(line) for line in (self.root / subject.SIDECAR).read_bytes().splitlines()]
+        self.assertFalse([row for row in rows if '.cipd/pkgs' in str(row.get('path'))])
+        self.assertIn('source-checkout/.cipd/bin.txt', [row.get('path') for row in rows])
+        self.assertIn(subject.CIPD_PKGS, rows[0]['exclusions'])
+        self.fresh_times()
+        # The fresh acquisition numbers the slots the other way round, with different _current.txt bytes and even an extra slot.
+        self.cipd_slots({12: 'z4AuegxVH2KJS6heF4IWjKUm_JdQxTFul0dqZUiYir4C', 13: 'UB3hiL4vCifYE_0MXYJmntCZUrhE2NTDr4-zIAgqOz8C', 14: 'extra-instance'})
+        before = sorted(str(item.relative_to(self.root)) for item in (self.root / subject.CIPD_PKGS).rglob('*'))
+        stamps = {item: item.stat().st_mtime_ns for item in (self.root / subject.CIPD_PKGS).rglob('*') if item.is_file()}
+        result = self.apply(pin)
+        self.assertEqual(result['files'], 4)  # the three inputs and the checked .cipd file; nothing under pkgs
+        self.assertTrue(all(file.stat().st_mtime_ns == self.ns for file in self.files))
+        # Nothing under pkgs is read, retimed, created or removed: CIPD's own slot numbering stays coherent.
+        self.assertEqual(before, sorted(str(item.relative_to(self.root)) for item in (self.root / subject.CIPD_PKGS).rglob('*')))
+        self.assertEqual(stamps, {item: item.stat().st_mtime_ns for item in stamps})
+        self.assertEqual((self.root / subject.CIPD_PKGS / '12/_current.txt').read_bytes(), b'z4AuegxVH2KJS6heF4IWjKUm_JdQxTFul0dqZUiYir4C')
+        # Everything beside pkgs stays strict: a changed byte, a missing or an extra name next to it still denies.
+        (self.root / 'source-checkout/.cipd/bin.txt').write_bytes(b'regenerated')
+        with self.assertRaisesRegex(ValueError, 'BYTES'):
+            self.apply(pin)
+        (self.root / 'source-checkout/.cipd/bin.txt').write_bytes(b'kept cipd file')
+        os.utime(self.root / 'source-checkout/.cipd/bin.txt', ns=(self.ns, self.ns))
+        (self.root / 'source-checkout/.cipd/extra.txt').write_bytes(b'x')
+        with self.assertRaisesRegex(ValueError, 'NAME_SET'):
+            self.apply(pin)
+
+    def test_cipd_pkgs_exclusion_is_exact_and_the_directory_itself_stays_a_plain_directory(self):
+        self.cipd_slots({1: 'instance-a'})
+        os.link(self.root / subject.CIPD_PKGS / '1/_current.txt', self.root / subject.CIPD_PKGS / '1/_alias.txt')
+        self.assertEqual(subject.audit_links(self.root)['violationCount'], 0)
+        for name in ('', '/1', '/1/_current.txt', '/1/instance-a/.cipdpkg'):
+            with self.assertRaisesRegex(ValueError, 'NAMESPACE'):
+                subject._name(subject.CIPD_PKGS + name)
+        # Look-alike names are audited and hashed like any other path.
+        subject._name('source-checkout/.cipd/pkgs2/1')
+        subject._name('source-checkout/src/.cipd/pkgs/1')
+        other = self.root / 'source-checkout/src/.cipd/pkgs'
+        other.mkdir(parents=True)
+        (other / 'a').write_bytes(b'a')
+        os.link(other / 'a', other / 'b')
+        report = subject.audit_links(self.root)
+        self.assertEqual((report['violationCount'], report['firstCode']), (2, 'REGULAR'))
+        import shutil
+        shutil.rmtree(self.root / 'source-checkout/src/.cipd')
+        shutil.rmtree(self.root / subject.CIPD_PKGS)
+        (self.root / subject.CIPD_PKGS).write_bytes(b'not a directory')
+        self.assertEqual(subject.audit_links(self.root)['violations'][0]['checks'], ['not-directory'])
+
     def test_apply_reads_every_file_once_and_proves_the_rest_by_metadata(self):
         pin = self.record()
         self.fresh_times()
