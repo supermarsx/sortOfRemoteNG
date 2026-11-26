@@ -119,6 +119,25 @@ async function mounted(overrides: Partial<UseOriginBrowserOptions> = {}) {
 }
 
 describe("origin browser attempt controller", () => {
+  it.each([false, true])(
+    "only sends the proxy palette to a backend supporting it: %s",
+    async (supported) => {
+      const f = fixture();
+      f.transport.status.mockImplementation(async (request) => ({
+        capability: { availability: "available" },
+        supportsProxyTheme: supported || undefined,
+        snapshot: request.identity
+          ? snapshot({ identity: request.identity })
+          : null,
+      }));
+      const hook = renderHook(() => useOriginBrowser(f.options));
+      await waitFor(() =>
+        expect(hook.result.current.state.phase).toBe("attached"),
+      );
+      const request = f.transport.create.mock.calls[0][0];
+      expect(!!request.proxyTheme).toBe(supported);
+    },
+  );
   it.each([
     { kind: "required" },
     { kind: "existing-grant", grantId: "grant-http" },

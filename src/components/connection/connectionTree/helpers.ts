@@ -70,6 +70,7 @@ export interface ConnectionTreeItemProps {
   level: number;
   onConnect: (connection: Connection) => void;
   onDisconnect: (connection: Connection) => void;
+  onSessionReconnect?: (sessionId: string) => void | Promise<void>;
   onEdit: (connection: Connection) => void;
   onNewConnection?: (parentId: string) => void;
   onDocuments?: (parentId: string, create: boolean) => void;

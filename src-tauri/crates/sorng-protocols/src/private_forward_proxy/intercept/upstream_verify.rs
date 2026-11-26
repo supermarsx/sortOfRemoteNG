@@ -42,6 +42,9 @@ const WEAK_SIGNATURE_OIDS: &[&str] = &[
 /// verifier that decides `system_ca_valid`.
 #[derive(Clone)]
 pub(crate) struct UpstreamVerifierConfig {
+    pub(crate) allow_weak_certificates: bool,
+    pub(crate) legacy_helper: Option<std::path::PathBuf>,
+    pub(crate) tls_profile: super::tls_policy::UpstreamTlsProfile,
     provider: Arc<CryptoProvider>,
     /// `None` when the platform verifier is unavailable: every chain is then
     /// treated as not CA-valid (the app decides; nothing is auto-trusted).
@@ -63,7 +66,13 @@ impl UpstreamVerifierConfig {
         let system = rustls_platform_verifier::Verifier::new(provider.clone())
             .ok()
             .map(|verifier| Arc::new(verifier) as Arc<dyn ServerCertVerifier>);
-        Self { provider, system }
+        Self {
+            provider,
+            system,
+            tls_profile: Default::default(),
+            allow_weak_certificates: false,
+            legacy_helper: None,
+        }
     }
 
     /// Test configuration: `roots` play the OS root store and `revoked` lists
@@ -89,7 +98,13 @@ impl UpstreamVerifierConfig {
                 revoked: revoked.to_vec(),
             }))
         };
-        Self { provider, system }
+        Self {
+            provider,
+            system,
+            tls_profile: Default::default(),
+            allow_weak_certificates: false,
+            legacy_helper: None,
+        }
     }
 
     pub(crate) fn provider(&self) -> &Arc<CryptoProvider> {
@@ -165,6 +180,10 @@ pub(crate) fn admission_input(
 
 /// Structural, non-overridable checks on the chain as sent.
 pub(crate) fn structural_fatal(chain: &[&[u8]]) -> Option<UpstreamFatal> {
+    structural_fatal_with_policy(chain, false)
+}
+
+pub(crate) fn structural_fatal_with_policy(chain: &[&[u8]], allow_weak: bool) -> Option<UpstreamFatal> {
     use x509_parser::prelude::{FromDer, X509Certificate};
     if chain.is_empty() {
         return Some(UpstreamFatal::Malformed);
@@ -178,13 +197,13 @@ pub(crate) fn structural_fatal(chain: &[&[u8]]) -> Option<UpstreamFatal> {
     }
     let last = parsed.len() - 1;
     for (index, cert) in parsed.iter().enumerate() {
-        if rsa_bits(cert).is_some_and(|bits| bits < MIN_RSA_BITS) {
+        if !allow_weak && rsa_bits(cert).is_some_and(|bits| bits < MIN_RSA_BITS) {
             return Some(UpstreamFatal::WeakKey);
         }
         // A self-issued trust anchor sent at the end of a longer chain is
         // not judged by its own signature (Chromium ignores anchors' algos).
         let anchor = index == last && last > 0 && cert.subject() == cert.issuer();
-        if !anchor && weak_signature_oid(&cert.signature_algorithm.algorithm.to_id_string()) {
+        if !allow_weak && !anchor && weak_signature_oid(&cert.signature_algorithm.algorithm.to_id_string()) {
             return Some(UpstreamFatal::WeakKey);
         }
     }
@@ -236,6 +255,9 @@ impl std::fmt::Debug for VerifyRecord {
 /// One per upstream connection.
 #[derive(Debug)]
 pub(crate) struct RecordingVerifier {
+    pub(crate) client_auth_requested: std::sync::atomic::AtomicBool,
+    pub(crate) certificate_seen: std::sync::atomic::AtomicBool,
+    allow_weak_certificates: bool,
     provider: Arc<CryptoProvider>,
     record: Mutex<VerifyRecord>,
 }
@@ -243,6 +265,9 @@ pub(crate) struct RecordingVerifier {
 impl RecordingVerifier {
     pub(crate) fn new(config: &UpstreamVerifierConfig) -> Arc<Self> {
         Arc::new(Self {
+            client_auth_requested: std::sync::atomic::AtomicBool::new(false),
+            certificate_seen: std::sync::atomic::AtomicBool::new(false),
+            allow_weak_certificates: config.allow_weak_certificates,
             provider: config.provider.clone(),
             record: Mutex::new(VerifyRecord::default()),
         })
@@ -268,10 +293,11 @@ impl ServerCertVerifier for RecordingVerifier {
         ocsp: &[u8],
         _now: UnixTime,
     ) -> Result<ServerCertVerified, rustls::Error> {
+        self.certificate_seen.store(true, std::sync::atomic::Ordering::Relaxed);
         let chain: Vec<&[u8]> = std::iter::once(end_entity.as_ref())
             .chain(intermediates.iter().map(|der| der.as_ref()))
             .collect();
-        let fatal = structural_fatal(&chain);
+        let fatal = structural_fatal_with_policy(&chain, self.allow_weak_certificates);
         let mut record = self
             .record
             .lock()

@@ -8,6 +8,7 @@ import type { WebBrowserSettingsConfig } from "../../../types/settings/webBrowse
 import { normalizeWebBrowserSettings } from "../../../utils/settings/webBrowserSettings";
 import {
   normalizeBrowserSessionOverrides,
+  normalizeBrowserUpstreamTlsProfile,
   resolveConnectionBrowserSettings,
 } from "../../../utils/settings/browserSessionSettings";
 import { Checkbox } from "../../ui/forms";
@@ -349,6 +350,46 @@ function SessionOverrides({
             value === "auto" || value === "off" ? value : undefined,
           )
         }
+      />
+      <BrowserSelectRow
+        settingKey="browserSession.upstreamTlsProfile"
+        label="Device SSL/TLS compatibility"
+        description="Choose the protocol used by the proxy to reach this device. SSL and TLS 1.0/1.1 use obsolete encryption and require the legacy compatibility helper. Applies to new connections; requires HTTPS inspection."
+        value={overrides.upstreamTlsProfile ?? "inherit"}
+        options={[
+          {
+            value: "inherit",
+            label: `Use app default (${defaults.upstreamTlsProfile ?? "modern"})`,
+          },
+          { value: "modern", label: "Modern (TLS 1.2 / 1.3)" },
+          { value: "tls13", label: "TLS 1.3 only" },
+          { value: "tls12", label: "TLS 1.2 only" },
+          { value: "tls11", label: "TLS 1.1 only (legacy)" },
+          { value: "tls10", label: "TLS 1.0 only (legacy)" },
+          { value: "ssl3", label: "SSLv3 only (legacy)" },
+          { value: "ssl2", label: "SSLv2 only (legacy)" },
+          { value: "legacy", label: "Legacy negotiation (SSLv3 – TLS 1.2)" },
+        ]}
+        onChange={(value) =>
+          update(
+            "upstreamTlsProfile",
+            value === "inherit"
+              ? undefined
+              : normalizeBrowserUpstreamTlsProfile(value),
+          )
+        }
+      />
+      <BrowserSelectRow
+        settingKey="browserSession.allowWeakCertificates"
+        label="Allow weak device certificates"
+        description="Permit RSA keys below 2048 bits and obsolete certificate signatures for this connection. Trust review still applies. Very old algorithms may also require a legacy TLS profile."
+        value={overrides.allowWeakCertificates === undefined ? "inherit" : String(overrides.allowWeakCertificates)}
+        options={[
+          {value: "inherit", label: `Use app default (${defaults.allowWeakCertificates ? "allow" : "reject"})`},
+          {value: "false", label: "Reject weak certificates (recommended)"},
+          {value: "true", label: "Allow weak certificates for this device"},
+        ]}
+        onChange={(value) => update("allowWeakCertificates", value === "inherit" ? undefined : value === "true")}
       />
       <h5 className="text-sm font-medium">
         Page cache (this device only, never synced, follows site cache rules)

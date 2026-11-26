@@ -8,6 +8,22 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { MenuSurface } from "../../src/components/ui/overlays/MenuSurface";
+import { listen } from "@tauri-apps/api/event";
+
+const nativeEvents = vi.hoisted(() => ({
+  callback: undefined as undefined | (() => void),
+  unlisten: vi.fn(),
+}));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (name: string, callback: () => void) => {
+    if (name === "origin-browser-native-focus")
+      nativeEvents.callback = callback;
+    return nativeEvents.unlisten;
+  }),
+}));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({ label: "main" }),
+}));
 
 const rect = (x: number, y: number, width: number, height: number): DOMRect =>
   ({
@@ -259,6 +275,79 @@ describe("MenuSurface", () => {
       "data-submenu-side",
       "left",
     );
+  });
+
+  it("dismisses on native CEF focus without restoring shell focus over the user's click", async () => {
+    const trigger = document.createElement("button");
+    document.body.appendChild(trigger);
+    trigger.focus();
+    const restore = vi.spyOn(trigger, "focus");
+    renderMenu();
+    await waitFor(() => expect(screen.getByText("Menu Item")).toHaveFocus());
+    await waitFor(() => expect(nativeEvents.callback).toBeTypeOf("function"));
+    expect(listen).toHaveBeenCalledWith(
+      "origin-browser-native-focus",
+      expect.any(Function),
+      { target: "main" },
+    );
+    act(() => nativeEvents.callback!());
+    expect(screen.queryByTestId("menu-surface")).not.toBeInTheDocument();
+    expect(restore).not.toHaveBeenCalled();
+    trigger.remove();
+  });
+
+  it("ignores a native receipt after its menu has unmounted", async () => {
+    const close = vi.fn();
+    const view = render(
+      <MenuSurface isOpen onClose={close} position={{ x: 20, y: 20 }}>
+        <button>Item</button>
+      </MenuSurface>,
+    );
+    await waitFor(() => expect(nativeEvents.callback).toBeTypeOf("function"));
+    const stale = nativeEvents.callback!;
+    view.unmount();
+    act(() => stale());
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("keeps outside-close-disabled menus unsubscribed from native focus", async () => {
+    const close = vi.fn();
+    const calls = vi.mocked(listen).mock.calls.length;
+    render(
+      <MenuSurface
+        isOpen
+        onClose={close}
+        closeOnOutside={false}
+        position={{ x: 20, y: 20 }}
+      >
+        <button>Item</button>
+      </MenuSurface>,
+    );
+    await act(async () => {});
+    expect(vi.mocked(listen).mock.calls).toHaveLength(calls);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("releases a native subscription that resolves after unmount", async () => {
+    let resolve: ((off: () => void) => void) | undefined;
+    vi.mocked(listen).mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const view = render(
+      <MenuSurface isOpen onClose={() => {}} position={{ x: 20, y: 20 }}>
+        <button>Item</button>
+      </MenuSurface>,
+    );
+    await waitFor(() => expect(resolve).toBeTypeOf("function"));
+    view.unmount();
+    const off = vi.fn();
+    await act(async () => {
+      resolve!(off);
+    });
+    expect(off).toHaveBeenCalledOnce();
   });
 
   it("closes when clicking outside", () => {

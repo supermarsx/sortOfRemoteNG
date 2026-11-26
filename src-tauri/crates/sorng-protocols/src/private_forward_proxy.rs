@@ -292,19 +292,26 @@ impl PrivateForwardProxy {
         grant: DestinationGrant,
         limits: ProxyLimits,
         config: intercept::InterceptConfig,
-        verifier: intercept::upstream_verify::UpstreamVerifierConfig,
+        mut verifier: intercept::upstream_verify::UpstreamVerifierConfig,
     ) -> io::Result<Self> {
         let intercept::InterceptConfig {
             authority,
             trust,
             cache,
             hooks,
+            upstream_tls,
+            allow_weak_certificates,
+            theme,
+            legacy_tls_helper,
         } = config;
+        verifier.tls_profile = upstream_tls;
+        verifier.allow_weak_certificates = allow_weak_certificates;
+        verifier.legacy_helper = legacy_tls_helper;
         let (cache, cache_use) = intercept::cache::ProxyCache::open(cache);
         let pool = intercept::pool::UpstreamPool::new(dialer.clone(), trust, verifier);
         let exchange = Arc::new(intercept::forward::Exchange::new(
             authority, pool, cache, cache_use, hooks,
-        ));
+        ).with_theme(theme));
         Self::start_inner(LoopbackSource, dialer, grant, limits, Some(exchange)).await
     }
 

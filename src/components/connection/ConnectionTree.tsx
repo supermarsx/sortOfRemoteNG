@@ -45,6 +45,7 @@ const ignoreDragLeave = () => {};
 interface ConnectionTreeProps {
   onConnect: (connection: Connection) => void;
   onDisconnect: (connection: Connection) => void;
+  onSessionReconnect?: (sessionId: string) => void | Promise<void>;
   onEdit: (connection: Connection) => void;
   onNewConnection?: (parentId: string) => void;
   onDelete: (connection: Connection) => void;
@@ -85,6 +86,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = (props) => {
 const AvailableConnectionTree: React.FC<ConnectionTreeProps> = ({
   onConnect,
   onDisconnect,
+  onSessionReconnect,
   onEdit,
   onNewConnection,
   onDelete,
@@ -422,6 +424,7 @@ const AvailableConnectionTree: React.FC<ConnectionTreeProps> = ({
           activeSession={sessionsByConnection.get(connection.id)}
           onConnect={onConnect}
           onDisconnect={onDisconnect}
+              onSessionReconnect={onSessionReconnect}
           onEdit={onEdit}
           onNewConnection={onNewConnection}
           onDocuments={(parentFolderId, create) =>

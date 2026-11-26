@@ -1830,6 +1830,7 @@ const AppContent: React.FC = () => {
           onDeleteConnection={handleDeleteConnection}
           onConnect={handleConnect}
           onDisconnect={handleDisconnectConnection}
+          onSessionReconnect={handleSessionReconnect}
           onDiagnostics={handleDiagnostics}
           onSessionDetach={handleSessionDetach}
           onActivateSession={setActiveSessionId}

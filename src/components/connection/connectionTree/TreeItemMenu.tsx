@@ -34,6 +34,7 @@ import {
   Play,
   PlayCircle,
   Power,
+  RefreshCw,
   Send,
   SlidersHorizontal,
   Star,
@@ -65,6 +66,7 @@ function TreeItemMenu({
   onClose,
   onConnect,
   onDisconnect,
+  onSessionReconnect,
   onEdit,
   onNewConnection,
   onDocuments,
@@ -93,6 +95,7 @@ function TreeItemMenu({
     c: Connection,
   ) => void | string | undefined | Promise<string | undefined>;
   onDisconnect: (c: Connection) => void;
+  onSessionReconnect?: (sessionId: string) => void | Promise<void>;
   onEdit: (c: Connection) => void;
   onNewConnection?: (parentId: string) => void;
   onDocuments?: (parentId: string, create: boolean) => void;
@@ -119,6 +122,13 @@ function TreeItemMenu({
     (ctx) => ctx.settings.enableWinrmTools,
   );
   const { t } = useTranslation();
+  const reconnectTargets = (state.sessions ?? []).filter(
+    (session) =>
+      session.connectionId === connection.id &&
+      !session.protocol.startsWith("tool:") &&
+      !session.protocol.startsWith("winmgmt:"),
+  );
+  const reconnectOne = activeSession?.id ?? reconnectTargets[0]?.id;
   const canOpenAnotherSession = !isIntegrationConnectionProtocol(
     connection.protocol,
   );
@@ -538,6 +548,33 @@ function TreeItemMenu({
             ? t("connections.disconnect", "Disconnect")
             : t("quickConnect.connect", "Connect")}
         </button>
+      )}
+      {!connection.isGroup && reconnectOne && onSessionReconnect && (
+        <>
+          <button
+            className="sor-menu-item"
+            onClick={act(() => {
+              void onSessionReconnect(reconnectOne);
+            })}
+          >
+            <RefreshCw size={14} className="mr-2" />
+            Reconnect this tab
+          </button>
+          <button
+            className="sor-menu-item"
+            onClick={act(() => {
+              void (async () => {
+                const ids = reconnectTargets.length
+                  ? reconnectTargets.map((session) => session.id)
+                  : [reconnectOne];
+                for (const id of ids) await onSessionReconnect(id);
+              })();
+            })}
+          >
+            <RefreshCw size={14} className="mr-2" />
+            Reconnect all tabs
+          </button>
+        </>
       )}
       {!connection.isGroup && activeSession && canOpenAnotherSession && (
         <button

@@ -50,6 +50,7 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
   level,
   onConnect,
   onDisconnect,
+  onSessionReconnect,
   onEdit,
   onNewConnection,
   onDocuments,
@@ -414,6 +415,7 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
             onClose={() => setShowMenu(false)}
             onConnect={onConnect}
             onDisconnect={onDisconnect}
+            onSessionReconnect={onSessionReconnect}
             onEdit={onEdit}
             onDelete={onDelete}
             onCopyHostname={onCopyHostname}

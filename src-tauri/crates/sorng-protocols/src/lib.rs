@@ -16,6 +16,7 @@ pub mod autologin_asset;
 pub mod raw_socket;
 pub mod rlogin;
 pub mod theme_tokens;
+pub(crate) mod internal_page;
 pub mod themed_auth;
 pub mod themed_autologin;
 pub mod themed_errors;

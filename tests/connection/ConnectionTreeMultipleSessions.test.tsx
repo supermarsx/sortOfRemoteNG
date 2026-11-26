@@ -7,6 +7,8 @@ import type { Connection } from "../../src/types/connection/connection";
 const mocks = vi.hoisted(() => ({
   connect: vi.fn(),
   disconnect: vi.fn(),
+  reconnect: vi.fn(),
+  sessions: [] as Array<{ id: string; connectionId: string; protocol: string }>,
   emit: vi.fn(),
 }));
 vi.mock("react-i18next", () => ({
@@ -15,7 +17,10 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
-  useConnections: () => ({ state: { connections: [] }, dispatch: vi.fn() }),
+  useConnections: () => ({
+    state: { connections: [], sessions: mocks.sessions },
+    dispatch: vi.fn(),
+  }),
 }));
 vi.mock("../../src/contexts/SettingsContext", () => ({
   useSettings: () => ({ settings: {} }),
@@ -51,6 +56,7 @@ function mount(overrides: Partial<Connection> = {}, active = true) {
       onClose={noop}
       onConnect={mocks.connect}
       onDisconnect={mocks.disconnect}
+      onSessionReconnect={mocks.reconnect}
       onEdit={noop}
       onDelete={noop}
       onCopyHostname={noop}
@@ -67,11 +73,34 @@ function mount(overrides: Partial<Connection> = {}, active = true) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.sessions = [];
   mocks.connect.mockResolvedValue("new-tab");
   mocks.emit.mockResolvedValue(undefined);
 });
 
 describe("connection tree repeated sessions", () => {
+  it("reconnects this tab using the existing session action", () => {
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect this tab" }));
+    expect(mocks.reconnect).toHaveBeenCalledExactlyOnceWith("existing-tab");
+    expect(mocks.connect).not.toHaveBeenCalled();
+  });
+  it("reconnects all tabs of this connection without reconnecting tools or other connections", async () => {
+    mocks.sessions = [
+      { id: "existing-tab", connectionId: connection.id, protocol: "https" },
+      { id: "second-tab", connectionId: connection.id, protocol: "https" },
+      { id: "tool", connectionId: connection.id, protocol: "tool:files" },
+      { id: "other", connectionId: "other-connection", protocol: "https" },
+    ];
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect all tabs" }));
+    await waitFor(() =>
+      expect(mocks.reconnect.mock.calls).toEqual([
+        ["existing-tab"],
+        ["second-tab"],
+      ]),
+    );
+  });
   it.each(["ssh", "http", "https", "rdp", "vnc"] as const)(
     "offers an additional %s tab without disconnecting the existing one",
     async (protocol) => {

@@ -134,7 +134,8 @@ async fn handle<G: RequestGate>(
 ) -> Response<ProxyBody> {
     let head = request.method() == Method::HEAD;
     let accept = request.headers().get(header::ACCEPT).cloned();
-    let response = handle_inner(exchange, gate, tasks, request).await;
+    let mut response = handle_inner(exchange, gate, tasks, request).await;
+    crate::private_forward_proxy::error_response::apply_theme(&mut response, &exchange.theme);
     crate::private_forward_proxy::error_response::negotiate(response, accept.as_ref(), head)
 }
 

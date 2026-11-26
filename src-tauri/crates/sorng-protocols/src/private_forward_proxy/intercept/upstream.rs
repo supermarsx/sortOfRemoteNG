@@ -10,6 +10,7 @@
 // Wired into the exchange pipeline by x1 (forward.rs); unused until then.
 #![cfg_attr(not(test), allow(dead_code))]
 
+use super::tls_policy::{TlsFailure, UpstreamTlsProfile};
 use super::trust::{UpstreamEvidence, UpstreamFatal, UpstreamTrust, UpstreamVerdict};
 use super::upstream_verify::{
     admission_input, RecordingVerifier, SystemValidation, UpstreamVerifierConfig,
@@ -36,6 +37,8 @@ pub(crate) enum UpstreamFailure {
     Timeout,
     Fatal(UpstreamFatal),
     RouteFailed,
+    Tls(TlsFailure),
+    TlsAttempt(TlsFailure, super::tls_attempt::TlsAttempt),
 }
 
 impl UpstreamFailure {
@@ -46,6 +49,7 @@ impl UpstreamFailure {
             Self::Timeout => UpstreamOutcome::Timeout,
             Self::Fatal(fatal) => UpstreamOutcome::Fatal(fatal),
             Self::RouteFailed => UpstreamOutcome::RouteFailed,
+            Self::Tls(_) | Self::TlsAttempt(..) => UpstreamOutcome::Fatal(UpstreamFatal::Protocol),
         }
     }
 
@@ -56,6 +60,7 @@ impl UpstreamFailure {
             Self::Timeout => "review-timeout",
             Self::Fatal(_) => "fatal",
             Self::RouteFailed => "route-failed",
+            Self::Tls(_) | Self::TlsAttempt(..) => "fatal",
         }
     }
 }
@@ -90,12 +95,17 @@ pub(crate) fn client_config(
     verifier: Arc<RecordingVerifier>,
     offer: Offer,
 ) -> io::Result<Arc<rustls::ClientConfig>> {
+    let versions: &[&rustls::SupportedProtocolVersion] = match config.tls_profile {
+        UpstreamTlsProfile::Tls12 => &[&rustls::version::TLS12],
+        UpstreamTlsProfile::Tls13 => &[&rustls::version::TLS13],
+        _ => &[&rustls::version::TLS13, &rustls::version::TLS12],
+    };
     let mut client = rustls::ClientConfig::builder_with_provider(config.provider().clone())
-        .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])
+        .with_protocol_versions(versions)
         .map_err(|_| io::Error::new(io::ErrorKind::Unsupported, "upstream TLS versions"))?
         .dangerous()
-        .with_custom_certificate_verifier(verifier)
-        .with_no_client_auth();
+        .with_custom_certificate_verifier(verifier.clone())
+        .with_client_cert_resolver(Arc::new(RecordingClientAuth(verifier.clone())));
     client.alpn_protocols = match offer {
         Offer::H2AndHttp11 => vec![ALPN_H2.to_vec(), ALPN_HTTP11.to_vec()],
         Offer::Http11Only => vec![ALPN_HTTP11.to_vec()],
@@ -104,6 +114,16 @@ pub(crate) fn client_config(
     client.enable_early_data = false;
     client.enable_sni = true;
     Ok(Arc::new(client))
+}
+
+#[derive(Debug)]
+struct RecordingClientAuth(Arc<RecordingVerifier>);
+impl rustls::client::ResolvesClientCert for RecordingClientAuth {
+    fn resolve(&self, _: &[&[u8]], _: &[rustls::SignatureScheme]) -> Option<Arc<rustls::sign::CertifiedKey>> {
+        self.0.client_auth_requested.store(true, std::sync::atomic::Ordering::Relaxed);
+        None
+    }
+    fn has_certs(&self) -> bool { false }
 }
 
 /// The upstream TLS name for an authority (DNS or IP; IPs send no SNI).
@@ -125,7 +145,14 @@ pub(crate) fn handshake_failure(
         .get_ref()
         .and_then(|inner| inner.downcast_ref::<rustls::Error>())
     else {
-        return UpstreamFailure::RouteFailed;
+        return match error.kind() {
+            io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted => {
+                UpstreamFailure::Tls(TlsFailure::Reset)
+            }
+            io::ErrorKind::UnexpectedEof => UpstreamFailure::Tls(TlsFailure::Eof),
+            io::ErrorKind::TimedOut => UpstreamFailure::Tls(TlsFailure::Timeout),
+            _ => UpstreamFailure::RouteFailed,
+        };
     };
     use rustls::{AlertDescription as A, CertificateError as C, Error as E};
     match tls {
@@ -136,21 +163,38 @@ pub(crate) fn handshake_failure(
             UpstreamFailure::Fatal(UpstreamFatal::Malformed)
         }
         E::InvalidCertificate(_) => UpstreamFailure::Fatal(UpstreamFatal::BadSignature),
-        E::PeerIncompatible(_)
-        | E::PeerMisbehaved(_)
+        E::PeerIncompatible(reason) => {
+            use rustls::PeerIncompatible as P;
+            UpstreamFailure::Tls(match reason {
+                P::NoCipherSuitesInCommon => TlsFailure::Cipher,
+                P::NoSignatureSchemesInCommon
+                | P::NoCertificateRequestSignatureSchemesInCommon
+                | P::SignatureAlgorithmsExtensionRequired => TlsFailure::SignatureAlgorithm,
+                P::NoKxGroupsInCommon
+                | P::KeyShareExtensionRequired
+                | P::NamedGroupsExtensionRequired => TlsFailure::KeyExchange,
+                P::ServerDoesNotSupportTls12Or13
+                | P::ServerTlsVersionIsDisabledByOurConfig
+                | P::Tls12NotOffered
+                | P::Tls12NotOfferedOrEnabled
+                | P::SupportedVersionsExtensionRequired => TlsFailure::Version,
+                _ => TlsFailure::Parameters,
+            })
+        }
+        E::NoApplicationProtocol => UpstreamFailure::Tls(TlsFailure::Alpn),
+        E::DecryptError => UpstreamFailure::Tls(TlsFailure::Decryption),
+        E::AlertReceived(alert) => UpstreamFailure::Tls(match alert {
+            A::ProtocolVersion => TlsFailure::Version,
+            A::HandshakeFailure => TlsFailure::PeerHandshakeAlert,
+            A::InsufficientSecurity => TlsFailure::PeerSecurityAlert,
+            _ => TlsFailure::PeerAlert(u8::from(*alert)),
+        }),
+        E::PeerMisbehaved(_)
         | E::InappropriateMessage { .. }
         | E::InappropriateHandshakeMessage { .. }
         | E::InvalidMessage(_)
-        | E::NoApplicationProtocol
-        | E::PeerSentOversizedRecord
-        | E::DecryptError
-        | E::AlertReceived(
-            A::ProtocolVersion
-            | A::HandshakeFailure
-            | A::InsufficientSecurity
-            | A::IllegalParameter,
-        ) => UpstreamFailure::Fatal(UpstreamFatal::Protocol),
-        _ => UpstreamFailure::RouteFailed,
+        | E::PeerSentOversizedRecord => UpstreamFailure::Tls(TlsFailure::InvalidHandshake),
+        _ => UpstreamFailure::Tls(TlsFailure::Engine),
     }
 }
 
@@ -206,6 +250,26 @@ pub(crate) async fn establish(request: ConnectRequest<'_>) -> Result<Established
         });
     }
     let name = server_name(authority).ok_or(UpstreamFailure::RouteFailed)?;
+    use super::tls_attempt::{TlsAttempt, Trace, TracedIo, snapshot};
+    let profile=request.verifier.tls_profile;
+    let mut attempt=TlsAttempt::new(profile,request.verifier.allow_weak_certificates,
+        authority.host().parse::<std::net::IpAddr>().is_err(),request.offer==Offer::H2AndHttp11);
+    if !profile.requires_helper() {
+        let provider=request.verifier.provider();
+        let suites=provider.cipher_suites.iter().filter(|suite| match profile {
+            UpstreamTlsProfile::Tls12 => suite.version().version==rustls::ProtocolVersion::TLSv1_2,
+            UpstreamTlsProfile::Tls13 => suite.version().version==rustls::ProtocolVersion::TLSv1_3, _=>true,
+        });
+        for (slot,suite) in attempt.cipher_ids.iter_mut().zip(suites) { *slot=u16::from(suite.suite());attempt.cipher_count+=1; }
+        for (slot,scheme) in attempt.signature_ids.iter_mut().zip(provider.signature_verification_algorithms.supported_schemes()) { *slot=u16::from(scheme);attempt.signature_count+=1; }
+        for (slot,group) in attempt.group_ids.iter_mut().zip(&provider.kx_groups) { *slot=u16::from(group.name());attempt.group_count+=1; }
+    }
+    let trace=Arc::new(std::sync::Mutex::new(Trace::new(attempt)));
+    let stream:BoxedStream=Box::new(TracedIo{inner:stream,trace:trace.clone()});
+    let enrich=|failure| match failure {UpstreamFailure::Tls(cause)=>UpstreamFailure::TlsAttempt(cause,snapshot(&trace)),other=>other};
+    if request.verifier.tls_profile.requires_helper() {
+        return super::legacy_tls::establish(request, stream, name).await.map_err(enrich);
+    }
     let verifier = RecordingVerifier::new(request.verifier);
     let config = client_config(request.verifier, verifier.clone(), request.offer)
         .map_err(|_| UpstreamFailure::Fatal(UpstreamFatal::Protocol))?;
@@ -213,8 +277,13 @@ pub(crate) async fn establish(request: ConnectRequest<'_>) -> Result<Established
     let tls = match tokio::time::timeout(CONNECT_TIMEOUT, connector.connect(name.clone(), stream))
         .await
     {
-        Err(_) => return Err(UpstreamFailure::RouteFailed),
-        Ok(Err(error)) => return Err(handshake_failure(&error, verifier.record().fatal)),
+        Err(_) => return Err(enrich(UpstreamFailure::Tls(TlsFailure::Timeout))),
+        Ok(Err(error)) => {
+            { let mut trace=trace.lock().unwrap_or_else(|e|e.into_inner());
+              trace.attempt.client_auth_requested |= verifier.client_auth_requested.load(std::sync::atomic::Ordering::Relaxed);
+              trace.attempt.certificate_seen |= verifier.certificate_seen.load(std::sync::atomic::Ordering::Relaxed); }
+            return Err(enrich(handshake_failure(&error, verifier.record().fatal)));
+        }
         Ok(Ok(tls)) => tls,
     };
     let record = verifier.record();

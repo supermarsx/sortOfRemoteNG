@@ -438,6 +438,7 @@ interface SidebarProps {
   onDeleteConnection: (connection: Connection) => void;
   onConnect: (connection: Connection) => void;
   onDisconnect: (connection: Connection) => void;
+  onSessionReconnect?: (sessionId: string) => void | Promise<void>;
   onDiagnostics: (connection: Connection) => void;
   onSessionDetach: (sessionId: string) => void;
   onActivateSession?: (sessionId: string) => void;
@@ -456,6 +457,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteConnection,
   onConnect,
   onDisconnect,
+  onSessionReconnect,
   onDiagnostics,
   onSessionDetach,
   onActivateSession,
@@ -502,6 +504,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onNewConnection={onNewConnection}
               onConnect={onConnect}
               onDisconnect={onDisconnect}
+              onSessionReconnect={onSessionReconnect}
               onEdit={onEditConnection}
               onDelete={onDeleteConnection}
               onDiagnostics={onDiagnostics}

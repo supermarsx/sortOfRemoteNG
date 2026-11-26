@@ -1368,6 +1368,11 @@ struct Sink {
     attempt: Arc<Attempt>,
 }
 impl BrowserEventSink for Sink {
+    fn on_native_focus(&self, identity: &sorng_protocols::origin_browser::BrowserIdentity) {
+        if identity != &self.attempt.identity || !self.attempt.current() { return; }
+        // Local to the owning shell window, never broadcast to other windows.
+        let _ = self.window.emit_to(self.window.label(), "origin-browser-native-focus", ());
+    }
     fn on_security(&self, evidence: sorng_browser_host::cef_browser::NativeSecurityEvidence) {
         if evidence.identity != self.attempt.identity || !self.attempt.current() { return; }
         let attempt = self.attempt.clone();
@@ -1826,6 +1831,10 @@ async fn create_document(
         shared().intercept_capable.load(Ordering::Acquire),
         sorng_protocols::private_forward_proxy::intercept::InterceptAuthority::generate,
     );
+    if (authorized.preferences.upstream_tls != Default::default() || authorized.preferences.allow_weak_certificates) && plan.authority().is_none() {
+        login.revoke();
+        return Err("The selected upstream TLS profile requires active backend TLS interception. Enable TLS interception and use a compatible browser runtime.".to_owned());
+    }
     if plan.diagnostic() == crate::origin_browser_observability::TlsInterceptionDiagnostic::Unavailable {
         log::warn!("Native browser stage=tls-interception state=interception-unavailable");
     }
@@ -1853,6 +1862,16 @@ async fn create_document(
                 authorized.route,
                 ProxyLimits::default(),
                 InterceptConfig {
+                    upstream_tls: authorized.preferences.upstream_tls,
+                    allow_weak_certificates: authorized.preferences.allow_weak_certificates,
+                    theme: request.proxy_theme.clone(),
+                    legacy_tls_helper: window.app_handle().path().resource_dir().ok().map(|root| {
+                        root.join("legacy-tls").join(if cfg!(windows) {
+                            "sorng-legacy-tls.exe"
+                        } else {
+                            "sorng-legacy-tls"
+                        })
+                    }),
                     authority: authority.clone(),
                     trust,
                     cache,
@@ -2743,32 +2762,30 @@ pub(crate) fn tick() {
                 }
             }
             if let Some(cookies) = pending.cookies.take() {
-                if cookies.is_empty() {
-                    // A new/ephemeral jar needs no import, origin expansion or
-                    // cookie-manager startup. In particular, HTTP-only devices
-                    // must not fail HTTPS-only retained-origin validation here.
+                // Empty jars need no asynchronous import. Continue to browser
+                // creation in this pump instead of spending another 100 ms
+                // housekeeping interval waiting for work that does not exist.
+                if !cookies.is_empty() {
+                    let Some(retention) = pending.attempt.retention.as_ref() else {
+                        pending.attempt.revoke();
+                        let _ = pending.response.send(Err(UNAVAILABLE.into()));
+                        continue;
+                    };
+                    if let Err(error) = pending
+                        .context
+                        .import_sign_in_cookies(retention.clone(), cookies)
+                    {
+                        log::error!("Native browser stage=cookie-restore error={error:?}");
+                        retention.preserve_restore_source();
+                        pending.attempt.revoke();
+                        let _ = pending.response.send(Err(cookie_restore_failure(error)));
+                        continue;
+                    }
+                    // Import completion is asynchronous for a retained jar.
+                    // Never create or navigate a page until native readback passes.
                     waiting.push(pending);
                     continue;
                 }
-                let Some(retention) = pending.attempt.retention.as_ref() else {
-                    pending.attempt.revoke();
-                    let _ = pending.response.send(Err(UNAVAILABLE.into()));
-                    continue;
-                };
-                if let Err(error) = pending
-                    .context
-                    .import_sign_in_cookies(retention.clone(), cookies)
-                {
-                    log::error!("Native browser stage=cookie-restore error={error:?}");
-                    retention.preserve_restore_source();
-                    pending.attempt.revoke();
-                    let _ = pending.response.send(Err(cookie_restore_failure(error)));
-                    continue;
-                }
-                // Import completion is asynchronous for a retained jar.
-                // Never create or navigate a page until native readback passes.
-                waiting.push(pending);
-                continue;
             }
             let attempt = pending.attempt;
             attempt.timing.mark(TimingStage::ContextReady);

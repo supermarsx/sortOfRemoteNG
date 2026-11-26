@@ -7,7 +7,7 @@
     "frontendDist": "../out",
     "devUrl": "http://localhost:3001",
     "beforeDevCommand": "npm run dev -- --fixed-tauri-port",
-    "beforeBuildCommand": "npm run build && npm run stage:file-viewer -- --release"
+    "beforeBuildCommand": "npm run build && npm run native:legacy-tls:build && npm run stage:file-viewer -- --release"
   },
   "app": {
     "windows": [
@@ -37,7 +37,8 @@
     "targets": "all",
     "resources": {
       "crates/sorng-file-viewer-host/bundle/": "file-viewer/",
-      "../src/i18n/locales/": "locales/"
+      "../src/i18n/locales/": "locales/",
+      "../native/legacy-tls/bundle/": "legacy-tls/"
     },
     "icon": [
       "icons/32x32.png",

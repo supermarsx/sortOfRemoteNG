@@ -46,6 +46,12 @@ const startup = (message: string) =>
   state({ startupFailure: originBrowserStartupError("create", message) });
 
 describe("fixed actionable native failure details", () => {
+  it("shows the exact safe schema path and recovery for a rejected creation field", () => {
+    const failure = originBrowserStartupError("create", { code: "request-invalid", field: "proxyTheme", kind: "unknown-field" });
+    const details = getOriginBrowserFailureDetails(state({ startupFailure: failure }));
+    expect(JSON.stringify(details)).toContain("proxyTheme");
+    expect(JSON.stringify(details)).toContain("Restart");
+  });
   it.each([
     ["dns", "SSH route hostname resolution", "network"],
     ["transport", "SSH route TCP connection", "network"],

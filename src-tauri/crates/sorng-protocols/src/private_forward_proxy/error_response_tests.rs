@@ -78,7 +78,9 @@ fn error_causes_are_typed_and_bounded_without_displaying_private_error_text() {
         Some(&PrivateChain),
         false,
     );
-    assert_eq!(report.causes.len(), MAX_CAUSES);
+    assert!(report.causes.len() <= MAX_CAUSES);
+    let mut unique = report.causes.clone(); unique.sort(); unique.dedup();
+    assert_eq!(unique.len(), report.causes.len());
     let rendered = report.text(StatusCode::BAD_GATEWAY);
     for private in ["SECRET", "PRIVATE", "TOKEN", "C:\\Users", "Authorization:"] {
         assert!(!rendered.contains(private), "{private}");
@@ -232,7 +234,6 @@ async fn reports_are_self_contained_script_free_no_store_and_head_has_no_body() 
         assert!(html.contains(marker), "{marker}");
     }
     for forbidden in [
-        "<script",
         "<form",
         "<input",
         "javascript:",
@@ -246,6 +247,9 @@ async fn reports_are_self_contained_script_free_no_store_and_head_has_no_body() 
         assert!(!html.contains(forbidden), "{forbidden}");
     }
     assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+    assert_eq!(html.matches("<script>").count(), 1);
+    assert!(html.contains(crate::internal_page::SCRIPT));
+    assert!(response.headers()[header::CONTENT_SECURITY_POLICY].to_str().unwrap().contains(&crate::internal_page::script_hash()));
     assert_eq!(
         response.headers()[header::X_CONTENT_TYPE_OPTIONS],
         "nosniff"
@@ -338,4 +342,31 @@ async fn real_plain_http_route_failure_negotiates_diagnostics_and_never_echoes_r
         }
     }
     proxy.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn typed_handshake_failures_have_specific_codes_and_honest_causes() {
+    use crate::private_forward_proxy::intercept::{
+        forward, tls_policy::TlsFailure as T, upstream::UpstreamFailure,
+    };
+    for (cause, code, detail) in [
+        (T::Version, "tls-version-mismatch", "versions"),
+        (T::Cipher, "tls-cipher-mismatch", "cipher"),
+        (
+            T::PeerHandshakeAlert,
+            "tls-peer-handshake-failure",
+            "did not specify",
+        ),
+        (T::Reset, "tls-connection-reset", "reset"),
+        (T::Timeout, "tls-handshake-timeout", "30 seconds"),
+        (T::HelperUnavailable, "tls-legacy-unavailable", "helper"),
+    ] {
+        let response = forward::upstream_failure(UpstreamFailure::Tls(cause));
+        assert_eq!(response.headers()["x-sorng-error-code"], code);
+        assert_eq!(response.headers()["x-sorng-upstream"], "fatal");
+        let html = body(response).await;
+        assert!(html.contains(detail), "{code}");
+    }
+    let response = forward::upstream_failure(UpstreamFailure::Tls(T::PeerAlert(42)));
+    assert!(body(response).await.contains("Alert: 42"));
 }

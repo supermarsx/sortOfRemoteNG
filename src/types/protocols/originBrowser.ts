@@ -255,7 +255,10 @@ export interface OriginBrowserQuickConnect {
   readonly basicAuthPassword?: string;
 }
 
+export type OriginBrowserProxyTheme = Readonly<Record<"background" | "surface" | "text" | "textSecondary" | "textMuted" | "border" | "primary" | "primaryRgb" | "error" | "errorRgb" | "warning" | "warningRgb" | "success" | "successRgb" | "info" | "infoRgb", string>>;
+
 export interface OriginBrowserCreateRequest {
+  readonly proxyTheme?: OriginBrowserProxyTheme;
   readonly quickConnect?: OriginBrowserQuickConnect;
   readonly owner: OriginBrowserOwner;
   /** Compare with authoritative native database state; not renderer authority. */
@@ -340,6 +343,7 @@ export interface OriginBrowserFindEvent {
 }
 
 export interface OriginBrowserStatusResult {
+  readonly supportsProxyTheme?: boolean;
   readonly capability: OriginBrowserCapability;
   readonly snapshot: OriginBrowserSnapshot | null;
   readonly runtimeFailure?: OriginBrowserRuntimeFailure;

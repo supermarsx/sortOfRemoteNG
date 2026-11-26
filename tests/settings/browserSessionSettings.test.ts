@@ -677,3 +677,51 @@ describe("browser session contract", () => {
       ).toThrow();
   });
 });
+
+describe("device TLS profiles", () => {
+  it.each([
+    "modern",
+    "tls12",
+    "tls13",
+    "tls10",
+    "tls11",
+    "ssl3",
+    "ssl2",
+    "legacy",
+  ])("preserves %s through sparse overrides", (profile) => {
+    const result = resolveConnectionBrowserSettings(
+      {},
+      { version: 1, upstreamTlsProfile: profile },
+    );
+    expect(result.upstreamTlsProfile).toBe(profile);
+    expect(
+      normalizeBrowserSessionOverrides({
+        version: 1,
+        upstreamTlsProfile: profile,
+      })?.upstreamTlsProfile,
+    ).toBe(profile);
+  });
+  it("inherits the profile and rejects malformed values in either layer", () => {
+    expect(
+      resolveConnectionBrowserSettings(
+        { upstreamTlsProfile: "ssl3" },
+        { version: 1 },
+      ).upstreamTlsProfile,
+    ).toBe("ssl3");
+    expect(
+      resolveConnectionBrowserSettings({}, undefined).upstreamTlsProfile,
+    ).toBe("modern");
+    expect(() =>
+      resolveConnectionBrowserSettings(
+        { upstreamTlsProfile: "broken" },
+        { version: 1, upstreamTlsProfile: "modern" },
+      ),
+    ).toThrow();
+    expect(() =>
+      normalizeBrowserSessionOverrides({
+        version: 1,
+        upstreamTlsProfile: true,
+      }),
+    ).toThrow();
+  });
+});

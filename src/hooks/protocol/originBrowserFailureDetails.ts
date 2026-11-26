@@ -1,6 +1,7 @@
 import type { OriginBrowserState } from "./useOriginBrowser";
 import {
   originBrowserPolicyFailures,
+  safeOriginBrowserRequestField,
   originBrowserSshConnectFailures,
   type OriginBrowserKnownStartupFailureCode,
 } from "./originBrowserStartupError";
@@ -738,6 +739,26 @@ export function getOriginBrowserFailureDetails(
     if (startup.code === "start-timeout")
       return [detail(startup.code, startupDetails[startup.code])];
     if (startup.stage === "create") {
+      if (
+        startup.code === "request-invalid" &&
+        safeOriginBrowserRequestField(startup.invalidField)
+      ) {
+        const unsupported = startup.invalidKind === "unknown-field";
+        return [
+          {
+            code: "request-invalid",
+            field: `Native browser request: ${startup.invalidField}`,
+            problem: unsupported
+              ? `The native backend does not recognize ${startup.invalidField}.`
+              : `The request field ${startup.invalidField} is missing or has an invalid value/type.`,
+            nextStep: unsupported
+              ? "Restart the updated app so the frontend and native backend use the same request schema, then reconnect."
+              : "Review the named field in this connection's settings and retry. Rejected values are not included in this report.",
+            action: "connection",
+          },
+        ];
+      }
+
       // Preserve the existing MFA-only reason contract for older callers.
       const code =
         startup.code ??

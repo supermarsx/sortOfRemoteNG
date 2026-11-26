@@ -654,6 +654,39 @@ codegen-units = 1
 opt-level = 1
 debug = 0
 
+# The encrypted per-connection page cache decrypts device assets on reads.
+# Keep its small crypto kernels optimized even when the application is being
+# debugged; unoptimized AES/GHASH makes large cached pages slower than network.
+# STREAM's generic loops are instantiated in sorng-protocols itself, so
+# optimizing dependencies alone does not optimize cache encryption/decryption.
+[profile.dev.package.sorng-protocols]
+opt-level = 2
+[profile.dev.package.aes-gcm]
+opt-level = 3
+[profile.dev.package.aes]
+opt-level = 3
+[profile.dev.package.ctr]
+opt-level = 3
+[profile.dev.package.ghash]
+opt-level = 3
+[profile.dev.package.polyval]
+opt-level = 3
+
+# Named overrides also preserve these kernels when hosted builds select a
+# global release opt-level of zero for the much larger application crates.
+[profile.release.package.sorng-protocols]
+opt-level = 2
+[profile.release.package.aes-gcm]
+opt-level = 3
+[profile.release.package.aes]
+opt-level = 3
+[profile.release.package.ctr]
+opt-level = 3
+[profile.release.package.ghash]
+opt-level = 3
+[profile.release.package.polyval]
+opt-level = 3
+
 [profile.release]
 # Default to size optimization outside the RDP runtime packages below. Hosted
 # jobs use opt-level 0, wider codegen units, and LTO off for runner memory.

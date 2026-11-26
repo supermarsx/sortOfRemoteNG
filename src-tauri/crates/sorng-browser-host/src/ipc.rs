@@ -431,6 +431,8 @@ impl Drop for OriginBrowserQuickConnect {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OriginBrowserCreateRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_theme: Option<sorng_protocols::theme_tokens::ThemeTokens>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quick_connect: Option<OriginBrowserQuickConnect>,
     pub owner: OriginBrowserOwner,
     #[serde(deserialize_with = "deserialize_id")]
@@ -447,6 +449,42 @@ pub struct OriginBrowserCreateRequest {
 }
 
 impl OriginBrowserCreateRequest {
+    /// Return only closed schema paths; never include the rejected value or
+    /// serde's arbitrary error text in a user-visible diagnostic.
+    pub fn parse_request(value: serde_json::Value) -> Result<Self, serde_json::Value> {
+        use serde::de::IntoDeserializer;
+        fn known(name: &str) -> bool {
+            matches!(name, "request" | "proxyTheme" | "quickConnect" | "owner" |
+                "expectedSecurityRevision" | "sourceSessionId" | "requestId" | "initialUrl" |
+                "bounds" | "visible" | "policy" | "ownerDatabaseId" | "connectionId" |
+                "sessionId" | "x" | "y" | "width" | "height" | "darkMode" | "autoLogin" |
+                "enabled" | "consent" | "kind" | "grantId" | "protocol" | "hostname" | "port" |
+                "httpVerifySsl" | "basicAuthUsername" | "basicAuthPassword" | "background" | "surface" | "text" |
+                "textSecondary" | "textMuted" | "border" | "primary" | "primaryRgb" |
+                "error" | "errorRgb" | "warning" | "warningRgb" | "success" | "successRgb" | "info" | "infoRgb")
+        }
+        serde_path_to_error::deserialize(value.into_deserializer()).map_err(|error| {
+            let description = error.inner().to_string();
+            let kind = if description.starts_with("unknown field") { "unknown-field" }
+                else if description.starts_with("missing field") { "missing-field" } else { "invalid-value" };
+            let mut path = Vec::new();
+            for segment in error.path().iter() {
+                match segment {
+                    serde_path_to_error::Segment::Map { key } if known(key) => path.push(key.clone()),
+                    serde_path_to_error::Segment::Seq { .. } => {},
+                    _ => { path.clear(); break; }
+                }
+            }
+            if matches!(kind, "unknown-field" | "missing-field") {
+                if let Some(field) = description.split('`').nth(1).filter(|field| known(field)) {
+                    path.push(field.to_owned());
+                }
+            }
+            let field = if path.is_empty() { "request".to_owned() } else { path.join(".") };
+            serde_json::json!({"code":"request-invalid","field":field,"kind":kind})
+        })
+    }
+
     pub fn validate(&self) -> Result<(), OriginBrowserIpcError> {
         self.owner.validate()?;
         if let Some(quick) = &self.quick_connect {
@@ -1033,6 +1071,7 @@ impl OriginBrowserCreateResult {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OriginBrowserStatusResult {
+    supports_proxy_theme: bool,
     capability: OriginBrowserCapability,
     snapshot: Option<OriginBrowserSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1043,6 +1082,7 @@ impl OriginBrowserStatusResult {
     /// Default/unsupported paths must be explicit, with no fallback selection.
     pub fn unavailable(reason: OriginBrowserUnavailableReason) -> Self {
         Self {
+            supports_proxy_theme: false,
             capability: OriginBrowserCapability::Unavailable { reason },
             snapshot: None,
             runtime_failure: None,
@@ -1089,6 +1129,7 @@ impl OriginBrowserStatusResult {
             _ => {}
         }
         Ok(Self {
+            supports_proxy_theme: true,
             capability,
             snapshot,
             runtime_failure: None,

@@ -24,6 +24,8 @@ pub(super) enum Failure {
     MalformedCertificate,
     WeakKey,
     TlsProtocol,
+    Tls(super::intercept::tls_policy::TlsFailure),
+    TlsAttempt(super::intercept::tls_policy::TlsFailure, super::intercept::tls_attempt::TlsAttempt),
     Hsts,
 }
 
@@ -48,7 +50,8 @@ impl Failure {
             Self::Revoked => ("certificate-revoked", "TLS certificate verification", "The website certificate is revoked", "The certificate verifier reported revocation, which cannot be overridden by a review prompt.", &["Ask the website administrator to replace the revoked certificate.", "Do not use a remembered exception to bypass revocation."]),
             Self::BadSignature => ("certificate-bad-signature", "TLS certificate verification", "The certificate signature is invalid", "The TLS verifier could not validate a certificate or handshake signature.", &["Check the server's certificate chain and key configuration.", "A normal unknown certificate authority is a separate, reviewable condition."]),
             Self::MalformedCertificate => ("certificate-malformed", "TLS certificate verification", "The website supplied an invalid certificate", "The certificate chain was absent, malformed or could not be decoded safely.", &["Ask the administrator to install a complete, correctly encoded certificate chain."]),
-            Self::WeakKey => ("certificate-weak-key", "TLS certificate verification", "The certificate uses unsupported cryptography", "A certificate key or signature algorithm was below the verifier's security requirements.", &["Replace weak certificate keys or obsolete signature algorithms on the server."]),
+            Self::WeakKey => ("certificate-weak-key", "TLS certificate verification", "The certificate uses unsupported cryptography", "A certificate key or signature algorithm was below the verifier's security requirements.", &["For an old device, enable Allow weak device certificates in this connection's browser options and reconnect. Trust review still applies.", "Very old algorithms may also require a legacy TLS profile; prefer replacing the weak certificate when possible."]),
+            Self::Tls(cause) | Self::TlsAttempt(cause, _) => (cause.code(), "TLS negotiation", "SSL/TLS negotiation failed", cause.detail(), &["Check the selected upstream TLS profile and the device configuration.", "Certificate review cannot repair a protocol, cipher or transport failure."]),
             Self::TlsProtocol => ("tls-protocol", "TLS negotiation", "TLS negotiation failed", "The TLS peers could not complete a supported handshake. This does not, by itself, identify a certificate trust problem.", &["Check the server's TLS versions, cipher configuration and HTTPS port.", "Enable a supported modern TLS configuration on the server; certificate review cannot repair a protocol mismatch."]),
             Self::Hsts => ("hsts-certificate-error", "HTTPS transport policy", "HTTPS policy rejected this connection", "A certificate error on an HSTS-protected origin cannot be overridden for this connection.", &["Repair the website certificate and HTTPS configuration.", "Keep the website on HTTPS; changing the URL to HTTP does not resolve an HSTS certificate error."]),
             Self::Status => match status.as_u16() {
@@ -73,6 +76,7 @@ impl Failure {
 
 #[derive(Clone)]
 pub(super) struct Report {
+    theme_css: String,
     id: String,
     recorded: String,
     code: &'static str,
@@ -156,6 +160,9 @@ fn safe_frames(value: &str) -> Vec<String> {
 }
 
 fn safe_cause(error: &(dyn Error + 'static)) -> String {
+    if let Some(error) = error.downcast_ref::<super::intercept::tls_policy::TlsFailure>() {
+        return error.to_string();
+    }
     if let Some(error) = error.downcast_ref::<io::Error>() {
         let kind = match error.kind() {
             io::ErrorKind::ConnectionRefused => "Connection refused",
@@ -226,18 +233,16 @@ impl Report {
         let e = failure.explain(status);
         let mut causes = vec![e.detail.to_owned()];
         let mut current = error;
-        while let Some(error) = current {
-            if causes.len() >= MAX_CAUSES {
-                break;
-            }
-            causes.push(safe_cause(error));
-            current = error
-                .downcast_ref::<io::Error>()
-                .and_then(io::Error::get_ref)
-                .map(|inner| inner as &(dyn Error + 'static))
-                .or_else(|| error.source());
+        for _ in 0..MAX_CAUSES {
+            let Some(error) = current else { break; };
+            let cause = safe_cause(error);
+            if !causes.contains(&cause) { causes.push(cause); }
+            current = error.downcast_ref::<io::Error>().and_then(io::Error::get_ref)
+                .map(|inner| inner as &(dyn Error + 'static)).or_else(|| error.source());
         }
+        if let Failure::TlsAttempt(_, attempt) = failure { causes.extend(attempt.lines()); }
         Self {
+            theme_css: crate::theme_tokens::ThemeTokens::dark_default().css_block(),
             id: uuid::Uuid::new_v4().to_string(),
             recorded: chrono::Utc::now().to_rfc3339(),
             code: e.code,
@@ -273,39 +278,25 @@ impl Report {
         output
     }
     fn html(&self, status: StatusCode) -> String {
-        let mut output = format!(
-            r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><title>{}</title><style>{}</style></head><body><main><header><span class="brand">SortOfRemoteNG <span>PRIVATE PROXY</span></span><span class="status">HTTP {}</span></header><section class="intro"><div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 3 7v5c0 5 9 9 9 9s9-4 9-9V7Z"/><path d="m9 9 6 6m0-6-6 6"/></svg></div><p class="eyebrow">{}</p><h1>{}</h1><p class="description">{}</p></section><dl class="facts"><div><dt>Failure code</dt><dd>{}</dd></div><div><dt>Recorded in UTC</dt><dd>{}</dd></div><div class="reference"><dt>Reference ID</dt><dd>{}</dd></div></dl><section class="advice"><h2>What to check</h2><ol>"##,
-            escape(self.title),
-            STYLE,
-            status.as_u16(),
-            escape(self.stage),
-            escape(self.title),
-            escape(self.detail),
-            escape(self.code),
-            escape(&self.recorded),
-            escape(&self.id)
-        );
-        for hint in self.hints {
-            let _ = write!(output, "<li>{}</li>", escape(hint));
-        }
-        output.push_str("</ol></section><section class=\"technical\" aria-label=\"Technical details\"><h2>Technical details</h2><details open><summary>Cause chain</summary><ol>");
-        for cause in &self.causes {
-            let _ = write!(output, "<li>{}</li>", escape(cause));
-        }
+        let short = format!("{}\n{}\nFailure code: {}\nReference ID: {}", self.title, self.detail, self.code, self.id);
+        let mut output = format!(r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{}</title><style>{}{}{}</style></head><body><main><header><span>SortOfRemoteNG <span class="muted">/ Private proxy</span></span><span class="muted">HTTP {}</span></header><p class="stage">{}</p><h1>{}</h1><p class="description">{}</p><code class="failure-code">{}</code><section class="advice"><h2>What to check</h2><ul>"#,
+            escape(self.title), self.theme_css, STYLE, crate::internal_page::ACTION_STYLE,
+            status.as_u16(), escape(self.stage), escape(self.title), escape(self.detail), escape(self.code));
+        for hint in self.hints { let _=write!(output,"<li>{}</li>",escape(hint)); }
+        output.push_str("</ul></section>");
+        output.push_str(&crate::internal_page::controls(&short, &self.text(status)));
+        let _=write!(output,r#"<details class="technical"><summary>Technical details</summary><dl><div><dt>Failure code</dt><dd>{}</dd></div><div><dt>Reference ID</dt><dd>{}</dd></div><div><dt>Recorded in UTC</dt><dd>{}</dd></div></dl><details><summary>Cause chain</summary><ol>"#,escape(self.code),escape(&self.id),escape(&self.recorded));
+        for cause in &self.causes { let _=write!(output,"<li>{}</li>",escape(cause)); }
         output.push_str("</ol></details><details><summary>Error-response backtrace</summary><p>Captured while preparing this response; the asynchronous failure may have originated earlier.</p><pre>");
-        if self.trace.is_empty() {
-            output.push_str(if self.captured {
-                "Native stack frames or function symbols are unavailable in this build."
-            } else {
-                "Stack capture is omitted before authenticated forwarding."
-            });
-        }
-        for (index, frame) in self.trace.iter().enumerate() {
-            let _ = writeln!(output, "{index}: {}", escape(frame));
-        }
-        output.push_str("</pre></details></section><footer>Generated locally by the private proxy. Request headers, credentials, URL queries and local source paths are excluded.</footer></main></body></html>");
+        if self.trace.is_empty() { output.push_str(if self.captured { "Native stack frames or function symbols are unavailable in this build." } else { "Stack capture is omitted before authenticated forwarding." }); }
+        for (index,frame) in self.trace.iter().enumerate() { let _=writeln!(output,"{index}: {}",escape(frame)); }
+        output.push_str("</pre></details></details><footer>Generated locally. Credentials and private request data are excluded.</footer></main></body></html>");
         output
     }
+}
+
+pub(super) fn apply_theme(response: &mut Response<ProxyBody>, theme: &crate::theme_tokens::ThemeTokens) {
+    if let Some(report) = response.extensions_mut().get_mut::<Report>() { report.theme_css = theme.css_block(); }
 }
 
 fn escape(value: &str) -> String {
@@ -415,9 +406,7 @@ pub(super) fn negotiate(
     );
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static(
-            "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
-        ),
+        HeaderValue::from_str(&format!("default-src 'none'; script-src 'sha256-{}'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'", crate::internal_page::script_hash())).expect("constant script hash CSP"),
     );
     headers.insert(
         header::REFERRER_POLICY,
@@ -467,7 +456,7 @@ pub(super) async fn write_response(
     let _ = tokio::time::timeout(deadline, client.write_all(&bytes)).await;
 }
 
-const STYLE: &str = r#"*{box-sizing:border-box}html{color-scheme:dark light}body{margin:0;background:#0b1020;color:#e8edf7;font:15px/1.65 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;padding:clamp(12px,4vw,48px)}main{max-width:920px;margin:auto;background:#111a2d;border:1px solid #29354d;border-radius:20px;overflow:hidden;box-shadow:0 20px 70px #0003}header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 28px;border-bottom:1px solid #29354d}.brand{font-size:14px;font-weight:700}.brand span{display:block;font-size:10px;color:#95a5bf;letter-spacing:.14em}.status{font:12px ui-monospace,monospace;padding:5px 10px;border:1px solid #5c3d35;border-radius:999px;background:#3b2624;color:#ffbf9d}.intro{padding:30px 28px 20px}.icon{float:right;width:54px;height:54px;padding:12px;border-radius:16px;background:#392d2a;color:#f9b78f}.icon svg{width:100%;height:100%}.eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:11px;color:#9caec9;margin:0 0 6px}h1{font-size:clamp(24px,4vw,34px);line-height:1.2;margin:0 70px 14px 0;letter-spacing:-.025em}.description{color:#b1bfd4;max-width:730px;margin:0}.facts{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:0 28px;padding:18px 0;border-top:1px solid #29354d;border-bottom:1px solid #29354d}.reference{grid-column:1/-1}dt{color:#95a5bf;font-size:11px;text-transform:uppercase;letter-spacing:.06em}dd{margin:3px 0 0;font:13px/1.6 ui-monospace,monospace;overflow-wrap:anywhere;user-select:text}h2{font-size:14px;margin:0 0 10px}.advice,.technical{padding:22px 28px}.advice{background:#152139}.advice ol{padding-left:22px;margin:0;color:#c7d4e9}li+li{margin-top:8px}details{border:1px solid #29354d;border-radius:10px;margin-top:10px;overflow:hidden}summary{padding:12px 15px;cursor:pointer;font-size:13px;font-weight:600}summary:focus-visible{outline:2px solid #8db7ff;outline-offset:-3px}details ol,details p{margin:0;padding:0 20px 16px 36px;color:#adbed6;font-size:13px}details p{padding:0 16px 12px}pre{margin:0;padding:16px;overflow:auto;max-height:420px;background:#0b1323;color:#c3d1e9;font:11px/1.7 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}footer{padding:18px 28px;color:#8b9cb8;font-size:11px;border-top:1px solid #29354d}@media(max-width:520px){header,.intro,.advice,.technical,footer{padding-left:18px;padding-right:18px}.facts{margin-left:18px;margin-right:18px;grid-template-columns:1fr}.reference{grid-column:auto}.icon{width:44px;height:44px}h1{margin-right:54px}}@media(prefers-color-scheme:light){body{background:#f1f4fa;color:#14223b}main{background:#fff;border-color:#d5ddea}header,.facts,footer,details{border-color:#d5ddea}.description,.advice ol,details ol,details p{color:#415574}.advice{background:#eff5ff}pre{background:#f4f7fc;color:#263e61}.eyebrow,dt,.brand span,footer{color:#5d7190}}@media print{body{padding:0;background:#fff}main{box-shadow:none}details{break-inside:avoid}pre{max-height:none}}"#;
+const STYLE: &str = r#"*{box-sizing:border-box}html{color-scheme:dark light}body{margin:0;min-height:100dvh;background:var(--proxy-bg);color:var(--proxy-text);font:13px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;padding:clamp(16px,4vw,48px)}main{max-width:720px;margin:6vh auto 0}header{display:flex;justify-content:space-between;gap:12px;padding-bottom:18px;border-bottom:1px solid var(--proxy-border);font-size:12px}.muted,.stage,dt,footer{color:var(--proxy-muted)}.stage{margin:26px 0 5px;font-size:12px}h1{margin:0 0 10px;font-size:22px;line-height:1.3;font-weight:600;letter-spacing:-.02em}.description{color:var(--proxy-text-2);max-width:660px;margin:0 0 12px}.failure-code{font:11px ui-monospace,monospace;color:var(--proxy-muted);overflow-wrap:anywhere}.advice{margin-top:22px}h2{font-size:12px;font-weight:600;margin:0 0 8px}ul{padding-left:18px;margin:0;color:var(--proxy-text-2)}li+li{margin-top:6px}.technical{margin-top:14px;border-top:1px solid var(--proxy-border);border-bottom:1px solid var(--proxy-border);padding:4px 0}summary{padding:10px 0;cursor:pointer;color:var(--proxy-text-2);font-size:12px}details details{margin:0 0 6px}dl{margin:0 0 12px;display:grid;gap:10px}dt{font-size:11px}dd{margin:2px 0 0;font:12px/1.5 ui-monospace,monospace;overflow-wrap:anywhere;user-select:text}details ol{margin:0;padding:0 0 12px 20px;color:var(--proxy-text-2)}details p{margin:0 0 10px;color:var(--proxy-muted);font-size:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto;background:var(--proxy-surface);padding:12px;font:11px/1.6 ui-monospace,monospace;color:var(--proxy-text-2);border-radius:6px}footer{font-size:11px;margin-top:18px}@media(max-width:480px){main{margin-top:16px}h1{font-size:20px}.proxy-actions button{flex:1}}@media print{body{padding:0}main{margin:0}details>summary{font-weight:600}.proxy-actions,#action-status{display:none}pre{max-height:none}}"#;
 
 #[cfg(test)]
 #[path = "error_response_tests.rs"]

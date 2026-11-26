@@ -405,6 +405,10 @@ fn config(
     hooks: Vec<Arc<dyn ExchangeHook>>,
 ) -> InterceptConfig {
     InterceptConfig {
+        upstream_tls: Default::default(),
+            allow_weak_certificates: false,
+            theme: None,
+        legacy_tls_helper: None,
         authority,
         trust,
         cache: CacheMode::Off,
@@ -439,6 +443,10 @@ async fn harness_cached(
         grant,
         ProxyLimits::default(),
         InterceptConfig {
+            upstream_tls: Default::default(),
+            allow_weak_certificates: false,
+            theme: None,
+            legacy_tls_helper: None,
             cache,
             ..config(InterceptAuthority::generate().unwrap(), trust, hooks)
         },
@@ -924,7 +932,9 @@ async fn assert_synthetic(response: Response<ProxyBody>, status: StatusCode, tag
     let page = response.into_body().collect().await.unwrap().to_bytes();
     let page = String::from_utf8_lossy(&page).to_ascii_lowercase();
     assert!(page.contains("<html"));
-    for forbidden in ["<script", "<form", "<input", "javascript:", "postmessage"] {
+    assert_eq!(page.matches("<script>").count(), 1);
+    assert!(page.contains(&crate::internal_page::SCRIPT.to_ascii_lowercase()));
+    for forbidden in ["<form", "<input", "javascript:", "postmessage"] {
         assert!(!page.contains(forbidden), "{forbidden}");
     }
 }
@@ -1400,7 +1410,9 @@ async fn trust_denial_timeout_and_route_failure_are_synthetic_502s() {
         assert_eq!(response.headers()[UPSTREAM_TAG], tag);
         assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
         let page = String::from_utf8_lossy(&body(response).await).to_ascii_lowercase();
-        assert!(!page.contains("<script") && !page.contains("<form"));
+        assert_eq!(page.matches("<script>").count(), 1);
+        assert!(page.contains(&crate::internal_page::SCRIPT.to_ascii_lowercase()));
+        assert!(!page.contains("<form"));
         // Zero request bytes reached the denied upstream.
         assert_eq!(h.upstream.requests.load(Ordering::SeqCst), 0);
         assert!(!h.proxy.upstream_admitted(&authority("upstream.test:443")));
@@ -1826,6 +1838,10 @@ async fn cache_keys_carry_the_scheme_so_http_never_shares_an_https_entry() {
         Arc::new(|_| true),
         ProxyLimits::default(),
         InterceptConfig {
+            upstream_tls: Default::default(),
+            allow_weak_certificates: false,
+            theme: None,
+            legacy_tls_helper: None,
             cache: CacheMode::Memory {
                 max_bytes: 1024 * 1024,
             },

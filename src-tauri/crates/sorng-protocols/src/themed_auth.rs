@@ -137,6 +137,7 @@ pub fn render_challenge_page(
     let safe_nonce = escape_html(nonce);
     let safe_user = escape_html(existing_username);
     let theme_css = theme.css_block();
+    let compact_css = crate::internal_page::COMPACT_STYLE;
     let error_block = match error_hint {
         Some(msg) if !msg.is_empty() => {
             format!(r#"<p class="error" role="alert">{}</p>"#, escape_html(msg))
@@ -276,7 +277,7 @@ pub fn render_challenge_page(
   /* P7: prefers-color-scheme fallback removed — live theme tokens
      come from the parent app at proxy startup so the page always
      matches whichever theme the user has selected in-app. */
-</style>
+{compact_css}</style>
 </head>
 <body>
   <main class="card">

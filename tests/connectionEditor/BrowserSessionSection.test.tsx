@@ -690,6 +690,28 @@ describe("browser connection overrides", () => {
     });
   });
 
+  it("saves legacy device protocols and restores inheritance without losing other overrides", () => {
+    const { change } = setup({
+      browserSession: { version: 1, showBookmarksBar: false },
+    });
+    const label = "Device SSL/TLS compatibility";
+    choose(label, "SSLv2 only (legacy)");
+    expect(change.mock.lastCall?.[0].browserSession).toEqual({
+      version: 1,
+      showBookmarksBar: false,
+      upstreamTlsProfile: "ssl2",
+    });
+    choose(label, "SSLv3 only (legacy)");
+    expect(change.mock.lastCall?.[0].browserSession.upstreamTlsProfile).toBe(
+      "ssl3",
+    );
+    choose(label, /^Use app default/);
+    expect(change.mock.lastCall?.[0].browserSession).toEqual({
+      version: 1,
+      showBookmarksBar: false,
+    });
+  });
+
   describe("HTTPS handling (tlsInterception)", () => {
     const label = "HTTPS handling";
     afterEach(() => vi.restoreAllMocks());

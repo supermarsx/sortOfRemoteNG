@@ -96,6 +96,9 @@ impl Drop for WriteTicket {
 }
 
 pub(crate) struct DiskStore {
+    // Shared by attempts with the exact same connection/binding/key. HTTP
+    // freshness/Vary policy still runs on every lookup above this store.
+    hot: super::memory::MemoryStore,
     entries: PathBuf,
     binding: [u8; 32],
     master: Zeroizing<[u8; 32]>,
@@ -128,6 +131,7 @@ impl DiskStore {
         };
         fs::create_dir_all(&entries)?;
         let store = Self {
+            hot: super::memory::MemoryStore::new(config.max_bytes.min(super::DEFAULT_MEMORY_BYTES)),
             entries,
             binding: config.binding,
             master,
@@ -211,6 +215,7 @@ impl DiskStore {
                 index.total -= slot.size;
             }
             let _ = fs::remove_file(self.entries.join(&victim));
+            self.hot.remove(&victim);
         }
     }
 
@@ -221,6 +226,7 @@ impl DiskStore {
 
     fn forget(&self, name: &str) {
         let mut index = self.lock();
+        self.hot.remove(name);
         if let Some(slot) = index.map.remove(name) {
             index.total -= slot.size;
         }
@@ -230,9 +236,10 @@ impl DiskStore {
     /// Blocking read + decrypt.
     pub(crate) fn read(&self, key: &str) -> ReadOutcome {
         let name = self.keys.entry_name(key);
-        if !self.lock().map.contains_key(&name) {
-            return ReadOutcome::Miss;
-        }
+        let generation = match self.lock().map.get(&name) {
+            Some(slot) => slot.used,
+            None => return ReadOutcome::Miss,
+        };
         let path = self.entries.join(&name);
         let Ok(file) = fs::read(&path) else {
             self.forget(&name);
@@ -250,6 +257,12 @@ impl DiskStore {
         };
         {
             let mut index = self.lock();
+            // A concurrent replacement/invalidation must not repopulate hot
+            // memory with the old disk read.
+            if index.map.get(&name).map(|slot| slot.used) != Some(generation) {
+                return ReadOutcome::Miss;
+            }
+            self.hot.insert(name.clone(), entry.clone());
             index.tick += 1;
             let tick = index.tick;
             if let Some(slot) = index.map.get_mut(&name) {
@@ -258,6 +271,25 @@ impl DiskStore {
         }
         touch(&path);
         ReadOutcome::Hit(Box::new(entry))
+    }
+
+    /// Synchronous fast path: no filesystem access, crypto, or blocking-pool
+    /// hop for a recently authenticated entry. Lock order is index -> hot.
+    pub(crate) fn read_hot(&self, key: &str) -> Option<Entry> {
+        let name = self.keys.entry_name(key);
+        // A background disk write may hold the index across filesystem I/O.
+        // Never make an async request worker wait for that lock.
+        let mut index = self.index.try_lock().ok()?;
+        if !index.map.contains_key(&name) {
+            return None;
+        }
+        let entry = self.hot.get(&name)?;
+        index.tick += 1;
+        let tick = index.tick;
+        if let Some(slot) = index.map.get_mut(&name) {
+            slot.used = tick;
+        }
+        Some(entry)
     }
 
     /// Blocking encrypt + write; `Ok(false)` when the entry cannot fit.
@@ -290,6 +322,7 @@ impl DiskStore {
         index.tick += 1;
         let used = index.tick;
         index.total += size;
+        self.hot.remove(&name);
         index.map.insert(name, Slot { size, used });
         Ok(true)
     }
@@ -308,6 +341,7 @@ impl DiskStore {
 
     fn wipe_entries(&self) {
         let mut index = self.lock();
+        self.hot.clear();
         *index = Index::default();
         let _ = fs::remove_dir_all(&self.entries);
         let _ = fs::create_dir_all(&self.entries);

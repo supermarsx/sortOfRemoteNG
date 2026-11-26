@@ -29,6 +29,8 @@ pub struct NativeBrowserPreferences {
     pub restore_cookies: bool,
     pub http_cache: NativeHttpCachePreferences,
     pub tls_interception: NativeTlsInterception,
+    pub allow_weak_certificates: bool,
+    pub upstream_tls: sorng_protocols::private_forward_proxy::intercept::tls_policy::UpstreamTlsProfile,
 }
 
 /// HTTPS handling of an attempt (t-mitmproxy D2), resolved from the sparse
@@ -332,6 +334,13 @@ impl NativeBrowserPreferences {
                 overrides.and_then(|row| row.get("httpCache")),
             )?,
             tls_interception: tls_interception(get("tlsInterception"))?,
+            allow_weak_certificates: get("allowWeakCertificates").map(|v| v.as_bool().ok_or(())).transpose()?.unwrap_or(false),
+            upstream_tls: get("upstreamTlsProfile")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|_| ())?
+                .unwrap_or_default(),
         };
         if result.minimum_form_fill_delay_ms + result.minimum_form_submit_delay_ms > 52_000 {
             return Err(());
@@ -895,5 +904,36 @@ mod tests {
             assert!(NativeBrowserPreferences::from_saved(&json!({"browserSession":{"version":1,"tlsInterception":invalid.clone()}}), &json!({})).is_err());
             assert!(NativeBrowserPreferences::tls_interception_from_settings(&json!({"webBrowser":{"tlsInterception":invalid}})).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod upstream_tls_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn weak_certificate_permission_requires_an_explicit_saved_boolean() {
+        assert!(!NativeBrowserPreferences::from_saved(&json!({}), &json!({})).unwrap().allow_weak_certificates);
+        let global = json!({"webBrowser":{"allowWeakCertificates":true}});
+        assert!(NativeBrowserPreferences::from_saved(&json!({}), &global).unwrap().allow_weak_certificates);
+        let saved = json!({"browserSession":{"version":1,"allowWeakCertificates":false}});
+        assert!(!NativeBrowserPreferences::from_saved(&saved, &global).unwrap().allow_weak_certificates);
+        assert!(NativeBrowserPreferences::from_saved(&json!({"browserSession":{"version":1,"allowWeakCertificates":"true"}}), &global).is_err());
+    }
+    #[test]
+    fn saved_profiles_inherit_and_validate_both_layers() {
+        for profile in [
+            "modern", "tls12", "tls13", "tls10", "tls11", "ssl3", "ssl2", "legacy",
+        ] {
+            let saved =
+                serde_json::json!({"browserSession":{"version":1,"upstreamTlsProfile":profile}});
+            let prefs =
+                NativeBrowserPreferences::from_saved(&saved, &serde_json::json!({})).unwrap();
+            assert_eq!(serde_json::to_value(prefs.upstream_tls).unwrap(), profile);
+        }
+        let invalid = serde_json::json!({"webBrowser":{"upstreamTlsProfile":"bad"}});
+        let override_valid =
+            serde_json::json!({"browserSession":{"version":1,"upstreamTlsProfile":"modern"}});
+        assert!(NativeBrowserPreferences::from_saved(&override_valid, &invalid).is_err());
     }
 }

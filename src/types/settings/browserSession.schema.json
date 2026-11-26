@@ -80,6 +80,22 @@
     },
     "sessionRetention": { "$ref": "#/$defs/retention" },
     "httpCache": { "$ref": "#/$defs/httpCacheOverride" },
+    "allowWeakCertificates": {"type":"boolean","default":false,"description":"Allow weak certificate keys and signature algorithms for this connection; normal trust review still applies."},
+    "upstreamTlsProfile": {
+      "type": "string",
+      "enum": [
+        "modern",
+        "tls12",
+        "tls13",
+        "tls10",
+        "tls11",
+        "ssl3",
+        "ssl2",
+        "legacy"
+      ],
+      "default": "modern",
+      "description": "Device-facing proxy TLS profile. Legacy profiles require the isolated helper and TLS interception. SSLv2 is exact-only."
+    },
     "tlsInterception": {
       "type": "string",
       "enum": ["auto", "off"],

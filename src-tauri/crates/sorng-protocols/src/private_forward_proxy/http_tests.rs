@@ -476,7 +476,7 @@ async fn ambiguous_and_unsupported_upstream_transfer_framing_is_rejected() {
             head(&mut socket).await;
             socket
                 .write_all(
-                    format!("HTTP/1.1 200 OK\r\n{framing}\r\n4\r\ndata\r\n0\r\n\r\n").as_bytes(),
+                    format!("HTTP/1.1 200 OK\r\n{framing}\r\n4\r\nZ9Q!\r\n0\r\n\r\n").as_bytes(),
                 )
                 .await
                 .unwrap();
@@ -487,7 +487,7 @@ async fn ambiguous_and_unsupported_upstream_transfer_framing_is_rejected() {
         )
         .await;
         assert!(response.starts_with("HTTP/1.1 502"), "{response}");
-        assert!(!response.contains("data"));
+        assert!(!response.contains("Z9Q!"));
         timeout(DEADLINE, task).await.unwrap().unwrap();
         proxy.stop().await.unwrap();
     }

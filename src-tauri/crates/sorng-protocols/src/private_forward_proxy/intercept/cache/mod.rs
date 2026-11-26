@@ -212,6 +212,9 @@ impl ProxyCache {
             Backend::Off => None,
             Backend::Memory(m) => m.get(key),
             Backend::Disk(d) => {
+                if let Some(entry) = d.read_hot(key) {
+                    return Some(entry);
+                }
                 let store = Arc::clone(d);
                 let key = key.to_owned();
                 match tokio::task::spawn_blocking(move || store.read(&key)).await {

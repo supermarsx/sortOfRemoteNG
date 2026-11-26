@@ -9,6 +9,7 @@ import { normalizeWebsiteDomainPermissions } from "./websiteDomainPermissions";
 import {
   normalizeBrowserHttpCacheSettings,
   normalizeBrowserTlsInterception,
+  normalizeBrowserUpstreamTlsProfile,
   normalizeBrowserSessionRetention,
 } from "./browserSessionSettings";
 
@@ -102,6 +103,8 @@ export function normalizeWebBrowserSettings(
           "restoreCookies",
           "httpCache",
           "tlsInterception",
+          "upstreamTlsProfile",
+          "allowWeakCertificates",
         ].includes(key),
     )
   )
@@ -195,6 +198,10 @@ export function normalizeWebBrowserSettings(
     restoreCookies: boolean(row.restoreCookies, true),
     httpCache: normalizeBrowserHttpCacheSettings(row.httpCache),
     tlsInterception: normalizeBrowserTlsInterception(row.tlsInterception),
+    allowWeakCertificates: boolean(row.allowWeakCertificates, false),
+    upstreamTlsProfile: normalizeBrowserUpstreamTlsProfile(
+      row.upstreamTlsProfile,
+    ),
     ...(row.domainPermissions === undefined
       ? {}
       : {

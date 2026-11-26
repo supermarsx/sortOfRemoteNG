@@ -36,6 +36,8 @@ export interface BrowserHttpCacheOverride {
  * cache); "off" is Direct TLS: the browser engine verifies TLS and keeps its own
  * fingerprint, for sites with strict bot checks. */
 export type BrowserTlsInterception = "auto" | "off";
+export type BrowserUpstreamTlsProfile =
+  "modern" | "tls12" | "tls13" | "tls10" | "tls11" | "ssl3" | "ssl2" | "legacy";
 
 /** Requested native features, not runtime availability or permission grants. */
 export interface BrowserNativePreferences {
@@ -79,6 +81,9 @@ export type BrowserSessionOverrides = {
   httpCache?: BrowserHttpCacheOverride;
   /** Missing inherits `webBrowser.tlsInterception`. */
   tlsInterception?: BrowserTlsInterception;
+  /** Device-facing proxy TLS; missing uses modern. */
+  upstreamTlsProfile?: BrowserUpstreamTlsProfile;
+  allowWeakCertificates?: boolean;
 } & Partial<BrowserSessionPreferences>;
 
 /** Native code must derive these from authenticated ownership, not accept profile paths. */

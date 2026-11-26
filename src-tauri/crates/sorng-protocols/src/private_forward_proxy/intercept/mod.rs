@@ -29,15 +29,18 @@ pub(crate) type ProxyBody =
     http_body_util::combinators::BoxBody<hyper::body::Bytes, std::io::Error>;
 pub(crate) mod accept;
 pub(crate) mod forward;
+mod legacy_tls;
+pub(crate) mod pool;
 pub(crate) mod server;
 #[cfg(test)]
 mod tests_core;
-pub(crate) mod websocket;
-pub(crate) mod pool;
+pub mod tls_policy;
+pub(crate) mod tls_attempt;
 pub(crate) mod upstream;
-pub(crate) mod upstream_verify;
 #[cfg(test)]
 mod upstream_tests;
+pub(crate) mod upstream_verify;
+pub(crate) mod websocket;
 
 pub use ca::InterceptAuthority;
 pub use cache::{CacheMode, DiskCacheConfig};
@@ -57,6 +60,11 @@ pub struct InterceptConfig {
     pub trust: Arc<dyn UpstreamTrust>,
     pub cache: CacheMode,
     pub hooks: Vec<Arc<dyn ExchangeHook>>,
+    pub upstream_tls: tls_policy::UpstreamTlsProfile,
+    pub allow_weak_certificates: bool,
+    pub theme: Option<crate::theme_tokens::ThemeTokens>,
+    /// Native-resolved packaged helper; never take this path from a web page.
+    pub legacy_tls_helper: Option<std::path::PathBuf>,
 }
 
 /// The error every unimplemented interception path returns. Callers treat it

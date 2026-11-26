@@ -37,6 +37,8 @@
     "build": "next build",
     "build:cold:check": "node ./scripts/ci/check-frontend-cold-bundle.mjs",
     "stage:file-viewer": "node ./scripts/stage-file-viewer-host.mjs",
+    "native:legacy-tls:build": "node ./scripts/build-legacy-tls.mjs",
+    "native:legacy-tls:test": "node --test ./tests/tooling/legacyTlsHelper.node-test.mjs",
     "native:stage:windows": "node ./scripts/stage-windows-native-runtime.mjs",
     "start": "next start",
     "lint": "eslint .",

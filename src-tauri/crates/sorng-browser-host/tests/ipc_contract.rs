@@ -392,6 +392,26 @@ fn create() -> Value {
     })
 }
 
+#[test]
+fn create_schema_diagnostics_identify_fields_without_values() {
+    assert!(OriginBrowserCreateRequest::parse_request(create()).is_ok());
+    let mut bad = create();
+    bad["bounds"]["width"] = json!("SECRET");
+    assert_eq!(OriginBrowserCreateRequest::parse_request(bad).err().unwrap(),
+        json!({"code":"request-invalid","field":"bounds.width","kind":"invalid-value"}));
+    let mut bad = create();
+    bad.as_object_mut().unwrap().remove("owner");
+    assert_eq!(OriginBrowserCreateRequest::parse_request(bad).err().unwrap()["field"], "owner");
+    let mut bad = create();
+    bad["SECRET_FIELD"] = json!("SECRET_VALUE");
+    let report = OriginBrowserCreateRequest::parse_request(bad).err().unwrap();
+    assert_eq!(report["kind"], "unknown-field");
+    assert!(!report.to_string().contains("SECRET"));
+    let mut bad = create();
+    bad["initialUrl"] = json!({"SECRET":"VALUE"});
+    assert_eq!(OriginBrowserCreateRequest::parse_request(bad).err().unwrap()["field"], "initialUrl");
+}
+
 fn decode<T: DeserializeOwned + ValidateOriginBrowserRequest>(
     value: Value,
 ) -> Result<T, OriginBrowserIpcError> {
@@ -895,7 +915,7 @@ fn status_defaults_to_explicit_unavailable_and_serializes_every_reason() {
     assert_eq!(
         serde_json::to_value(OriginBrowserStatusResult::default()).unwrap(),
         json!({
-            "capability": { "availability": "unavailable", "reason": "host-unavailable" }, "snapshot": null
+            "supportsProxyTheme": false, "capability": { "availability": "unavailable", "reason": "host-unavailable" }, "snapshot": null
         })
     );
     for (reason, expected) in [
@@ -927,7 +947,7 @@ fn status_defaults_to_explicit_unavailable_and_serializes_every_reason() {
         assert_eq!(
             serde_json::to_value(OriginBrowserStatusResult::unavailable(reason)).unwrap(),
             json!({
-                "capability": { "availability": "unavailable", "reason": expected }, "snapshot": null
+                "supportsProxyTheme": false, "capability": { "availability": "unavailable", "reason": expected }, "snapshot": null
             })
         );
     }
@@ -1055,7 +1075,7 @@ fn deferred_capability_never_asserts_an_existing_attempt_or_snapshot() {
     assert_eq!(
         serde_json::to_value(deferred).unwrap(),
         json!({
-            "capability": { "availability": "deferred" }, "snapshot": null
+            "supportsProxyTheme": true, "capability": { "availability": "deferred" }, "snapshot": null
         })
     );
     assert!(OriginBrowserStatusResult::from_native(

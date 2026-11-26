@@ -323,6 +323,10 @@ impl Attempt {
         let identity = policy.identity().clone();
         let authority = InterceptAuthority::generate()?;
         let config = InterceptConfig {
+            upstream_tls: Default::default(),
+            allow_weak_certificates: false,
+            theme: None,
+            legacy_tls_helper: None,
             authority: authority.clone(),
             trust: shared.trust.clone(),
             cache: CacheMode::Disk(DiskCacheConfig {
@@ -1398,6 +1402,10 @@ mod tests {
                     dialer.clone(),
                     ProxyLimits::default(),
                     InterceptConfig {
+                        upstream_tls: Default::default(),
+            allow_weak_certificates: false,
+            theme: None,
+                        legacy_tls_helper: None,
                         authority: authority.clone(),
                         trust: trust.clone(),
                         cache: CacheMode::Disk(DiskCacheConfig {

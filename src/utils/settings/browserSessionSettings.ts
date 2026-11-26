@@ -7,6 +7,7 @@ import type {
   BrowserSessionRetention,
   BrowserSessionRetentionCapabilities,
   BrowserTlsInterception,
+  BrowserUpstreamTlsProfile,
   EffectiveBrowserSessionRetention,
 } from "../../types/settings/browserSession";
 import type { WebBrowserSettingsConfig } from "../../types/settings/webBrowser";
@@ -47,6 +48,14 @@ export function normalizeBrowserTlsInterception(
   if (value === undefined) return DEFAULT_BROWSER_TLS_INTERCEPTION;
   if (!validate(value, schema.$defs.tlsInterception)) return invalid();
   return value as BrowserTlsInterception;
+}
+
+export function normalizeBrowserUpstreamTlsProfile(
+  value: unknown,
+): BrowserUpstreamTlsProfile {
+  if (value === undefined) return "modern";
+  if (!validate(value, schema.properties.upstreamTlsProfile)) return invalid();
+  return value as BrowserUpstreamTlsProfile;
 }
 
 /** Effective policy when retention is unsupported or disabled: never retains cookies. */

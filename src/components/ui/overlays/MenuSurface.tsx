@@ -6,6 +6,7 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { listen } from "@tauri-apps/api/event";
 import { cx } from "../lib/cx";
 
 const VIEWPORT_PADDING = 4;
@@ -140,6 +141,9 @@ export const MenuSurface: React.FC<MenuSurfaceProps> = ({
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const restoreFocusRef = useRef(true);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const [resolvedPosition, setResolvedPosition] =
     useState<MenuSurfacePosition | null>(null);
   const positionX = position?.x;
@@ -196,6 +200,40 @@ export const MenuSurface: React.FC<MenuSurfaceProps> = ({
   }, [isOpen, onClose, closeOnOutside, ignoreRefs]);
 
   useEffect(() => {
+    if (!isOpen || !closeOnOutside) return;
+    let live = true;
+    let unlisten: (() => void) | undefined;
+    // Native child windows do not dispatch DOM mousedown in the shell. Menus
+    // own shell focus while open, so a CEF focus receipt is an outside click.
+    void import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) => {
+        if (!live) return undefined;
+        return listen(
+          "origin-browser-native-focus",
+          () => {
+            if (!live) return;
+            // Keep the user's focus in CEF when the menu disappears.
+            restoreFocusRef.current = false;
+            onCloseRef.current?.();
+          },
+          { target: getCurrentWindow().label },
+        );
+      })
+      .then((off) => {
+        if (!off) return;
+        if (live) unlisten = off;
+        else off();
+      })
+      .catch(() => {
+        /* Browser-only previews have no native event bridge. */
+      });
+    return () => {
+      live = false;
+      unlisten?.();
+    };
+  }, [isOpen, closeOnOutside]);
+
+  useEffect(() => {
     if (!isOpen || !onClose || !closeOnEscape) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -208,6 +246,8 @@ export const MenuSurface: React.FC<MenuSurfaceProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
+
+    restoreFocusRef.current = true;
 
     previousFocusRef.current =
       document.activeElement instanceof HTMLElement
@@ -230,7 +270,7 @@ export const MenuSurface: React.FC<MenuSurfaceProps> = ({
 
     return () => {
       cancelAnimationFrame(frame);
-      previousFocusRef.current?.focus();
+      if (restoreFocusRef.current) previousFocusRef.current?.focus();
     };
   }, [isOpen]);
 

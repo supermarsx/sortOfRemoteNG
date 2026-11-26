@@ -290,6 +290,9 @@ fn display_url(value: &str) -> String {
 /// work promptly. Panics revoke the attempt and never unwind through CEF.
 pub trait BrowserEventSink: Send + Sync {
     fn on_event(&self, event: BrowserEvent);
+    /// A current visible native view took focus from the shell (for example,
+    /// a click outside an application context menu). No page data or authority.
+    fn on_native_focus(&self, _identity: &BrowserIdentity) {}
     /// Private certificate metadata for the exact current view. Observation
     /// only: implementations must enqueue promptly and never grant trust.
     fn on_security(&self, _evidence: NativeSecurityEvidence) {}
@@ -3874,6 +3877,14 @@ wrap_focus_handler! {
         fn on_set_focus(&self, browser: Option<&mut Browser>, _source: FocusSource) -> i32 {
             i32::from(!self.shared.focus_allowed(browser.as_deref()))
         }
+        fn on_got_focus(&self, browser: Option<&mut Browser>) {
+            if !self.shared.focus_allowed(browser.as_deref()) { return; }
+            // Observational shell UI notification, outside control locks. A
+            // subscriber panic must not unwind through CEF or revoke the page.
+            let _ = catch_unwind(AssertUnwindSafe(|| {
+                self.shared.sink.on_native_focus(&self.shared.identity);
+            }));
+        }
     }
 }
 
@@ -5550,6 +5561,41 @@ mod tests {
         };
         let raw: *mut _cef_browser_t = RcImpl::new(raw, (valid_value, identifier_value)).cast();
         raw.wrap_result()
+    }
+
+    #[tokio::test]
+    async fn native_focus_receipts_only_come_from_the_current_visible_unblocked_view() {
+        struct FocusSink(std::sync::atomic::AtomicUsize);
+        impl BrowserEventSink for FocusSink {
+            fn on_event(&self, _: BrowserEvent) {}
+            fn on_native_focus(&self, _: &BrowserIdentity) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        let sink = Arc::new(FocusSink(std::sync::atomic::AtomicUsize::new(0)));
+        let shared = Arc::new(fixture(sink.clone()).await);
+        shared.state.lock().unwrap().browser_id = Some(41);
+        let mut browser = focus_browser(1, 41);
+        let focus = NativeFocus::new(shared.clone());
+        focus.on_got_focus(Some(&mut browser));
+        assert_eq!(sink.0.load(Ordering::SeqCst), 1);
+        shared.input_blocked.store(true, Ordering::Release);
+        focus.on_got_focus(Some(&mut browser));
+        shared.input_blocked.store(false, Ordering::Release);
+        shared.state.lock().unwrap().control.hide(&shared.identity).unwrap();
+        focus.on_got_focus(Some(&mut browser));
+        shared.state.lock().unwrap().control.show(&shared.identity).unwrap();
+        let mut foreign = focus_browser(1, 42);
+        let mut invalid = focus_browser(0, 41);
+        focus.on_got_focus(Some(&mut foreign));
+        focus.on_got_focus(Some(&mut invalid));
+        focus.on_got_focus(None);
+        assert_eq!(sink.0.load(Ordering::SeqCst), 1);
+        focus.on_got_focus(Some(&mut browser));
+        assert_eq!(sink.0.load(Ordering::SeqCst), 2);
+        shared.revoke();
+        focus.on_got_focus(Some(&mut browser));
+        assert_eq!(sink.0.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]

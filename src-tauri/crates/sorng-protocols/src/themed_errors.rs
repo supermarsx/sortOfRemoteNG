@@ -416,6 +416,9 @@ pub fn render_error_page(
     let safe_target = escape_html(target);
     let safe_detail = escape_html(detail);
     let theme_css = theme.css_block();
+    let compact_css = crate::internal_page::COMPACT_STYLE;
+    let action_css = crate::internal_page::ACTION_STYLE;
+    let actions = crate::internal_page::controls(&format!("{}\n{}", kind.title(), kind.hint()), &format!("{}\n{}\n{}\n{}", kind.title(), target, kind.hint(), detail));
 
     // Whole page kept under 4 KB so it fits in a single TCP packet on
     // most networks and renders instantly even on a degraded link.
@@ -510,7 +513,7 @@ pub fn render_error_page(
     color: var(--proxy-muted);
     margin: 0;
   }}
-</style>
+{compact_css}{action_css}</style>
 </head>
 <body>
   <main class="card" role="alert" aria-live="polite">
@@ -524,6 +527,7 @@ pub fn render_error_page(
     <p class="target">{safe_target}</p>
     <p class="hint">{hint}</p>
     <pre class="detail">{safe_detail}</pre>
+    {actions}
     <p class="footer">Served by the sortOfRemoteNG internal proxy.</p>
   </main>
 </body>

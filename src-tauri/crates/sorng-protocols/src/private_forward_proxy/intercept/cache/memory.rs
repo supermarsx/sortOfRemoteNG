@@ -93,6 +93,10 @@ impl MemoryStore {
         }
     }
 
+    pub(crate) fn clear(&self) {
+        *self.lock() = Inner::default();
+    }
+
     #[cfg(test)]
     pub(crate) fn total(&self) -> u64 {
         self.lock().total

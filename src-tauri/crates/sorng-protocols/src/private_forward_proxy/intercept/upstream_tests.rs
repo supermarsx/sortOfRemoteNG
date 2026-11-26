@@ -887,7 +887,7 @@ fn handshake_errors_map_to_fatal_or_route_failure() {
             )),
             None
         ),
-        UpstreamFailure::Fatal(UpstreamFatal::Protocol)
+        UpstreamFailure::Tls(super::tls_policy::TlsFailure::Version)
     );
     assert_eq!(
         handshake_failure(
@@ -896,7 +896,7 @@ fn handshake_errors_map_to_fatal_or_route_failure() {
             )),
             None
         ),
-        UpstreamFailure::Fatal(UpstreamFatal::Protocol)
+        UpstreamFailure::Tls(super::tls_policy::TlsFailure::Version)
     );
     assert_eq!(
         handshake_failure(
@@ -909,7 +909,7 @@ fn handshake_errors_map_to_fatal_or_route_failure() {
     );
     assert_eq!(
         handshake_failure(&io::Error::from(io::ErrorKind::ConnectionReset), None),
-        UpstreamFailure::RouteFailed
+        UpstreamFailure::Tls(super::tls_policy::TlsFailure::Reset)
     );
     assert_eq!(
         handshake_failure(
@@ -1205,6 +1205,8 @@ fn structural_checks_flag_weak_keys_but_not_strong_chains() {
     let weak = weak_rsa_leaf(&pki, &["a.test"]);
     let refs: Vec<&[u8]> = weak.chain.iter().map(Vec::as_slice).collect();
     assert_eq!(structural_fatal(&refs), Some(UpstreamFatal::WeakKey));
+    assert_eq!(super::upstream_verify::structural_fatal_with_policy(&refs, true), None);
+    assert_eq!(super::upstream_verify::structural_fatal_with_policy(&[b"malformed"], true), Some(UpstreamFatal::Malformed));
     let strong = pki.valid(&["a.test"], Validity::Expired);
     let refs: Vec<&[u8]> = strong.chain.iter().map(Vec::as_slice).collect();
     assert_eq!(

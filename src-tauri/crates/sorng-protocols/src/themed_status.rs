@@ -411,6 +411,9 @@ pub fn render_status_page(
     let safe_target = escape_html(target);
     let safe_snippet = snippet_for(upstream_body).map(|s| escape_html(&s));
     let theme_css = theme.css_block();
+    let compact_css = crate::internal_page::COMPACT_STYLE;
+    let action_css = crate::internal_page::ACTION_STYLE;
+    let actions = crate::internal_page::controls(&format!("HTTP {code}: {}\n{}", pres.title, pres.hint), &format!("HTTP {code}: {}\n{target}\n{}\n{}", pres.title, pres.hint, snippet_for(upstream_body).unwrap_or_default()));
 
     let details_block = if let Some(snippet) = safe_snippet {
         format!(
@@ -545,7 +548,7 @@ pub fn render_status_page(
     color: var(--proxy-muted);
     margin: 0;
   }}
-</style>
+{compact_css}{action_css}</style>
 </head>
 <body>
   <main class="card" role="alert" aria-live="polite">
@@ -560,6 +563,7 @@ pub fn render_status_page(
     <p class="target">{safe_target}</p>
     <p class="hint">{hint}</p>
     {details_block}
+    {actions}
     <p class="footer">Served by the sortOfRemoteNG internal proxy.</p>
   </main>
 </body>

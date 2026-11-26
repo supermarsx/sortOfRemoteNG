@@ -49,6 +49,7 @@ pub(crate) struct Exchange {
     cache: Arc<ProxyCache>,
     cache_use: CacheUse,
     hooks: Vec<Arc<dyn ExchangeHook>>,
+    pub(crate) theme: crate::theme_tokens::ThemeTokens,
     response_head_timeout: Duration,
     pub(crate) counters: ExchangeCounters,
 }
@@ -104,8 +105,22 @@ pub(crate) fn upstream_failure(failure: UpstreamFailure) -> Response<ProxyBody> 
             },
         ),
         UpstreamFailure::RouteFailed => ("route-failed", Failure::Route),
+        UpstreamFailure::Tls(cause) => ("fatal", Failure::Tls(cause)),
+        UpstreamFailure::TlsAttempt(cause, attempt) => ("fatal", Failure::TlsAttempt(cause, attempt)),
     };
-    synthetic(StatusCode::BAD_GATEWAY, kind, Some(tag))
+    let mut response = synthetic(StatusCode::BAD_GATEWAY, kind, Some(tag));
+    if let UpstreamFailure::Tls(cause) | UpstreamFailure::TlsAttempt(cause, _) = failure {
+        response = super::super::error_response::response(
+            StatusCode::BAD_GATEWAY,
+            kind,
+            Some(&cause),
+            true,
+        );
+        response
+            .headers_mut()
+            .insert(UPSTREAM_TAG, HeaderValue::from_static(tag));
+    }
+    response
 }
 
 fn connection_tokens(headers: &HeaderMap) -> Vec<String> {
@@ -228,9 +243,15 @@ impl Exchange {
             cache,
             cache_use,
             hooks,
+            theme: crate::theme_tokens::ThemeTokens::dark_default(),
             response_head_timeout: RESPONSE_HEAD_TIMEOUT,
             counters: ExchangeCounters::default(),
         }
+    }
+
+    pub(crate) fn with_theme(mut self, theme: Option<crate::theme_tokens::ThemeTokens>) -> Self {
+        if let Some(theme) = theme { self.theme = theme.sanitized(); }
+        self
     }
 
     pub(crate) fn cache_use(&self) -> CacheUse {

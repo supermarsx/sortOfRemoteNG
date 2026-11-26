@@ -72,7 +72,11 @@ pub(crate) fn dispatch_startup(invoke: tauri::ipc::Invoke) -> bool {
         };
     }
     if name == "origin_browser_create" {
-        let request = request!(OriginBrowserCreateRequest);
+        let value = request!(serde_json::Value);
+        let request = match OriginBrowserCreateRequest::parse_request(value) {
+            Ok(request) => request,
+            Err(problem) => { resolver.reject(problem); return true; }
+        };
         if crate::application_log_commands::require_shell(&window).is_err() {
             resolver.reject("Browser creation is available only in an app window.");
             return true;

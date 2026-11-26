@@ -38,6 +38,42 @@ const names = [
 ];
 
 describe("native browser per-view startup diagnostics", () => {
+  it("identifies a rejected schema field without exposing its value", () => {
+    const failure = originBrowserStartupError("create", {
+      code: "request-invalid",
+      field: "bounds.width",
+      kind: "invalid-value",
+      value: "SECRET",
+    });
+    expect(failure).toMatchObject({
+      code: "request-invalid",
+      invalidField: "bounds.width",
+      invalidKind: "invalid-value",
+    });
+    expect(failure.message).toContain("bounds.width");
+    expect(JSON.stringify(failure)).not.toContain("SECRET");
+  });
+  it("rejects arbitrary field text and never invokes a field getter", () => {
+    const getter = {
+      code: "request-invalid",
+      kind: "invalid-value",
+      get field() {
+        throw new Error("SECRET");
+      },
+    };
+    for (const error of [
+      getter,
+      {
+        code: "request-invalid",
+        field: "https://SECRET",
+        kind: "invalid-value",
+      },
+    ]) {
+      const failure = originBrowserStartupError("create", error);
+      expect(failure.invalidField).toBeUndefined();
+      expect(JSON.stringify(failure)).not.toContain("SECRET");
+    }
+  });
   it.each(["cancelled", "timeout", "unavailable"])(
     "identifies the exact command review %s outcome without exposing extra text",
     (reason) => {

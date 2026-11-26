@@ -214,6 +214,8 @@ export type OriginBrowserStartupFailureCode =
   OriginBrowserKnownStartupFailureCode | OriginBrowserPolicyFailureCode;
 export interface OriginBrowserStartupFailure {
   stage: OriginBrowserStartupStage;
+  invalidField?: string;
+  invalidKind?: "unknown-field" | "missing-field" | "invalid-value";
   /** Fixed native failure, retained separately from the broad legacy category. */
   code?: OriginBrowserStartupFailureCode;
   /** Exact native saved-authority failure, never inferred from display text. */
@@ -1146,10 +1148,95 @@ export function originBrowserStartRetriesExhausted(
   return `${message} The browser retried automatically and stopped after ${attempts} attempts.`;
 }
 
+const requestFields = new Set([
+  "request",
+  "proxyTheme",
+  "quickConnect",
+  "owner",
+  "expectedSecurityRevision",
+  "sourceSessionId",
+  "requestId",
+  "initialUrl",
+  "bounds",
+  "visible",
+  "policy",
+  "ownerDatabaseId",
+  "connectionId",
+  "sessionId",
+  "x",
+  "y",
+  "width",
+  "height",
+  "darkMode",
+  "autoLogin",
+  "enabled",
+  "consent",
+  "kind",
+  "grantId",
+  "protocol",
+  "hostname",
+  "port",
+  "basicAuthUsername",
+  "httpVerifySsl",
+  "basicAuthPassword",
+  "background",
+  "surface",
+  "text",
+  "textSecondary",
+  "textMuted",
+  "border",
+  "primary",
+  "primaryRgb",
+  "error",
+  "errorRgb",
+  "warning",
+  "warningRgb",
+  "success",
+  "successRgb",
+  "info",
+  "infoRgb",
+]);
+export function safeOriginBrowserRequestField(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length <= 160 &&
+    value.split(".").every((part) => requestFields.has(part))
+  );
+}
+function requestProblem(error: unknown) {
+  if (!error || typeof error !== "object") return null;
+  const data = (key: string) =>
+    Object.getOwnPropertyDescriptor(error, key)?.value as unknown;
+  const field = data("field"),
+    kind = data("kind");
+  if (
+    data("code") !== "request-invalid" ||
+    !safeOriginBrowserRequestField(field) ||
+    !["unknown-field", "missing-field", "invalid-value"].includes(
+      kind as string,
+    )
+  )
+    return null;
+  return {
+    field,
+    kind: kind as "unknown-field" | "missing-field" | "invalid-value",
+  };
+}
+
 export function originBrowserStartupError(
   stage: OriginBrowserStartupStage,
   error: unknown,
 ): OriginBrowserStartupFailure & { message: string } {
+  const invalid = stage === "create" ? requestProblem(error) : null;
+  if (invalid)
+    return {
+      stage,
+      category: "connection",
+      code: "request-invalid",
+      invalidField: invalid.field,
+      invalidKind: invalid.kind,
+      message: `Native browser rejected request field ${invalid.field} (${invalid.kind}). Review this field; if it is unsupported, restart the updated app so its UI and backend use the same schema.`,
+    };
   // Do not stringify arbitrary objects or invoke a message getter.
   const candidate: unknown =
     typeof error === "string"

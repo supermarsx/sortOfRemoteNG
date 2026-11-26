@@ -1631,3 +1631,97 @@ fn master_key_is_a_deterministic_hkdf_of_the_vault_dek_and_never_the_dek() {
     assert!(master_key_from_vault_dek(Vec::new()).is_none());
     assert!(master_key_from_vault_dek(vec![7u8; 31]).is_none());
 }
+
+#[tokio::test]
+async fn disk_hot_tier_shares_authenticated_entries_and_invalidates_replacements() {
+    let clock = TestClock::new();
+    let dir = TempDir::new("hot-tier");
+    let (cache, _) = disk(&clock, &dir.0, 1, 1);
+    store(
+        &cache,
+        "/hot",
+        &[("cache-control", "max-age=600")],
+        b"first",
+    )
+    .await;
+    let cache_key = key(Method::GET, "/hot");
+    assert!(disk_store(&cache).read_hot(&cache_key).is_none());
+    assert!(is_fresh(&cache, &get("/hot")).await);
+    assert_eq!(
+        disk_store(&cache).read_hot(&cache_key).unwrap().body,
+        Bytes::from_static(b"first")
+    );
+    let (other, _) = disk(&clock, &dir.0, 1, 1);
+    assert!(disk_store(&other).read_hot(&cache_key).is_some());
+    store(
+        &other,
+        "/hot",
+        &[("cache-control", "max-age=600")],
+        b"replacement",
+    )
+    .await;
+    assert!(disk_store(&cache).read_hot(&cache_key).is_none());
+    match look(&cache, &get("/hot")).await {
+        Kind::Fresh(served) => assert_eq!(served.body, Bytes::from_static(b"replacement")),
+        _ => panic!("fresh replacement"),
+    }
+    disk_store(&other).remove(&cache_key);
+    assert!(disk_store(&cache).read_hot(&cache_key).is_none());
+    assert!(is_miss(&cache, &get("/hot")).await);
+}
+
+#[tokio::test]
+async fn hot_disk_entries_still_obey_freshness_and_no_cache() {
+    let clock = TestClock::new();
+    let dir = TempDir::new("hot-freshness");
+    let (cache, _) = disk(&clock, &dir.0, 1, 1);
+    store(
+        &cache,
+        "/hot",
+        &[("cache-control", "max-age=10"), ("etag", "v1")],
+        b"body",
+    )
+    .await;
+    assert!(is_fresh(&cache, &get("/hot")).await);
+    assert!(disk_store(&cache)
+        .read_hot(&key(Method::GET, "/hot"))
+        .is_some());
+    clock.advance(11);
+    assert!(matches!(look(&cache, &get("/hot")).await, Kind::Revalidate(..)));
+    let forced = req(Method::GET, "/hot", &[("cache-control", "no-cache")]);
+    assert!(!is_fresh(&cache, &forced).await);
+}
+
+#[tokio::test]
+#[ignore = "local cache timing comparison; prints evidence rather than asserting timing"]
+async fn disk_hot_cache_timing() {
+    let clock = TestClock::new();
+    let dir = TempDir::new("hot-timing");
+    let (cache, _) = disk(&clock, &dir.0, 1, 1);
+    store(
+        &cache,
+        "/bundle.js",
+        &[("cache-control", "max-age=600")],
+        &vec![0x5a; 256 * 1024],
+    )
+    .await;
+    let cache_key = key(Method::GET, "/bundle.js");
+    let count = 200;
+    let started = std::time::Instant::now();
+    for _ in 0..count {
+        assert!(matches!(
+            disk_store(&cache).read(&cache_key),
+            ReadOutcome::Hit(_)
+        ));
+    }
+    let disk = started.elapsed();
+    let started = std::time::Instant::now();
+    for _ in 0..count {
+        assert!(disk_store(&cache).read_hot(&cache_key).is_some());
+    }
+    eprintln!(
+        "cache reads={count} resource_bytes=262144 disk_decrypt_us={} hot_memory_us={}",
+        disk.as_micros(),
+        started.elapsed().as_micros()
+    );
+}

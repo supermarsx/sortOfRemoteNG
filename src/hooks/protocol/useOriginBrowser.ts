@@ -3,6 +3,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { readInternalProxyTheme } from "../../utils/theme/internalProxyTheme";
 import type { ConnectionSession } from "../../types/connection/connection";
 import {
   originBrowserConfigurationDetails,
@@ -1502,6 +1503,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
           arm(lifecycle.current.createTimeoutMs, startTimedOut);
           try {
             const creating = transport.create({
+              ...(status.supportsProxyTheme === true ? { proxyTheme: readInternalProxyTheme() } : {}),
               ...(quickConnect ? { quickConnect } : {}),
               owner,
               expectedSecurityRevision,
