@@ -1,5 +1,6 @@
 // ─── Server Stats Parser ────────────────────────────────────────────────────
 // Parses the raw stdout from the stats collection script into typed objects.
+import { parseServerStatsIdentity } from "./serverStatsIdentity";
 
 import type {
   CpuStats,
@@ -363,6 +364,7 @@ export function parseServerStatsOutput(
   startTime: number,
 ): ServerStatsSnapshot {
   const warnings: string[] = [];
+  const identity = parseServerStatsIdentity(extractSection(raw, "===IDENTITY_BEGIN===", "===IDENTITY_END==="));
   const w = (msg: string) => warnings.push(msg);
 
   const cpuSection = extractSection(raw, "===CPU_BEGIN===", "===CPU_END===");
@@ -403,6 +405,7 @@ export function parseServerStatsOutput(
 
   return {
     collectedAt: new Date().toISOString(),
+    ...(identity ? { serverIdentity: identity } : {}),
     sessionId,
     connectionName,
     cpu,

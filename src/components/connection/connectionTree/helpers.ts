@@ -71,6 +71,7 @@ export interface ConnectionTreeItemProps {
   onConnect: (connection: Connection) => void;
   onDisconnect: (connection: Connection) => void;
   onSessionReconnect?: (sessionId: string) => void | Promise<void>;
+  onRevealSession?: (sessionId: string) => void;
   onEdit: (connection: Connection) => void;
   onNewConnection?: (parentId: string) => void;
   onDocuments?: (parentId: string, create: boolean) => void;

@@ -183,6 +183,13 @@ export class ServerStatsHistoryStore {
     atMs: number = Date.now(),
   ): void {
     const it = this.ensure(sessionId);
+    if (it.entry.snapshot && it.entry.snapshot.serverIdentity !== snap.serverIdentity) {
+      // A reboot/retarget must not splice another server's counters into an
+      // existing sparkline or calculate I/O rates across different boots.
+      for (const key of METRIC_KEYS) it.rings[key].clear();
+      it.io = null;
+      it.ioAt = 0;
+    }
     const { values, io } = extractMetrics(
       snap,
       { io: it.io, at: it.ioAt },

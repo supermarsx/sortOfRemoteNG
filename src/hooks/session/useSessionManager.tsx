@@ -2756,6 +2756,7 @@ export const useSessionManager = () => {
     const restoredSession: ConnectionSession = {
       id: sessionData.id,
       connectionId: sessionData.connectionId,
+      ...(sessionData.ownerDatabaseId ? { ownerDatabaseId: sessionData.ownerDatabaseId } : {}),
       name: connection.name,
       status: cleanupQuarantined ? "error" : "disconnected",
       startTime: sessionData.startTime

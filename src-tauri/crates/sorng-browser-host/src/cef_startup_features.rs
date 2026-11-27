@@ -30,6 +30,30 @@ const DISABLED_FEATURES: &[&str] = &[
 // GetGpuDriverOverlayInfo's missing ID3D11VideoDevice1 path leaves overlays
 // unsupported and returns; it is not a reason to disable GPU/WebGL or logging.
 
+/// Pinned Chromium's d3d11-warp-webgl selects its software WebGL feature policy,
+/// retaining Canvas2D and WebGL without ignoring the hardware GPU blocklist.
+/// Inspect adapters once, in the browser process only. RDP alone is not proof
+/// that hardware is unavailable; a usable hardware adapter keeps automatic mode.
+pub(crate) fn windows_software_webgl() -> bool {
+    #[cfg(all(target_os = "windows", feature = "cef-host"))]
+    {
+        static SOFTWARE_ONLY: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *SOFTWARE_ONLY.get_or_init(|| {
+            extern "C" { fn sorng_cef_graphics_adapters() -> u32; }
+            let start = std::time::Instant::now();
+            // The native function inventories DXGI descriptors and owns/releases
+            // all COM references. No CEF or browser handles cross this ABI.
+            let adapters = unsafe { sorng_cef_graphics_adapters() };
+            let software = adapters == 2;
+            log::info!("Native browser graphics: adapter class {}; software WebGL {}; preflight {} us", adapters, software, start.elapsed().as_micros());
+            if adapters == 3 { log::warn!("Native browser graphics: WARP device preflight failed; keeping Chromium automatic graphics selection"); }
+            software
+        })
+    }
+    #[cfg(not(all(target_os = "windows", feature = "cef-host")))]
+    { false }
+}
+
 // chrome/browser/extensions/external_provider_impl.cc checks this BEFORE
 // constructing the Windows registry and Unix external-directory providers.
 // Do not import another browser's machine-installed/default extensions into

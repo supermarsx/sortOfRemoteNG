@@ -106,6 +106,7 @@ export function snapshotToRows(
     .map((tab) => ({
       id: tab.tabId,
       connectionId: tab.connectionId,
+      ...(tab.ownerDatabaseId ? { ownerDatabaseId: tab.ownerDatabaseId } : {}),
       name: tab.name,
       protocol: tab.protocol,
       hostname: tab.hostname,

@@ -78,6 +78,7 @@ export function browserRecoveryEditorTarget(
     case "network":
       return { tab: "protocol", subtab: "network-path" };
     case "browser-session":
+      return { tab: "protocol", subtab: "browser" };
     case "legacy-proxy":
       return { tab: "protocol", subtab: "advanced" };
     case "trust":

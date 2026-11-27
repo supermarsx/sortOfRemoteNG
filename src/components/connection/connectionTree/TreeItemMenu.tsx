@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import MenuSurface from "../../ui/overlays/MenuSurface";
+import TreeSubmenu from "../../ui/overlays/MenuSubmenu";
 import { useConnections } from "../../../contexts/useConnections";
 import { useSettingsSelector } from "../../../contexts/useSettingsSelector";
 import {
@@ -23,6 +24,7 @@ import {
   Cpu,
   Edit,
   ExternalLink,
+  Eye,
   FileDown,
   FileText,
   FolderOpen,
@@ -67,6 +69,7 @@ function TreeItemMenu({
   onConnect,
   onDisconnect,
   onSessionReconnect,
+  onRevealSession,
   onEdit,
   onNewConnection,
   onDocuments,
@@ -96,6 +99,7 @@ function TreeItemMenu({
   ) => void | string | undefined | Promise<string | undefined>;
   onDisconnect: (c: Connection) => void;
   onSessionReconnect?: (sessionId: string) => void | Promise<void>;
+  onRevealSession?: (sessionId: string) => void;
   onEdit: (c: Connection) => void;
   onNewConnection?: (parentId: string) => void;
   onDocuments?: (parentId: string, create: boolean) => void;
@@ -179,6 +183,11 @@ function TreeItemMenu({
   const enableWinrm =
     connection.enableWinrmTools ?? settingsEnableWinrmTools ?? true;
   const [connectInWindowOpen, setConnectInWindowOpen] = useState(false);
+  const [specialConnectOpen, setSpecialConnectOpen] = useState(false);
+  const specialConnectTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const specialConnectPanelRef = useRef<HTMLDivElement | null>(null);
+  const specialConnectTriggerId = useId();
+  const specialConnectPanelId = useId();
   const [windowsToolsOpen, setWindowsToolsOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const orderTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -273,6 +282,7 @@ function TreeItemMenu({
   useEffect(() => {
     if (!showMenu) {
       setConnectInWindowOpen(false);
+      setSpecialConnectOpen(false);
       setWindowsToolsOpen(false);
       setOrderOpen(false);
     }
@@ -549,138 +559,232 @@ function TreeItemMenu({
             : t("quickConnect.connect", "Connect")}
         </button>
       )}
-      {!connection.isGroup && reconnectOne && onSessionReconnect && (
-        <>
+      {!connection.isGroup &&
+        onRevealSession &&
+        reconnectTargets.length > 0 &&
+        (reconnectTargets.length === 1 ? (
           <button
+            role="menuitem"
             className="sor-menu-item"
-            onClick={act(() => {
-              void onSessionReconnect(reconnectOne);
-            })}
+            onClick={act(() => onRevealSession(reconnectTargets[0].id))}
           >
-            <RefreshCw size={14} className="mr-2" />
-            Reconnect this tab
+            <Eye size={14} className="mr-2" />
+            {t("connections.revealTab", "Reveal tab")}
           </button>
-          <button
-            className="sor-menu-item"
-            onClick={act(() => {
-              void (async () => {
-                const ids = reconnectTargets.length
-                  ? reconnectTargets.map((session) => session.id)
-                  : [reconnectOne];
-                for (const id of ids) await onSessionReconnect(id);
-              })();
-            })}
+        ) : (
+          <TreeSubmenu
+            label={t("connections.revealTab", "Reveal tab")}
+            icon={<Eye size={14} className="mr-2" />}
           >
-            <RefreshCw size={14} className="mr-2" />
-            Reconnect all tabs
-          </button>
-        </>
-      )}
-      {!connection.isGroup && activeSession && canOpenAnotherSession && (
-        <button
-          onClick={act(() => onConnect(connection))}
-          className="sor-menu-item"
-        >
-          <PlayCircle size={14} className="mr-2" />
-          {t("connections.connectAgain", "Connect again (new tab)")}
-        </button>
-      )}
-      {!connection.isGroup && (!activeSession || canOpenAnotherSession) && (
-        <>
-          <button
-            onClick={act(() => {
-              void connectAndPlaceSession();
-            })}
-            className="sor-menu-item"
-          >
-            <ExternalLink size={14} className="mr-2" />
-            {t("connections.connectInNewWindow", "Connect in New Window")}
-          </button>
-          {detachedWindows.length > 0 && (
-            <div
-              className="sor-menu-submenu"
-              data-submenu-open={connectInWindowOpen ? "true" : "false"}
-              onMouseEnter={() => setConnectInWindowOpen(true)}
-              onMouseLeave={() => setConnectInWindowOpen(false)}
-              onBlurCapture={(event) => {
-                const next = event.relatedTarget as Node | null;
-                if (!event.currentTarget.contains(next)) {
-                  setConnectInWindowOpen(false);
-                }
-              }}
-            >
+            {reconnectTargets.map((session, index) => (
               <button
-                id={connectInWindowTriggerId}
-                ref={connectInWindowTriggerRef}
-                className="sor-menu-item"
+                key={session.id}
                 role="menuitem"
-                aria-haspopup="menu"
-                aria-expanded={connectInWindowOpen}
-                aria-controls={connectInWindowPanelId}
-                onKeyDown={(event) =>
-                  handleSubmenuTriggerKeyDown(
-                    event,
-                    setConnectInWindowOpen,
-                    connectInWindowPanelRef,
-                  )
-                }
+                className="sor-menu-item"
+                onClick={act(() => onRevealSession(session.id))}
               >
-                <Send size={14} className="mr-2" />
-                {t("connections.connectInWindow", "Connect in Window")}
-                <ChevronRight size={12} className="ml-auto opacity-50" />
+                <Eye size={14} className="mr-2" />
+                <span>
+                  {session.name || connection.name} ·{" "}
+                  {session.protocol.toUpperCase()} {index + 1}
+                  {session.layout?.isDetached ? " · Detached window" : ""}
+                </span>
               </button>
-              <div
-                id={connectInWindowPanelId}
-                ref={connectInWindowPanelRef}
-                className="sor-menu-submenu-panel"
-                role="menu"
-                tabIndex={-1}
-                aria-labelledby={connectInWindowTriggerId}
-                onKeyDown={(event) =>
-                  handleSubmenuPanelKeyDown(
-                    event,
-                    setConnectInWindowOpen,
-                    connectInWindowTriggerRef,
-                  )
-                }
+            ))}
+          </TreeSubmenu>
+        ))}
+      {!connection.isGroup && (
+        <div
+          className="sor-menu-submenu"
+          data-submenu-open={specialConnectOpen ? "true" : "false"}
+          onMouseEnter={() => setSpecialConnectOpen(true)}
+          onMouseLeave={() => setSpecialConnectOpen(false)}
+          onBlurCapture={(event) => {
+            if (
+              !event.currentTarget.contains(event.relatedTarget as Node | null)
+            )
+              setSpecialConnectOpen(false);
+          }}
+        >
+          <button
+            id={specialConnectTriggerId}
+            ref={specialConnectTriggerRef}
+            className="sor-menu-item"
+            role="menuitem"
+            aria-haspopup="menu"
+            aria-expanded={specialConnectOpen}
+            aria-controls={specialConnectPanelId}
+            onClick={() => setSpecialConnectOpen(true)}
+            onKeyDown={(event) =>
+              handleSubmenuTriggerKeyDown(
+                event,
+                setSpecialConnectOpen,
+                specialConnectPanelRef,
+              )
+            }
+          >
+            <PlayCircle size={14} className="mr-2" />
+            {t("connections.specialConnect", "Connect / reconnect")}
+            <ChevronRight size={12} className="ml-auto opacity-50" />
+          </button>
+          <div
+            id={specialConnectPanelId}
+            ref={specialConnectPanelRef}
+            className="sor-menu-submenu-panel"
+            hidden={!specialConnectOpen}
+            role="menu"
+            tabIndex={-1}
+            aria-labelledby={specialConnectTriggerId}
+            onKeyDown={(event) =>
+              handleSubmenuPanelKeyDown(
+                event,
+                setSpecialConnectOpen,
+                specialConnectTriggerRef,
+              )
+            }
+          >
+            {reconnectOne && onSessionReconnect && (
+              <>
+                <button
+                  className="sor-menu-item"
+                  onClick={act(() => {
+                    void onSessionReconnect(reconnectOne);
+                  })}
+                >
+                  <RefreshCw size={14} className="mr-2" />
+                  Reconnect this tab
+                </button>
+                <button
+                  className="sor-menu-item"
+                  onClick={act(() => {
+                    void (async () => {
+                      const ids = reconnectTargets.length
+                        ? reconnectTargets.map((session) => session.id)
+                        : [reconnectOne];
+                      for (const id of ids) await onSessionReconnect(id);
+                    })();
+                  })}
+                >
+                  <RefreshCw size={14} className="mr-2" />
+                  Reconnect all tabs
+                </button>
+              </>
+            )}
+            {!connection.isGroup && activeSession && canOpenAnotherSession && (
+              <button
+                onClick={act(() => onConnect(connection))}
+                className="sor-menu-item"
               >
-                {detachedWindows.map((w) => (
+                <PlayCircle size={14} className="mr-2" />
+                {t("connections.connectAgain", "Connect again (new tab)")}
+              </button>
+            )}
+            {!connection.isGroup &&
+              (!activeSession || canOpenAnotherSession) && (
+                <>
                   <button
-                    key={w.label}
-                    role="menuitem"
                     onClick={act(() => {
-                      void connectAndPlaceSession(w.label);
+                      void connectAndPlaceSession();
                     })}
                     className="sor-menu-item"
                   >
-                    <Monitor size={14} className="mr-2" />
-                    {w.title}
+                    <ExternalLink size={14} className="mr-2" />
+                    {t(
+                      "connections.connectInNewWindow",
+                      "Connect in New Window",
+                    )}
                   </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
+                  {detachedWindows.length > 0 && (
+                    <div
+                      className="sor-menu-submenu"
+                      data-submenu-open={connectInWindowOpen ? "true" : "false"}
+                      onMouseEnter={() => setConnectInWindowOpen(true)}
+                      onMouseLeave={() => setConnectInWindowOpen(false)}
+                      onBlurCapture={(event) => {
+                        const next = event.relatedTarget as Node | null;
+                        if (!event.currentTarget.contains(next)) {
+                          setConnectInWindowOpen(false);
+                        }
+                      }}
+                    >
+                      <button
+                        id={connectInWindowTriggerId}
+                        ref={connectInWindowTriggerRef}
+                        className="sor-menu-item"
+                        role="menuitem"
+                        aria-haspopup="menu"
+                        aria-expanded={connectInWindowOpen}
+                        aria-controls={connectInWindowPanelId}
+                        onKeyDown={(event) =>
+                          handleSubmenuTriggerKeyDown(
+                            event,
+                            setConnectInWindowOpen,
+                            connectInWindowPanelRef,
+                          )
+                        }
+                      >
+                        <Send size={14} className="mr-2" />
+                        {t("connections.connectInWindow", "Connect in Window")}
+                        <ChevronRight
+                          size={12}
+                          className="ml-auto opacity-50"
+                        />
+                      </button>
+                      <div
+                        id={connectInWindowPanelId}
+                        ref={connectInWindowPanelRef}
+                        className="sor-menu-submenu-panel"
+                        role="menu"
+                        tabIndex={-1}
+                        aria-labelledby={connectInWindowTriggerId}
+                        onKeyDown={(event) =>
+                          handleSubmenuPanelKeyDown(
+                            event,
+                            setConnectInWindowOpen,
+                            connectInWindowTriggerRef,
+                          )
+                        }
+                      >
+                        {detachedWindows.map((w) => (
+                          <button
+                            key={w.label}
+                            role="menuitem"
+                            onClick={act(() => {
+                              void connectAndPlaceSession(w.label);
+                            })}
+                            className="sor-menu-item"
+                          >
+                            <Monitor size={14} className="mr-2" />
+                            {w.title}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            <button
+              onClick={act(() => onConnectWithOptions(connection))}
+              className="sor-menu-item"
+            >
+              <SlidersHorizontal size={14} className="mr-2" />
+              {t("connections.connectWithOptions", "Connect with options")}
+            </button>
+            <button
+              onClick={act(() => onConnectWithoutCredentials(connection))}
+              className="sor-menu-item"
+            >
+              <UserX size={14} className="mr-2" />
+              {t(
+                "connections.connectWithoutCredentials",
+                "Connect without credentials",
+              )}
+            </button>
+          </div>
+        </div>
       )}
       {!connection.isGroup && (
         <>
-          <button
-            onClick={act(() => onConnectWithOptions(connection))}
-            className="sor-menu-item"
-          >
-            <SlidersHorizontal size={14} className="mr-2" />
-            {t("connections.connectWithOptions", "Connect with options")}
-          </button>
-          <button
-            onClick={act(() => onConnectWithoutCredentials(connection))}
-            className="sor-menu-item"
-          >
-            <UserX size={14} className="mr-2" />
-            {t(
-              "connections.connectWithoutCredentials",
-              "Connect without credentials",
-            )}
-          </button>
           <button
             onClick={act(() => onExecuteScripts(connection, activeSession?.id))}
             className="sor-menu-item"
@@ -688,14 +792,35 @@ function TreeItemMenu({
             <Play size={14} className="mr-2" />
             {t("connections.executeScripts", "Execute scripts")}
           </button>
-          {onDiagnostics && (
-            <button
-              onClick={act(() => onDiagnostics(connection))}
-              className="sor-menu-item"
+          {(onDiagnostics || onCheckConnection) && (
+            <TreeSubmenu
+              label={t("connections.diagnostics", "Diagnostics")}
+              icon={<Activity size={14} className="mr-2" />}
             >
-              <Activity size={14} className="mr-2" />
-              {t("connections.diagnostics", "Diagnostics")}
-            </button>
+              {onDiagnostics && (
+                <button
+                  role="menuitem"
+                  className="sor-menu-item"
+                  onClick={act(() => onDiagnostics(connection))}
+                >
+                  <Activity size={14} className="mr-2" />
+                  {t(
+                    "connections.connectionDiagnostics",
+                    "Connection diagnostics",
+                  )}
+                </button>
+              )}
+              {onCheckConnection && (
+                <button
+                  role="menuitem"
+                  className="sor-menu-item"
+                  onClick={act(() => onCheckConnection(connection))}
+                >
+                  <Wifi size={14} className="mr-2" />
+                  {t("connections.checkConnection", "Check connection")}
+                </button>
+              )}
+            </TreeSubmenu>
           )}
           {activeSession && onDetachSession && (
             <button
@@ -905,15 +1030,6 @@ function TreeItemMenu({
         <KeyRound size={14} className="mr-2" />
         {t("connections.cloneWithCredentials")}
       </button>
-      {!connection.isGroup && onCheckConnection && (
-        <button
-          onClick={act(() => onCheckConnection(connection))}
-          className="sor-menu-item"
-        >
-          <Wifi size={14} className="mr-2" />
-          {t("connections.checkConnection")}
-        </button>
-      )}
       <div className="sor-menu-divider" />
       <button
         onClick={act(() => onDelete(connection))}

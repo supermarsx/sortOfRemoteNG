@@ -242,7 +242,7 @@ describe("connection editor search index", () => {
     ).toMatchObject({ protocolSubtabId: "network" });
     expect(
       rdpIndex.find((entry) => entry.fieldId === "rdp-performance"),
-    ).toMatchObject({ protocolSubtabId: "resources" });
+    ).toMatchObject({ protocolSubtabId: "performance" });
     expect(
       rdpIndex.find((entry) => entry.fieldId === "network-path"),
     ).toMatchObject({ protocolSubtabId: "network-path" });
@@ -261,6 +261,16 @@ describe("connection editor search index", () => {
     }
 
     const httpsIndex = buildIndex({ isGroup: false, protocol: "https" });
+    for (const [fieldId, protocolSubtabId] of [
+      ["http-browser-appearance", "browser"],
+      ["http-browser-storage", "privacy"],
+      ["http-browser-compatibility", "security"],
+      ["http-form-automation", "automation"],
+      ["http-website-permissions", "advanced"],
+    ])
+      expect(
+        httpsIndex.find((entry) => entry.fieldId === fieldId),
+      ).toMatchObject({ protocolSubtabId });
     expect(
       httpsIndex.find((entry) => entry.fieldId === "http-tls"),
     ).toMatchObject({ protocolSubtabId: "security" });

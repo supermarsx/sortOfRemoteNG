@@ -38,6 +38,7 @@ export const ADOPTABLE_PROTOCOLS: ReadonlySet<string> = new Set([
 export interface WorkspaceSnapshotTab {
   tabId: string;
   connectionId: string;
+  ownerDatabaseId?: string;
   protocol: string;
   name: string;
   hostname: string;
@@ -99,6 +100,9 @@ export function buildWorkspaceSnapshot(
     tabs.push({
       tabId,
       connectionId,
+      ...(boundedString(session.ownerDatabaseId, MAX_ID_CHARS)
+        ? { ownerDatabaseId: session.ownerDatabaseId }
+        : {}),
       protocol: boundedString(session.protocol, 64) ?? "unknown",
       name: boundedString(session.name, MAX_TEXT_CHARS) ?? connectionId,
       hostname: boundedString(session.hostname, MAX_HOST_CHARS) ?? "",
@@ -141,6 +145,8 @@ export function parseWorkspaceSnapshot(raw: unknown): WorkspaceSnapshot | null {
     const tab = candidate as Record<string, unknown>;
     const tabId = boundedString(tab.tabId, MAX_ID_CHARS);
     const connectionId = boundedString(tab.connectionId, MAX_ID_CHARS);
+    const ownerDatabaseId = boundedString(tab.ownerDatabaseId, MAX_ID_CHARS);
+    if (tab.ownerDatabaseId !== undefined && !ownerDatabaseId) return null;
     const protocol = boundedString(tab.protocol, 64);
     if (!tabId || !connectionId || !protocol) return null;
     const backendSessionId = boundedString(tab.backendSessionId, MAX_ID_CHARS);
@@ -148,6 +154,7 @@ export function parseWorkspaceSnapshot(raw: unknown): WorkspaceSnapshot | null {
     tabs.push({
       tabId,
       connectionId,
+      ...(ownerDatabaseId ? { ownerDatabaseId } : {}),
       protocol,
       name: boundedString(tab.name, MAX_TEXT_CHARS) ?? connectionId,
       hostname: boundedString(tab.hostname, MAX_HOST_CHARS) ?? "",

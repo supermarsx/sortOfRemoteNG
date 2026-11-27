@@ -68,13 +68,15 @@ export default function BrowserNativeCapabilitiesCard({
   return (
     <section aria-label="Native browser capabilities" className="space-y-3">
       <h4 className="sor-settings-section-header">
-        Native browser capabilities
+        {scope === "connection"
+          ? "Browser features and site permissions"
+          : "Native browser capabilities"}
       </h4>
       <Card>
         <p className="text-sm text-[var(--color-textSecondary)]">
-          Requested preferences for new attempts, not an indication of active
-          capabilities. They apply only when the native runtime implements them;
-          saving a setting does not confirm runtime support.
+          {scope === "connection"
+            ? "Choose browser features for new connections. Availability and restrictions are explained beside each setting."
+            : "Requested preferences for new attempts, not an indication of active capabilities. They apply only when the native runtime implements them; saving a setting does not confirm runtime support."}
         </p>
         {engine === "legacy" && (
           <p role="status" className="sor-alert-warning text-sm">

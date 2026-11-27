@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { ToastContext } from "../../contexts/ToastContext";
 import {
   copySecretToClipboard,
   type CredentialClipboardKind,
@@ -29,6 +30,7 @@ const TICK_MS = 1500;
  * leaves the clipboard with that step.
  */
 export function useSecretCopy() {
+  const toast = useContext(ToastContext)?.toast;
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const work = useRef<{
@@ -67,11 +69,25 @@ export function useSecretCopy() {
       if (state.closed) return outcome;
       clearTimeout(state.tick);
       setCopied(outcome.ok ? key : null);
-      setError(outcome.ok ? null : outcome.message);
+      setError(outcome.ok || toast ? null : outcome.message);
+      if (toast) {
+        if (outcome.ok)
+          toast.success(
+            kind === "totpCode"
+              ? "One-time code copied."
+              : kind === "username"
+                ? "Username copied."
+                : kind === "password"
+                  ? "Password copied."
+                  : "Copied to secure clipboard.",
+            2500,
+          );
+        else toast.error(outcome.message, 6000);
+      }
       if (outcome.ok) state.tick = setTimeout(() => setCopied(null), TICK_MS);
       return outcome;
     },
-    [],
+    [toast],
   );
 
   return { copied, error, copy };

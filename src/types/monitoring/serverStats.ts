@@ -151,6 +151,9 @@ export interface PortMonitorStats {
 
 /** Complete server stats snapshot gathered from a single collection run. */
 export interface ServerStatsSnapshot {
+  /** Observed machine + current boot + namespace, independent of SSH aliases.
+   * Runtime-only matching key; absent when collection cannot identify a host. */
+  serverIdentity?: string;
   /** Timestamp when the snapshot was collected (ISO 8601) */
   collectedAt: string;
   /** SSH session ID that was used to gather stats */

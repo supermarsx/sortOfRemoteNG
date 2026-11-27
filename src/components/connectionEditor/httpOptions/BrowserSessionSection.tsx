@@ -52,12 +52,17 @@ const toggles = [
   ["manualFormSubmit", "Require manual form submission"],
 ] as const;
 
+export type BrowserSessionView =
+  "browser" | "privacy" | "security" | "automation" | "permissions" | "all";
+
 export default function BrowserSessionSection({
   mgr,
   retentionCapabilities,
+  view = "all",
 }: {
   mgr: Mgr;
   retentionCapabilities?: BrowserSessionRetentionCapabilities;
+  view?: BrowserSessionView;
 }) {
   const { settings, settingsReady } = useSettings();
   if (settingsReady === false)
@@ -78,6 +83,7 @@ export default function BrowserSessionSection({
       key={mgr.formData.id}
       mgr={mgr}
       defaults={defaults}
+      view={view}
       retentionCapabilities={retentionCapabilities}
     />
   );
@@ -87,10 +93,12 @@ function SessionOverrides({
   mgr,
   defaults,
   retentionCapabilities,
+  view,
 }: {
   mgr: Mgr;
   defaults: WebBrowserSettingsConfig;
   retentionCapabilities?: BrowserSessionRetentionCapabilities;
+  view: BrowserSessionView;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [clearStatus, setClearStatus] = useState<string | null>(null);
@@ -106,7 +114,10 @@ function SessionOverrides({
   const nativeEngine = defaults.engine !== "legacy";
   const { usage, refresh: refreshUsage } = useHttpCacheUsage(
     connectionId,
-    nativeEngine && !!connectionId && cacheCapability?.available === true,
+    (view === "all" || view === "privacy") &&
+      nativeEngine &&
+      !!connectionId &&
+      cacheCapability?.available === true,
   );
   const clearData = async (cookies: boolean) => {
     if (!connectionId) return;
@@ -205,262 +216,327 @@ function SessionOverrides({
   return (
     <section
       aria-label="Browser session settings"
-      className="space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+      className={
+        view === "all"
+          ? "space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+          : "space-y-5"
+      }
     >
-      <h4 className="text-sm font-medium">Browser session settings</h4>
+      <h4 className="text-sm font-medium">
+        {view === "all" ? "Browser session settings" : "Connection overrides"}
+      </h4>
       <p className="text-sm text-[var(--color-textSecondary)]">
-        Unset values follow Web Browser app settings. Each attempt remains
-        isolated by database and connection. Security warnings and credential
-        checks remain enabled.
+        Inherit Web Browser app defaults or override them for this connection.
       </p>
-      {numbers.map(([key, label, min, max]) => (
-        <div key={key} className="space-y-2">
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={overrides[key] !== undefined}
-              onChange={(checked) =>
-                update(key, checked ? effective[key] : undefined)
-              }
+      {numbers
+        .filter(
+          ([key]) =>
+            view === "all" ||
+            (view === "automation"
+              ? key.startsWith("minimumForm")
+              : view === "browser" && !key.startsWith("minimumForm")),
+        )
+        .map(([key, label, min, max]) => (
+          <div key={key} className="space-y-2">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={overrides[key] !== undefined}
+                onChange={(checked) =>
+                  update(key, checked ? effective[key] : undefined)
+                }
+              />
+              Override {label}
+            </label>
+            <BrowserNumberRow
+              settingKey={`browserSession.${key}`}
+              label={label}
+              description={`${timeoutHelp[key] ?? ""}App default: ${defaults[key]}. ${overrides[key] === undefined ? "Inherited." : "Set for this connection."}`}
+              value={effective[key]}
+              min={min}
+              max={max}
+              disabled={overrides[key] === undefined}
+              onChange={(value) => update(key, value)}
             />
-            Override {label}
-          </label>
-          <BrowserNumberRow
+          </div>
+        ))}
+      {toggles
+        .filter(
+          ([key]) =>
+            view === "all" ||
+            (view === "automation"
+              ? key === "manualFormSubmit"
+              : view === "browser" && key !== "manualFormSubmit"),
+        )
+        .map(([key, label]) => (
+          <BrowserSelectRow
+            key={key}
             settingKey={`browserSession.${key}`}
             label={label}
-            description={`${timeoutHelp[key] ?? ""}App default: ${defaults[key]}. ${overrides[key] === undefined ? "Inherited." : "Set for this connection."}`}
-            value={effective[key]}
-            min={min}
-            max={max}
-            disabled={overrides[key] === undefined}
-            onChange={(value) => update(key, value)}
+            value={
+              overrides[key] === undefined ? "inherit" : String(overrides[key])
+            }
+            options={[
+              {
+                value: "inherit",
+                label: `Use app default (${defaults[key] ? "on" : "off"})`,
+              },
+              { value: "true", label: "On" },
+              { value: "false", label: "Off" },
+            ]}
+            onChange={(value) =>
+              update(key, value === "inherit" ? undefined : value === "true")
+            }
           />
-        </div>
-      ))}
-      {toggles.map(([key, label]) => (
-        <BrowserSelectRow
-          key={key}
-          settingKey={`browserSession.${key}`}
-          label={label}
-          value={
-            overrides[key] === undefined ? "inherit" : String(overrides[key])
-          }
-          options={[
-            {
-              value: "inherit",
-              label: `Use app default (${defaults[key] ? "on" : "off"})`,
-            },
-            { value: "true", label: "On" },
-            { value: "false", label: "Off" },
-          ]}
-          onChange={(value) =>
-            update(key, value === "inherit" ? undefined : value === "true")
-          }
+        ))}
+      {(view === "all" || view === "automation") && (
+        <p className="text-xs text-[var(--color-textMuted)]">
+          Autofill preferences do not enable automatic login. Explicit selectors
+          and additional fields remain in Advanced form automation below; these
+          minimum delays still apply.
+        </p>
+      )}
+      {(view === "all" || view === "permissions") && (
+        <BrowserNativeCapabilitiesCard
+          defaults={defaults}
+          engine={defaults.engine}
+          scope="connection"
+          overrides={overrides}
+          onChange={update}
         />
-      ))}
-      <p className="text-xs text-[var(--color-textMuted)]">
-        Autofill preferences do not enable automatic login. Explicit selectors
-        and additional fields remain in Advanced form automation below; these
-        minimum delays still apply.
-      </p>
-      <BrowserNativeCapabilitiesCard
-        defaults={defaults}
-        engine={defaults.engine}
-        scope="connection"
-        overrides={overrides}
-        onChange={update}
-      />
-      <h5 className="text-sm font-medium">
-        Saved sign-in (cookies, encrypted in this database, 7-day idle / 30-day
-        max)
-      </h5>
-      <BrowserSelectRow
-        settingKey="browserSession.restoreCookies"
-        label="Restore saved cookies"
-        description="Use cookies saved for this same database and connection. Off starts with a fresh temporary cookie jar; this attempt does not restore or change stored cookies, even with ephemeral retention selected. Configured expiry and clearing on database lock still apply independently. Applies only to new attempts and never grants permission to send login credentials."
-        value={
-          overrides.restoreCookies === undefined
-            ? "inherit"
-            : String(overrides.restoreCookies)
-        }
-        options={[
-          {
-            value: "inherit",
-            label: `Use app default (${defaults.restoreCookies !== false ? "on" : "off"})`,
-          },
-          { value: "true", label: "On" },
-          { value: "false", label: "Off" },
-        ]}
-        onChange={(value) =>
-          update(
-            "restoreCookies",
-            value === "inherit" ? undefined : value === "true",
-          )
-        }
-      />
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox
-          checked={overrides.sessionRetention !== undefined}
-          onChange={(checked) =>
-            update(
-              "sessionRetention",
-              checked ? effective.sessionRetention : undefined,
-            )
-          }
-        />
-        Override session retention
-      </label>
-      {overrides.sessionRetention ? (
-        <BrowserSessionRetentionFields
-          value={overrides.sessionRetention}
-          settingPrefix="browserSession.sessionRetention"
-          capabilities={retentionCapabilities ?? nativeRetentionCapabilities}
-          onChange={(value) => update("sessionRetention", value)}
-        />
-      ) : (
-        <p className="text-sm text-[var(--color-textSecondary)]">
-          Inherited requested retention: {effective.sessionRetention.mode}.
-          Runtime support must be confirmed before retention can become active.
-        </p>
       )}
-      <button
-        type="button"
-        className="sor-btn sor-btn-secondary"
-        disabled={clearing || !connectionId || !nativeEngine}
-        onClick={() => void clearData(true)}
-      >
-        Clear saved sign-in
-      </button>
-      <h5 className="text-sm font-medium">{TLS_INTERCEPTION_LABEL}</h5>
-      <BrowserSelectRow
-        settingKey="browserSession.tlsInterception"
-        label={TLS_INTERCEPTION_LABEL}
-        description={TLS_INTERCEPTION_HELP}
-        value={overrides.tlsInterception ?? "inherit"}
-        options={[
-          {
-            value: "inherit",
-            label: `Use app default (${TLS_INTERCEPTION_OPTION_LABELS[defaults.tlsInterception ?? "auto"]})`,
-          },
-          { value: "auto", label: TLS_INTERCEPTION_OPTION_LABELS.auto },
-          { value: "off", label: TLS_INTERCEPTION_OPTION_LABELS.off },
-        ]}
-        onChange={(value) =>
-          update(
-            "tlsInterception",
-            value === "auto" || value === "off" ? value : undefined,
-          )
-        }
-      />
-      <BrowserSelectRow
-        settingKey="browserSession.upstreamTlsProfile"
-        label="Device SSL/TLS compatibility"
-        description="Choose the protocol used by the proxy to reach this device. SSL and TLS 1.0/1.1 use obsolete encryption and require the legacy compatibility helper. Applies to new connections; requires HTTPS inspection."
-        value={overrides.upstreamTlsProfile ?? "inherit"}
-        options={[
-          {
-            value: "inherit",
-            label: `Use app default (${defaults.upstreamTlsProfile ?? "modern"})`,
-          },
-          { value: "modern", label: "Modern (TLS 1.2 / 1.3)" },
-          { value: "tls13", label: "TLS 1.3 only" },
-          { value: "tls12", label: "TLS 1.2 only" },
-          { value: "tls11", label: "TLS 1.1 only (legacy)" },
-          { value: "tls10", label: "TLS 1.0 only (legacy)" },
-          { value: "ssl3", label: "SSLv3 only (legacy)" },
-          { value: "ssl2", label: "SSLv2 only (legacy)" },
-          { value: "legacy", label: "Legacy negotiation (SSLv3 – TLS 1.2)" },
-        ]}
-        onChange={(value) =>
-          update(
-            "upstreamTlsProfile",
-            value === "inherit"
-              ? undefined
-              : normalizeBrowserUpstreamTlsProfile(value),
-          )
-        }
-      />
-      <BrowserSelectRow
-        settingKey="browserSession.allowWeakCertificates"
-        label="Allow weak device certificates"
-        description="Permit RSA keys below 2048 bits and obsolete certificate signatures for this connection. Trust review still applies. Very old algorithms may also require a legacy TLS profile."
-        value={overrides.allowWeakCertificates === undefined ? "inherit" : String(overrides.allowWeakCertificates)}
-        options={[
-          {value: "inherit", label: `Use app default (${defaults.allowWeakCertificates ? "allow" : "reject"})`},
-          {value: "false", label: "Reject weak certificates (recommended)"},
-          {value: "true", label: "Allow weak certificates for this device"},
-        ]}
-        onChange={(value) => update("allowWeakCertificates", value === "inherit" ? undefined : value === "true")}
-      />
-      <h5 className="text-sm font-medium">
-        Page cache (this device only, never synced, follows site cache rules)
-      </h5>
-      <BrowserSelectRow
-        settingKey="browserSession.httpCache.enabled"
-        label="Use page cache for this connection"
-        description={`Keeps this connection's pages cached on this device so later visits load faster. Sites decide what may be cached. ${HTTP_CACHE_NEEDS_INSPECTION} Applies to new attempts.`}
-        value={
-          overrides.httpCache?.enabled === undefined
-            ? "inherit"
-            : String(overrides.httpCache.enabled)
-        }
-        disabled={cacheCapability === undefined}
-        options={[
-          {
-            value: "inherit",
-            label: `Use app default (${defaults.httpCache?.enabled !== false ? "on" : "off"})`,
-          },
-          { value: "true", label: "On" },
-          { value: "false", label: "Off" },
-        ]}
-        onChange={(value) => {
-          const next = { ...overrides.httpCache };
-          if (value === "inherit") delete next.enabled;
-          else next.enabled = value === "true";
-          update("httpCache", Object.keys(next).length ? next : undefined);
-        }}
-      />
-      {effective.tlsInterception === "off" && (
-        <p className="text-sm text-warning">
-          {HTTP_CACHE_DIRECT_TLS_CONNECTION}
-        </p>
+      {(view === "all" || view === "privacy") && (
+        <>
+          <h5 className="text-sm font-medium">
+            Saved sign-in (cookies, encrypted in this database, 7-day idle /
+            30-day max)
+          </h5>
+          <BrowserSelectRow
+            settingKey="browserSession.restoreCookies"
+            label="Restore saved cookies"
+            description="Use cookies saved for this same database and connection. Off starts with a fresh temporary cookie jar; this attempt does not restore or change stored cookies, even with ephemeral retention selected. Configured expiry and clearing on database lock still apply independently. Applies only to new attempts and never grants permission to send login credentials."
+            value={
+              overrides.restoreCookies === undefined
+                ? "inherit"
+                : String(overrides.restoreCookies)
+            }
+            options={[
+              {
+                value: "inherit",
+                label: `Use app default (${defaults.restoreCookies !== false ? "on" : "off"})`,
+              },
+              { value: "true", label: "On" },
+              { value: "false", label: "Off" },
+            ]}
+            onChange={(value) =>
+              update(
+                "restoreCookies",
+                value === "inherit" ? undefined : value === "true",
+              )
+            }
+          />
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={overrides.sessionRetention !== undefined}
+              onChange={(checked) =>
+                update(
+                  "sessionRetention",
+                  checked ? effective.sessionRetention : undefined,
+                )
+              }
+            />
+            Override session retention
+          </label>
+          {overrides.sessionRetention ? (
+            <BrowserSessionRetentionFields
+              value={overrides.sessionRetention}
+              settingPrefix="browserSession.sessionRetention"
+              capabilities={
+                retentionCapabilities ?? nativeRetentionCapabilities
+              }
+              onChange={(value) => update("sessionRetention", value)}
+            />
+          ) : (
+            <p className="text-sm text-[var(--color-textSecondary)]">
+              Inherited requested retention: {effective.sessionRetention.mode}.
+              Runtime support must be confirmed before retention can become
+              active.
+            </p>
+          )}
+          <button
+            type="button"
+            className="sor-btn sor-btn-secondary"
+            disabled={clearing || !connectionId || !nativeEngine}
+            onClick={() => void clearData(true)}
+          >
+            Clear saved sign-in
+          </button>
+        </>
       )}
-      {(cacheCapability === undefined || !cacheCapability.available) && (
-        <p className="text-sm text-warning">
-          {httpCacheUnavailableText(cacheCapability?.reason ?? "unavailable")}
-        </p>
+      {(view === "all" || view === "security") && (
+        <>
+          <h5 className="text-sm font-medium">{TLS_INTERCEPTION_LABEL}</h5>
+          <BrowserSelectRow
+            settingKey="browserSession.tlsInterception"
+            label={TLS_INTERCEPTION_LABEL}
+            description={TLS_INTERCEPTION_HELP}
+            value={overrides.tlsInterception ?? "inherit"}
+            options={[
+              {
+                value: "inherit",
+                label: `Use app default (${TLS_INTERCEPTION_OPTION_LABELS[defaults.tlsInterception ?? "auto"]})`,
+              },
+              { value: "auto", label: TLS_INTERCEPTION_OPTION_LABELS.auto },
+              { value: "off", label: TLS_INTERCEPTION_OPTION_LABELS.off },
+            ]}
+            onChange={(value) =>
+              update(
+                "tlsInterception",
+                value === "auto" || value === "off" ? value : undefined,
+              )
+            }
+          />
+          <BrowserSelectRow
+            settingKey="browserSession.upstreamTlsProfile"
+            label="Device SSL/TLS compatibility"
+            description="Choose the protocol used by the proxy to reach this device. SSL and TLS 1.0/1.1 use obsolete encryption and require the legacy compatibility helper. Applies to new connections; requires HTTPS inspection."
+            value={overrides.upstreamTlsProfile ?? "inherit"}
+            options={[
+              {
+                value: "inherit",
+                label: `Use app default (${defaults.upstreamTlsProfile ?? "modern"})`,
+              },
+              { value: "modern", label: "Modern (TLS 1.2 / 1.3)" },
+              { value: "tls13", label: "TLS 1.3 only" },
+              { value: "tls12", label: "TLS 1.2 only" },
+              { value: "tls11", label: "TLS 1.1 only (legacy)" },
+              { value: "tls10", label: "TLS 1.0 only (legacy)" },
+              { value: "ssl3", label: "SSLv3 only (legacy)" },
+              { value: "ssl2", label: "SSLv2 only (legacy)" },
+              {
+                value: "legacy",
+                label: "Legacy negotiation (SSLv3 – TLS 1.2)",
+              },
+            ]}
+            onChange={(value) =>
+              update(
+                "upstreamTlsProfile",
+                value === "inherit"
+                  ? undefined
+                  : normalizeBrowserUpstreamTlsProfile(value),
+              )
+            }
+          />
+          <BrowserSelectRow
+            settingKey="browserSession.allowWeakCertificates"
+            label="Allow weak device certificates"
+            description="Permit RSA keys below 2048 bits and obsolete certificate signatures for this connection. Trust review still applies. Very old algorithms may also require a legacy TLS profile."
+            value={
+              overrides.allowWeakCertificates === undefined
+                ? "inherit"
+                : String(overrides.allowWeakCertificates)
+            }
+            options={[
+              {
+                value: "inherit",
+                label: `Use app default (${defaults.allowWeakCertificates ? "allow" : "reject"})`,
+              },
+              {
+                value: "false",
+                label: "Reject weak certificates (recommended)",
+              },
+              {
+                value: "true",
+                label: "Allow weak certificates for this device",
+              },
+            ]}
+            onChange={(value) =>
+              update(
+                "allowWeakCertificates",
+                value === "inherit" ? undefined : value === "true",
+              )
+            }
+          />
+        </>
       )}
-      {usage?.available && (
-        <p className="text-sm text-[var(--color-textSecondary)]">
-          Page cache for this connection: {formatCacheBytes(usage.bytes)} of{" "}
-          {formatCacheBytes(usage.limitBytes)}.
-        </p>
+      {(view === "all" || view === "privacy") && (
+        <>
+          <h5 className="text-sm font-medium">
+            Page cache (this device only, never synced, follows site cache
+            rules)
+          </h5>
+          <BrowserSelectRow
+            settingKey="browserSession.httpCache.enabled"
+            label="Use page cache for this connection"
+            description={`Keeps this connection's pages cached on this device so later visits load faster. Sites decide what may be cached. ${HTTP_CACHE_NEEDS_INSPECTION} Applies to new attempts.`}
+            value={
+              overrides.httpCache?.enabled === undefined
+                ? "inherit"
+                : String(overrides.httpCache.enabled)
+            }
+            disabled={cacheCapability === undefined}
+            options={[
+              {
+                value: "inherit",
+                label: `Use app default (${defaults.httpCache?.enabled !== false ? "on" : "off"})`,
+              },
+              { value: "true", label: "On" },
+              { value: "false", label: "Off" },
+            ]}
+            onChange={(value) => {
+              const next = { ...overrides.httpCache };
+              if (value === "inherit") delete next.enabled;
+              else next.enabled = value === "true";
+              update("httpCache", Object.keys(next).length ? next : undefined);
+            }}
+          />
+          {effective.tlsInterception === "off" && (
+            <p className="text-sm text-warning">
+              {HTTP_CACHE_DIRECT_TLS_CONNECTION}
+            </p>
+          )}
+          {(cacheCapability === undefined || !cacheCapability.available) && (
+            <p className="text-sm text-warning">
+              {httpCacheUnavailableText(
+                cacheCapability?.reason ?? "unavailable",
+              )}
+            </p>
+          )}
+          {usage?.available && (
+            <p className="text-sm text-[var(--color-textSecondary)]">
+              Page cache for this connection: {formatCacheBytes(usage.bytes)} of{" "}
+              {formatCacheBytes(usage.limitBytes)}.
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              className="sor-btn sor-btn-secondary"
+              disabled={clearing || !connectionId || !nativeEngine}
+              onClick={() => void clearData(false)}
+            >
+              Clear page cache
+            </button>
+            {clearStatus && (
+              <span role="status" className="text-sm">
+                {clearStatus}
+              </span>
+            )}
+          </div>
+        </>
       )}
-      <div className="flex flex-wrap items-center gap-3">
+      {view === "all" && (
         <button
           type="button"
           className="sor-btn sor-btn-secondary"
-          disabled={clearing || !connectionId || !nativeEngine}
-          onClick={() => void clearData(false)}
+          disabled={mgr.formData.browserSession === undefined}
+          onClick={() => {
+            save(undefined);
+            setError(null);
+          }}
         >
-          Clear page cache
+          Reset browser session overrides
         </button>
-        {clearStatus && (
-          <span role="status" className="text-sm">
-            {clearStatus}
-          </span>
-        )}
-      </div>
-      <button
-        type="button"
-        className="sor-btn sor-btn-secondary"
-        disabled={mgr.formData.browserSession === undefined}
-        onClick={() => {
-          save(undefined);
-          setError(null);
-        }}
-      >
-        Reset browser session overrides
-      </button>
+      )}
       {error && (
         <p role="alert" className="sor-alert-error">
           {error}

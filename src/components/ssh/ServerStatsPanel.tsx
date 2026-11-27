@@ -32,6 +32,13 @@ export const ServerStatsPanel: React.FC<ServerStatsPanelProps> = ({
   const selectedStatus = state.sessions.find(
     (s) => s.id === mgr.selectedSessionId,
   )?.status;
+  const sameServerSessions = snapshot?.serverIdentity
+    ? mgr.sshSessions.filter(
+        (session) =>
+          entries.get(session.id)?.snapshot?.serverIdentity ===
+          snapshot.serverIdentity,
+      )
+    : [];
   const { setSelectedSessionId, setViewMode, setActiveTab } = mgr;
   const openSession = useCallback(
     (id: string) => {
@@ -48,6 +55,14 @@ export const ServerStatsPanel: React.FC<ServerStatsPanelProps> = ({
     <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
       {/* Toolbar */}
       <StatsToolbar mgr={mgr} />
+      {mgr.viewMode === "single" && sameServerSessions.length > 1 && (
+        <div className="px-4 py-2 border-b border-[var(--color-border)] text-xs text-[var(--color-textSecondary)]">
+          Same server measured through {sameServerSessions.length} SSH sessions:{" "}
+          {sameServerSessions
+            .map((session) => session.name || session.hostname || "SSH")
+            .join(", ")}
+        </div>
+      )}
 
       {/* Search bar (only for firewall/ports tabs) */}
       {mgr.viewMode === "single" &&

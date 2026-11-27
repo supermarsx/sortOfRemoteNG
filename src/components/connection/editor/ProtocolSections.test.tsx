@@ -277,11 +277,14 @@ describe("ProtocolSections", () => {
       "connection",
       "authentication",
       "display-input",
+      "audio-input",
       "resources",
+      "performance",
       "security",
       "network-path",
       "network",
       "advanced",
+      "management",
       "recovery",
     ]);
     expect(idsFor({ protocol: "ssh" })).toEqual([
@@ -295,10 +298,13 @@ describe("ProtocolSections", () => {
     expect(idsFor({ protocol: "https" })).toEqual([
       "application",
       "authentication",
+      "browser",
+      "privacy",
       "security",
       "network-path",
       "favorites",
       "advanced",
+      "automation",
       "recovery",
     ]);
     expect(idsFor({ protocol: "winrm" })).toEqual([
@@ -403,10 +409,13 @@ describe("ProtocolSections", () => {
     expect(idsFor({ protocol: "https", osType: "windows" })).toEqual([
       "application",
       "authentication",
+      "browser",
+      "privacy",
       "security",
       "network-path",
       "favorites",
       "advanced",
+      "automation",
       "network",
       "recovery",
     ]);
@@ -423,27 +432,87 @@ describe("ProtocolSections", () => {
       "data-sections",
       "connection",
     );
-    expect(screen.getByTestId("winrm-options")).toHaveAttribute(
-      "data-sections",
-      "connection",
-    );
+    expect(screen.queryByTestId("winrm-options")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Resources" }));
+    for (const [name, sections] of [
+      ["Display", "display"],
+      ["Keyboard & audio", "audio,input"],
+      ["Performance", "performance"],
+    ]) {
+      fireEvent.click(screen.getByRole("tab", { name }));
+      expect(screen.getByTestId("rdp-options")).toHaveAttribute(
+        "data-sections",
+        sections,
+      );
+      expect(screen.queryByTestId("winrm-options")).not.toBeInTheDocument();
+    }
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices & sharing" }));
     expect(screen.getByTestId("rdp-options")).toHaveAttribute(
       "data-sections",
-      "devices,performance",
+      "devices",
     );
     expect(screen.queryByTestId("winrm-options")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Network" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Gateway & transport" }));
     expect(screen.getByTestId("rdp-options")).toHaveAttribute(
       "data-sections",
       "gateway,tcp",
     );
+    expect(screen.queryByTestId("winrm-options")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Windows management" }));
     expect(screen.getByTestId("winrm-options")).toHaveAttribute(
       "data-sections",
-      "transport",
+      "all",
     );
+  });
+
+  it("keeps shared sign-in fields off the Recovery page", () => {
+    const mgr = {
+      formData: { protocol: "rdp" },
+      setFormData: vi.fn(),
+    } as unknown as ConnectionEditorMgr;
+    render(
+      <ProtocolSections
+        mgr={mgr}
+        category="authentication"
+        authenticationContent={
+          <input
+            aria-label="Shared sign-in username"
+            defaultValue="saved-user"
+          />
+        }
+      />,
+    );
+    expect(
+      screen.getByLabelText("Shared sign-in username"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Recovery" }));
+    expect(
+      screen.queryByLabelText("Shared sign-in username"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("totp-options")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Sign-in" }));
+    expect(screen.getByLabelText("Shared sign-in username")).toHaveValue(
+      "saved-user",
+    );
+  });
+
+  it("routes browser tasks to separate, populated settings pages", () => {
+    render(<Harness initial={{ protocol: "https" }} />);
+    for (const [name, section] of [
+      ["Appearance & loading", "browser"],
+      ["Cookies & cache", "privacy"],
+      ["TLS & certificates", "security"],
+      ["Website permissions", "advanced"],
+      ["Form automation", "automation"],
+    ]) {
+      fireEvent.click(screen.getByRole("tab", { name }));
+      expect(screen.getByTestId("http-options")).toHaveAttribute(
+        "data-sections",
+        section,
+      );
+    }
   });
 
   it.each(["http", "https"] as const)(
@@ -709,7 +778,7 @@ describe("ProtocolSections", () => {
     authentication.focus();
     fireEvent.keyDown(authentication, { key: "ArrowRight" });
 
-    const security = screen.getByRole("tab", { name: "Security" });
+    const security = screen.getByRole("tab", { name: "Appearance & loading" });
     await waitFor(() => expect(security).toHaveFocus());
     expect(security).toHaveAttribute("aria-selected", "true");
 
@@ -733,7 +802,7 @@ describe("ProtocolSections", () => {
     fireEvent.change(screen.getByLabelText("Mock RDP domain"), {
       target: { value: "CONTOSO" },
     });
-    fireEvent.click(screen.getByRole("tab", { name: "Network" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Gateway & transport" }));
     fireEvent.click(screen.getByRole("button", { name: "Use SSH" }));
     expect(screen.getByRole("tab", { name: "Authentication" })).toHaveAttribute(
       "aria-selected",
@@ -742,10 +811,9 @@ describe("ProtocolSections", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Terminal" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Use RDP" }));
-    expect(screen.getByRole("tab", { name: "Network" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(
+      screen.getByRole("tab", { name: "Gateway & transport" }),
+    ).toHaveAttribute("aria-selected", "true");
     fireEvent.click(screen.getByRole("tab", { name: "Connection" }));
     expect(screen.getByLabelText("Mock RDP domain")).toHaveValue("CONTOSO");
 
@@ -764,10 +832,9 @@ describe("ProtocolSections", () => {
       />,
     );
 
-    expect(screen.getByRole("tab", { name: "Security" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(
+      screen.getByRole("tab", { name: "TLS & certificates" }),
+    ).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("http-options")).toHaveAttribute(
       "data-sections",
       "security",

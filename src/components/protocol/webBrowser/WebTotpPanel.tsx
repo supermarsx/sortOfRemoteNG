@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { ToastContext } from "../../../contexts/ToastContext";
 import { Copy, X } from "lucide-react";
 import type { TOTPConfig } from "../../../types/settings/settings";
 import {
@@ -45,6 +46,7 @@ export default function WebTotpPanel({
   typingRef,
   renderTypeCode,
 }: WebTotpPanelProps) {
+  const toast = useContext(ToastContext)?.toast;
   const manager = DatabaseManager.getInstance();
   const access = useMemo(() => {
     try {
@@ -215,11 +217,14 @@ export default function WebTotpPanel({
       ? totpRemainingFailure(code.expires, Date.now())
       : "code-expired";
     if (!code || unusable) {
-      setNotice(
+      const message =
         unusable === "code-window-closing"
           ? new CredentialFailure(unusable).message
-          : "Wait for a fresh code before copying.",
-      );
+          : "Wait for a fresh code before copying.";
+      if (toast) {
+        setNotice("");
+        toast.warning(message, 6000);
+      } else setNotice(message);
       return;
     }
     try {
@@ -240,17 +245,25 @@ export default function WebTotpPanel({
         },
         { connectionId, expires: code.expires },
       );
-      if (alive.current && canAccess() && latest.current.configs === configs)
-        setNotice("Code copied. Paste it manually on the website.");
+      if (alive.current && canAccess() && latest.current.configs === configs) {
+        if (toast) {
+          setNotice("");
+          toast.success("One-time code copied.", 2500);
+        } else setNotice("Code copied. Paste it manually on the website.");
+      }
     } catch (error) {
       // The code is on screen, so an unavailable clipboard has a way around.
-      if (alive.current && canAccess())
-        setNotice(
+      if (alive.current && canAccess()) {
+        const message =
           error instanceof CredentialFailure &&
-            error.code !== "clipboard-unavailable"
+          error.code !== "clipboard-unavailable"
             ? error.message
-            : "Could not copy the code. Select it and copy manually.",
-        );
+            : "Could not copy the code. Select it and copy manually.";
+        if (toast) {
+          setNotice("");
+          toast.error(message, 6000);
+        } else setNotice(message);
+      }
     }
   };
   const panel = (

@@ -3,6 +3,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/platform/macos_occlusion.mm");
     println!("cargo:rerun-if-changed=src/platform/macos_clipboard.mm");
     println!("cargo:rerun-if-changed=src/platform/windows_bootstrap_abi.cc");
+    println!("cargo:rerun-if-changed=src/platform/windows_graphics.cc");
     println!("cargo:rerun-if-env-changed=CEF_PATH");
     if std::env::var_os("CARGO_FEATURE_CEF_HOST").is_none() {
         return;
@@ -19,9 +20,12 @@ fn main() {
             cc::Build::new()
                 .cpp(true)
                 .file("src/platform/windows_bootstrap_abi.cc")
+                .file("src/platform/windows_graphics.cc")
                 .include(root)
                 .flag("/std:c++17")
                 .compile("sorng_cef_bootstrap_abi");
+            println!("cargo:rustc-link-lib=dxgi");
+            println!("cargo:rustc-link-lib=d3d11");
             return;
         }
         assert!(

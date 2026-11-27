@@ -7,6 +7,7 @@ import {
 import { useConnections } from "../../contexts/useConnections";
 import { useSessionThumbnails } from "./useSessionThumbnails";
 import { useTileVisibility } from "../perf/useTileVisibility";
+import { normalizeRdpSessionInfo } from "../../utils/rdp/rdpSessionInfo";
 import {
   sameSessionSnapshot,
   useVisibleSessionRefresh,
@@ -37,6 +38,9 @@ export interface RDPSessionInfo {
   desktop_height: number;
   server_cert_fingerprint?: string;
   viewer_attached?: boolean;
+  frontend_session_id?: string;
+  target_identity?: { host: string; port: number };
+  tunneled?: boolean;
 }
 
 export interface RDPStats {
@@ -168,25 +172,30 @@ export function useRDPSessionPanel({
 
   const getSessionDisplayName = useCallback(
     (session: RDPSessionInfo): { name: string; subtitle: string } => {
-      let conn = session.connection_id
-        ? connections.find((c) => c.id === session.connection_id)
+      const frontend = frontendSessionsRef.current.find((item) => item.id === session.frontend_session_id)
+        ?? frontendSessionsRef.current.find((item) => item.protocol === "rdp" && item.backendSessionId === session.id);
+      const connectionId = frontend?.connectionId ?? session.connection_id;
+      const host = session.target_identity?.host ?? session.host;
+      const port = session.target_identity?.port ?? session.port;
+      let conn = connectionId
+        ? connections.find((c) => c.id === connectionId && c.protocol === "rdp")
         : undefined;
       if (!conn) {
         conn = connections.find(
           (c) =>
-            c.hostname === session.host &&
-            (c.port || 3389) === session.port &&
+            c.hostname === host &&
+            (c.port || 3389) === port &&
             c.protocol === "rdp",
         );
       }
       if (conn) {
         return {
           name: conn.name,
-          subtitle: `${session.host}:${session.port}${session.username ? ` (${session.username})` : ""}`,
+          subtitle: `${host}:${port}${session.username ? ` (${session.username})` : ""}`,
         };
       }
       return {
-        name: `${session.host}:${session.port}`,
+        name: frontend?.name || `${host}:${port}`,
         subtitle: session.username || "",
       };
     },
@@ -277,7 +286,7 @@ export function useRDPSessionPanel({
     async (lease: SessionRefreshLease) => {
       try {
         if (!loadedRef.current) setIsLoading(true);
-        const list = await invoke<RDPSessionInfo[]>("list_rdp_sessions");
+        const list = (await invoke<RDPSessionInfo[]>("list_rdp_sessions")).map(normalizeRdpSessionInfo);
         if (!lease.isCurrent()) return;
         const liveIds = new Set(list.map((session) => session.id));
         const next = [

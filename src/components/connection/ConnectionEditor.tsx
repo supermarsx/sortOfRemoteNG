@@ -364,7 +364,6 @@ const NameInput: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
                 "Production Server",
               )
         }
-        autoFocus
       />
     </div>
   );
@@ -2042,7 +2041,7 @@ const EditorTabs: React.FC<{
           "connectionEditor.tabs.ariaLabel",
           "Connection editor sections",
         )}
-        className="mx-auto flex w-full min-w-0 max-w-2xl items-center gap-1 overflow-x-auto py-2"
+        className="connection-editor-primary-tabs mx-auto grid w-full min-w-0 max-w-6xl grid-cols-3 gap-1 py-2"
       >
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -2056,11 +2055,33 @@ const EditorTabs: React.FC<{
               id={`connection-editor-tab-${tab.id}`}
               aria-controls={`connection-editor-panel-${tab.id}`}
               aria-selected={isActive}
+              tabIndex={isActive ? 0 : -1}
               data-testid={`connection-editor-tab-${tab.id}`}
               onClick={() => onTabChange(tab.id)}
-              className="sor-accent-choice h-9 px-3 rounded-lg flex items-center gap-2 text-sm font-medium whitespace-nowrap"
+              onKeyDown={(event) => {
+                const index = tabs.findIndex(
+                  (candidate) => candidate.id === tab.id,
+                );
+                const next =
+                  event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? tabs.length - 1
+                      : ["ArrowRight", "ArrowDown"].includes(event.key)
+                        ? (index + 1) % tabs.length
+                        : ["ArrowLeft", "ArrowUp"].includes(event.key)
+                          ? (index - 1 + tabs.length) % tabs.length
+                          : undefined;
+                if (next === undefined) return;
+                event.preventDefault();
+                onTabChange(tabs[next].id);
+                document
+                  .getElementById(`connection-editor-tab-${tabs[next].id}`)
+                  ?.focus();
+              }}
+              className="sor-accent-choice min-h-10 px-2 py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <Icon size={15} />
+              <Icon size={15} className="shrink-0" aria-hidden="true" />
               {tab.label}
             </button>
           );
@@ -2165,6 +2186,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     if (submitter && !submitter.disabled) form.requestSubmit(submitter);
   };
   const [activeTab, setActiveTab] = useState<ConnectionEditorTabId>("general");
+  const scrollPaneRef = useRef<HTMLDivElement>(null);
   const [protocolSubtabsByProtocol, setProtocolSubtabsByProtocol] = useState<
     Partial<Record<string, ConnectionEditorProtocolSubtabId>>
   >({});
@@ -2184,9 +2206,24 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     [protocolKey],
   );
   const tabs = React.useMemo(
-    () => getConnectionEditorTabs(!!mgr.formData.isGroup),
-    [mgr.formData.isGroup],
+    () =>
+      getConnectionEditorTabs(!!mgr.formData.isGroup).map((tab) =>
+        tab.id === "protocol"
+          ? {
+              ...tab,
+              label: isBrowserProtocol(mgr.formData.protocol ?? "")
+                ? "Browser"
+                : mgr.formData.protocol === "rdp"
+                  ? "Remote desktop"
+                  : "Protocol",
+            }
+          : tab,
+      ),
+    [mgr.formData.isGroup, mgr.formData.protocol],
   );
+  useEffect(() => {
+    if (scrollPaneRef.current) scrollPaneRef.current.scrollTop = 0;
+  }, [activeTab, activeProtocolSubtabId]);
   const searchDescriptors = React.useMemo(
     () => getConnectionEditorSearchDescriptors(!!mgr.formData.isGroup),
     [mgr.formData.isGroup],
@@ -2207,6 +2244,27 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     [mgr.allTags, mgr.parentFolderProjection.options],
   );
   const formContentRef = useRef<HTMLDivElement>(null);
+  const initiallyFocusedConnection = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isOpen) {
+      initiallyFocusedConnection.current = null;
+      return;
+    }
+    const key = connection?.id ?? "new";
+    if (
+      !isActive ||
+      activeTab !== "general" ||
+      initiallyFocusedConnection.current === key
+    )
+      return;
+    const input = formContentRef.current?.querySelector<HTMLInputElement>(
+      '[data-testid="editor-name"]',
+    );
+    if (input) {
+      initiallyFocusedConnection.current = key;
+      input.focus({ preventScroll: true });
+    }
+  }, [isOpen, isActive, activeTab, connection?.id]);
   const {
     query,
     setQuery,
@@ -2283,6 +2341,10 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       onSubmit={handleSubmit}
       onKeyDown={handleSaveShortcut}
       aria-busy={isSubmitting}
+      style={{
+        containerType: "inline-size",
+        containerName: "connection-editor",
+      }}
       className="relative flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden bg-[var(--color-surface)]"
     >
       <EditorHeader
@@ -2310,12 +2372,13 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         onTabChange={setActiveTab}
       />
       <div
+        ref={scrollPaneRef}
         data-editor-scroll-pane
         className="relative min-h-0 min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"
       >
         <div
           ref={formContentRef}
-          className="mx-auto w-full min-w-0 max-w-2xl p-6"
+          className={`mx-auto w-full min-w-0 p-4 sm:p-6 ${activeTab === "protocol" || activeTab === "authentication" ? "max-w-6xl" : "max-w-2xl"}`}
         >
           <div
             role="tabpanel"
@@ -2347,24 +2410,26 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
             )}
 
             {activeTab === "authentication" && !mgr.formData.isGroup && (
-              <>
-                <CredentialSourceSection
-                  formData={mgr.formData}
-                  setFormData={mgr.setFormData}
-                  credentialConversion={mgr.credentialConversion}
-                />
-                <ConnectionFields
-                  mgr={mgr}
-                  section="authentication"
-                  onOpenApplication={() => {}}
-                />
-                <ProtocolSections
-                  category="authentication"
-                  mgr={mgr}
-                  activeSubtabId={activeProtocolSubtabId}
-                  onActiveSubtabChange={activateProtocolSubtab}
-                />
-              </>
+              <ProtocolSections
+                category="authentication"
+                mgr={mgr}
+                activeSubtabId={activeProtocolSubtabId}
+                onActiveSubtabChange={activateProtocolSubtab}
+                authenticationContent={
+                  <>
+                    <CredentialSourceSection
+                      formData={mgr.formData}
+                      setFormData={mgr.setFormData}
+                      credentialConversion={mgr.credentialConversion}
+                    />
+                    <ConnectionFields
+                      mgr={mgr}
+                      section="authentication"
+                      onOpenApplication={() => {}}
+                    />
+                  </>
+                }
+              />
             )}
             {activeTab === "protocol" && !mgr.formData.isGroup && (
               <ProtocolSections

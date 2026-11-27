@@ -1,4 +1,5 @@
 import React from "react";
+import { ToastProvider } from "../../src/contexts/ToastContext";
 import {
   act,
   cleanup,
@@ -209,6 +210,20 @@ afterEach(() => {
 });
 
 describe("explicit credential copies", () => {
+  it("reports username and password copies as floating toasts without inline or secret text", async () => {
+    const input = fixture(false);
+    const view = render(<ToastProvider><CredentialCopyActions {...input} /></ToastProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Copy username" }));
+    await flush();
+    expect(screen.getByText("Username copied.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Copy password" }));
+    await flush();
+    const message = screen.getByText("Password copied.");
+    expect(message.closest('[data-native-browser-occlusion]')).not.toBeNull();
+    expect(view.container.querySelector('[aria-label="Copy or type selected credential"] [role="status"]')).toBeNull();
+    expect(view.container.innerHTML).not.toContain("CURRENT_LOCAL_USER");
+    expect(view.container.innerHTML).not.toContain(input.connection.password!);
+  });
   it.each([true, false])(
     "copies on native clipboard without a focused website field or typing controller (vault=%s)",
     async (vault) => {

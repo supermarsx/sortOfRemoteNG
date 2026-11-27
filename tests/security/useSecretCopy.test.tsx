@@ -1,4 +1,5 @@
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { act, cleanup, renderHook, screen } from "@testing-library/react";
+import { ToastProvider } from "../../src/contexts/ToastContext";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useSecretCopy } from "../../src/hooks/security/useSecretCopy";
 import type { CredentialOutcome } from "../../src/utils/security/credentialFailure";
@@ -47,6 +48,14 @@ async function copy(hook: Hook, ...request: Request) {
 }
 
 describe("useSecretCopy", () => {
+  it("shows a floating code-copy toast with no code or secret in the notification", async () => {
+    const hook = renderHook(() => useSecretCopy(), { wrapper: ToastProvider });
+    await copy(hook, "authenticator", CODE, "totpCode", NOW + 30000);
+    expect(screen.getByText("One-time code copied.")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(CODE);
+    expect(document.body.textContent).not.toContain(SEED);
+    expect(hook.result.current.error).toBeNull();
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);

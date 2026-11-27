@@ -794,12 +794,21 @@ pub async fn get_rdp_session_info(
 #[tauri::command]
 pub async fn list_rdp_sessions(
     state: tauri::State<'_, RdpServiceState>,
+    frame_store: tauri::State<'_, SharedFrameStoreState>,
 ) -> Result<Vec<RdpSession>, String> {
     let service = state.lock().await;
     Ok(service
         .connections
         .values()
-        .map(|c| c.session.clone())
+        .map(|c| {
+            let mut session = c.session.clone();
+            // The framebuffer tracks negotiated/reactivated size. The session
+            // record initially contains a requested size and can become stale.
+            let live = frame_store.session_snapshot(&session.id);
+            session.desktop_width = live.as_ref().map_or(0, |frame| frame.width);
+            session.desktop_height = live.as_ref().map_or(0, |frame| frame.height);
+            session
+        })
         .collect())
 }
 

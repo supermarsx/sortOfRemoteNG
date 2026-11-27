@@ -276,6 +276,17 @@ describe("DetachedClient accessibility", () => {
       ).toBeInTheDocument();
     });
   };
+  it("reveals only an assigned tab and highlights it in the receiving window", async () => {
+    await renderAndLoadDetachedClient();
+    const second = { ...syncedSession, id: "s2", name: "Second session" };
+    act(() => emitSyncSnapshot({ windowId: "detached-1", syncRevision: 2, sessions: [syncedSession as any, second as any], connections: [syncedConnection as any], tabGroups: [], activeSessionId: "s1" }));
+    const listener = vi.mocked(listen).mock.calls.find(([name]) => name === "wm:reveal-session")![1];
+    act(() => listener({ payload: { sessionId: "not-owned" } } as any));
+    expect(document.getElementById("detached-session-tab-s1")).toHaveAttribute("aria-selected", "true");
+    act(() => listener({ payload: { sessionId: "s2" } } as any));
+    await waitFor(() => expect(document.getElementById("detached-session-tab-s2")).toHaveAttribute("data-session-revealed"));
+    expect(document.getElementById("detached-session-tab-s2")).toHaveAttribute("aria-selected", "true");
+  });
 
   it("keeps only the linked RDP source mounted, retains local Internals across sync, and closes tools locally", async () => {
     linkedViewer.enabled = true;

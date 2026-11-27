@@ -322,6 +322,15 @@ function renderManagerWithConnectionState({
 }
 
 describe("SessionManager (unified RDP + internal proxy)", () => {
+  it("uses native negotiated dimensions and the saved name with a separate tunnel icon", async () => {
+    mockInvoke({ list_rdp_sessions: [{ id: "rdp-1", connectionId: "conn-1", host: "127.0.0.1", port: 50001, targetIdentity: { host: "10.0.0.10", port: 3389 }, username: "Administrator", connected: true, desktopWidth: 1600, desktopHeight: 900 }] });
+    renderManager();
+    await screen.findByText("Prod RDP");
+    expect(screen.getByLabelText("Tunneled connection")).toBeInTheDocument();
+    expect(screen.getByText(/1600×900/)).toBeInTheDocument();
+    expect(screen.queryByText(/undefined×undefined/)).toBeNull();
+    expect(screen.queryByText("127.0.0.1:50001")).toBeNull();
+  });
   it.each(["ssh", "rdp"] as const)(
     "offers exact retained %s actor reattachment from Sessions",
     async (protocol) => {

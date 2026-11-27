@@ -635,7 +635,7 @@ describe("SessionTabs accessibility", () => {
     fireEvent.contextMenu(firstTab);
 
     const submenuTrigger = await screen.findByRole("menuitem", {
-      name: /add to group/i,
+      name: /tab groups/i,
     });
     expect(submenuTrigger).toHaveAttribute("aria-expanded", "false");
 
@@ -645,7 +645,7 @@ describe("SessionTabs accessibility", () => {
       expect(submenuTrigger).toHaveAttribute("aria-expanded", "true");
     });
 
-    const submenu = screen.getByRole("menu", { name: /add to group/i });
+    const submenu = screen.getByRole("menu", { name: /tab groups/i });
     const groupItem = within(submenu).getByRole("menuitem", { name: /ops/i });
     expect(groupItem).toBeInTheDocument();
 
@@ -890,6 +890,8 @@ describe("SessionTabs context menu: close all and reconnect", () => {
   it("Close All Tabs closes every visible tab via onSessionClose", () => {
     renderTabs();
     openMenu("a");
+    expect(screen.queryByRole("button", { name: "Close All Tabs" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close tabs" }));
     fireEvent.click(screen.getByText("Close All Tabs"));
     expect(onSessionClose.mock.calls.map((c) => c[0])).toEqual([
       "a",

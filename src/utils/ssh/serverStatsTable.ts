@@ -14,6 +14,12 @@ export interface AggregateRow {
   tags: string[];
   status: RowStatus;
   entry: ServerStatsEntry | null;
+  aliases?: Array<{
+    sessionId: string;
+    connectionId: string;
+    name: string;
+    host: string;
+  }>;
 }
 
 export type SortKey =
@@ -69,7 +75,7 @@ export function buildRows(
   now: number,
 ): AggregateRow[] {
   const byId = new Map(connections.map((c) => [c.id, c]));
-  return sessions.map((s) => {
+  const rows: AggregateRow[] = sessions.map((s) => {
     const conn = s.connectionId ? byId.get(s.connectionId) : undefined;
     const parent = conn?.parentId ? byId.get(conn.parentId) : undefined;
     const entry = entries.get(s.id) ?? null;
@@ -81,8 +87,50 @@ export function buildRows(
       tags: conn?.tags ?? [],
       status: deriveStatus(s.status, entry, now),
       entry,
+      aliases: [
+        {
+          sessionId: s.id,
+          connectionId: s.connectionId ?? s.id,
+          name: conn?.name || s.name || s.hostname || s.id,
+          host: s.hostname ?? "",
+        },
+      ],
     };
   });
+  const servers = new Map<string, AggregateRow>();
+  const health = (row: AggregateRow) =>
+    row.status === "online"
+      ? 3
+      : row.status === "stale"
+        ? 2
+        : row.status === "disconnected"
+          ? 0
+          : 1;
+  for (const row of rows) {
+    const identity = row.entry?.snapshot?.serverIdentity;
+    const key = identity ? `server:${identity}` : `session:${row.sessionId}`;
+    const previous = servers.get(key);
+    if (!previous) {
+      servers.set(key, row);
+      continue;
+    }
+    const newer =
+      health(row) > health(previous) ||
+      (health(row) === health(previous) &&
+        (row.entry?.sampledAt ?? 0) > (previous.entry?.sampledAt ?? 0));
+    const primary = newer ? row : previous;
+    servers.set(key, {
+      ...primary,
+      name:
+        primary.entry?.hostname && primary.entry.hostname !== "unknown"
+          ? primary.entry.hostname
+          : primary.name,
+      aliases: [...(previous.aliases ?? []), ...(row.aliases ?? [])],
+      tags: [...new Set([...previous.tags, ...row.tags])],
+      folder: previous.folder === row.folder ? previous.folder : null,
+    });
+  }
+  return [...servers.values()];
 }
 
 const STATUS_ORDER: Record<RowStatus, number> = {
@@ -155,6 +203,7 @@ export function filterRows(
       r.entry?.hostname ?? "",
       r.entry?.osName ?? "",
       r.status,
+      ...(r.aliases ?? []).flatMap((alias) => [alias.name, alias.host]),
       ...r.tags,
     ]
       .join("\u0000")

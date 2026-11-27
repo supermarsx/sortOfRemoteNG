@@ -30,6 +30,12 @@ export type ConnectionEditorProtocolSubtabId =
   | "authentication"
   | "security"
   | "display-input"
+  | "audio-input"
+  | "performance"
+  | "browser"
+  | "privacy"
+  | "automation"
+  | "management"
   | "resources"
   | "network-path"
   | "network"
@@ -128,10 +134,10 @@ export const PROTOCOL_SEARCH_FIELD_SUBTABS: Readonly<
   "rdp-target-os": "connection",
   "rdp-domain": "connection",
   "rdp-display": "display-input",
-  "rdp-audio": "display-input",
-  "rdp-input": "display-input",
+  "rdp-audio": "audio-input",
+  "rdp-input": "audio-input",
   "rdp-devices": "resources",
-  "rdp-performance": "resources",
+  "rdp-performance": "performance",
   "rdp-security": "security",
   "rdp-gateway": "network",
   "rdp-tcp": "network",
@@ -153,6 +159,9 @@ export function getConnectionEditorProtocolSubtabId(
   formData: SearchFormData,
 ): ConnectionEditorProtocolSubtabId | undefined {
   if (field.protocolSubtabId) return field.protocolSubtabId;
+  if (field.id === "winrm-options" && formData.protocol === "rdp") {
+    return "management";
+  }
   if (field.id === "winrm-options" && formData.protocol === "winrm") {
     return "connection";
   }
@@ -2511,6 +2520,100 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
           "httpApplication.id",
           "httpApplication.meshOrigin",
           "httpApplication.exchangeOwaMailbox",
+        ],
+      },
+      {
+        id: "http-browser-appearance",
+        focusId: "protocol-options",
+        label: "Website zoom and loading",
+        protocols: ["http", "https"],
+        protocolSubtabId: "browser",
+        keywords: [
+          "browser",
+          "zoom",
+          "timeout",
+          "loading",
+          "toolbar",
+          "bookmarks bar",
+        ],
+        valuePaths: [
+          "browserSession.defaultZoomPercent",
+          "browserSession.initialLoadTimeoutSeconds",
+          "browserSession.documentReadyTimeoutSeconds",
+        ],
+      },
+      {
+        id: "http-browser-storage",
+        focusId: "protocol-options",
+        label: "Cookies and page cache",
+        protocols: ["http", "https"],
+        protocolSubtabId: "privacy",
+        keywords: [
+          "cookies",
+          "cache",
+          "retention",
+          "remember sign-in",
+          "restore cookies",
+          "clear data",
+        ],
+        valuePaths: [
+          "browserSession.restoreCookies",
+          "browserSession.sessionRetention.mode",
+          "browserSession.httpCache.enabled",
+        ],
+      },
+      {
+        id: "http-browser-compatibility",
+        focusId: "protocol-options",
+        label: "Device SSL/TLS compatibility",
+        protocols: ["http", "https"],
+        protocolSubtabId: "security",
+        keywords: [
+          "legacy",
+          "SSLv2",
+          "SSLv3",
+          "TLS 1.0",
+          "TLS 1.1",
+          "weak certificates",
+          "HTTPS inspection",
+        ],
+        valuePaths: [
+          "browserSession.upstreamTlsProfile",
+          "browserSession.allowWeakCertificates",
+          "browserSession.tlsInterception",
+        ],
+      },
+      {
+        id: "http-form-automation",
+        focusId: "protocol-options",
+        label: "Advanced form automation",
+        protocols: ["http", "https"],
+        protocolSubtabId: "automation",
+        keywords: [
+          "selectors",
+          "autofill",
+          "fill delay",
+          "submit delay",
+          "form fields",
+        ],
+      },
+      {
+        id: "http-website-permissions",
+        focusId: "protocol-options",
+        label: "Website permissions",
+        protocols: ["http", "https"],
+        protocolSubtabId: "advanced",
+        keywords: [
+          "scripts",
+          "redirects",
+          "content",
+          "external resources",
+          "allowed origins",
+          "cross origin",
+          "WebGL",
+          "browser features",
+          "media stream",
+          "local storage",
         ],
       },
       {

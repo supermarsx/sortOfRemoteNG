@@ -719,6 +719,48 @@ describe("ConnectionEditor", () => {
       expect(screen.queryByTestId("editor-name")).not.toBeInTheDocument();
     });
 
+    it("supports keyboard section changes and resets stale scroll positions", () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+      const basics = screen.getByTestId("connection-editor-tab-general");
+      const pane = document.querySelector<HTMLElement>(
+        "[data-editor-scroll-pane]",
+      )!;
+      basics.focus();
+      pane.scrollTop = 700;
+      fireEvent.keyDown(basics, { key: "ArrowDown" });
+      expect(
+        screen.getByTestId("connection-editor-tab-authentication"),
+      ).toHaveFocus();
+      expect(pane.scrollTop).toBe(0);
+      fireEvent.keyDown(document.activeElement!, { key: "End" });
+      expect(screen.getByTestId("connection-editor-tab-notes")).toHaveFocus();
+      fireEvent.keyDown(document.activeElement!, { key: "Home" });
+      expect(basics).toHaveFocus();
+    });
+
+    it("opens browser cookies and cache directly from settings search", async () => {
+      renderWithProviders({
+        isOpen: true,
+        onClose: vi.fn(),
+        connection: { ...mockConnection, protocol: "https", port: 443 },
+      });
+      fireEvent.change(
+        screen.getByRole("combobox", { name: "Search connection settings" }),
+        { target: { value: "cookies" } },
+      );
+      fireEvent.click(
+        screen.getByRole("option", { name: /Cookies and page cache/ }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByRole("tab", { name: "Cookies & cache" }),
+        ).toHaveAttribute("aria-selected", "true"),
+      );
+      expect(
+        screen.getByTestId("connection-editor-tab-protocol"),
+      ).toHaveTextContent("Browser");
+    });
+
     it("should hide connection-only tabs for folders", async () => {
       renderWithProviders({
         connection: {
@@ -2290,8 +2332,12 @@ describe("ConnectionEditor", () => {
         "aria-selected",
         "true",
       );
-      expect(screen.getByRole("tab", { name: "Security" })).toBeInTheDocument();
-      expect(screen.getByRole("tab", { name: "Advanced" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("tab", { name: "TLS & certificates" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("tab", { name: "Website permissions" }),
+      ).toBeInTheDocument();
       fireEvent.click(screen.getByRole("tab", { name: "Favorites" }));
       expect(screen.getByLabelText("HTTP bookmarks")).toBeInTheDocument();
       expect(
@@ -2300,7 +2346,7 @@ describe("ConnectionEditor", () => {
       expect(
         screen.queryByRole("tab", { name: "Terminal" }),
       ).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole("tab", { name: "Advanced" }));
+      fireEvent.click(screen.getByRole("tab", { name: "Website permissions" }));
 
       expect(
         screen.queryByLabelText("Connection favorites"),
@@ -2330,7 +2376,7 @@ describe("ConnectionEditor", () => {
       fireEvent.change(search, { target: { value: "Gateway server" } });
       expect(
         screen.getByRole("option", {
-          name: /Protocol \/ Protocol Options.*Gateway/i,
+          name: /Remote desktop \/ Protocol Options.*Gateway/i,
         }),
       ).toBeInTheDocument();
       fireEvent.keyDown(search, { key: "Enter" });
@@ -2362,7 +2408,7 @@ describe("ConnectionEditor", () => {
       fireEvent.change(search, { target: { value: "Resolved ordered path" } });
       expect(
         screen.getByRole("option", {
-          name: /Protocol \/ Protocol Options.*Network Path/i,
+          name: /Remote desktop \/ Protocol Options.*Network Path/i,
         }),
       ).toBeInTheDocument();
       fireEvent.keyDown(search, { key: "Enter" });

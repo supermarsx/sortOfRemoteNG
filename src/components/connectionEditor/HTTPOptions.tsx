@@ -72,6 +72,11 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
         <>
           <TlsVerifySection mgr={mgr} />
           <TrustPolicySection mgr={mgr} />
+          <BrowserSessionSection
+            mgr={mgr}
+            retentionCapabilities={retentionCapabilities}
+            view="security"
+          />
         </>
       )}
       {shows("advanced") && (
@@ -80,8 +85,8 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
           <BrowserSessionSection
             mgr={mgr}
             retentionCapabilities={retentionCapabilities}
+            view="permissions"
           />
-          <FormAutomationSection mgr={mgr} />
           <SessionQuickActionsSection
             protocol="http"
             view="permissions"
@@ -90,6 +95,18 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
           />
         </>
       )}
+      {(["browser", "privacy", "automation"] as const)
+        .filter(shows)
+        .map((view) => (
+          <React.Fragment key={view}>
+            <BrowserSessionSection
+              mgr={mgr}
+              retentionCapabilities={retentionCapabilities}
+              view={view}
+            />
+            {view === "automation" && <FormAutomationSection mgr={mgr} />}
+          </React.Fragment>
+        ))}
       {!sections && (
         <ConnectionFavoritesSection
           formData={formData}

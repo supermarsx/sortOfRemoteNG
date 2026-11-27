@@ -34,6 +34,20 @@ const makeSession = (): ConnectionSession => ({
   lifecycleWriterId: "detached-session-1",
 });
 
+it("preserves the database owner and rejects malformed owners on restore", () => {
+  const saved = serializePersistedConnectionSession({
+    ...makeSession(),
+    ownerDatabaseId: "database-1",
+  });
+  expect(parsePersistedConnectionSession(saved)).toMatchObject({
+    valid: true,
+    session: { ownerDatabaseId: "database-1" },
+  });
+  expect(
+    parsePersistedConnectionSession({ ...saved, ownerDatabaseId: 42 }).valid,
+  ).toBe(false);
+});
+
 const makeIntegrationSession = (): ConnectionSession => ({
   id: "integration-session-1",
   connectionId: "integration-connection-1",

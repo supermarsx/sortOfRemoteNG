@@ -5,7 +5,13 @@ import type { BrowserSessionRetentionCapabilities } from "../../../types/setting
 export type Mgr = ReturnType<typeof useHTTPOptions>;
 
 export type HTTPOptionsSection =
-  "application" | "authentication" | "security" | "advanced";
+  | "application"
+  | "authentication"
+  | "security"
+  | "advanced"
+  | "browser"
+  | "privacy"
+  | "automation";
 
 export interface HTTPOptionsProps {
   formData: Partial<Connection>;

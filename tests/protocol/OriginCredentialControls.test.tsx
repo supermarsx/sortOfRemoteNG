@@ -119,6 +119,7 @@ function Harness({
   vault = false,
   protocol = "https",
   autoLoginRetry,
+  onOpenTypingSettings,
 }: {
   transport: (
     request: OriginCredentialInputRequest,
@@ -126,6 +127,7 @@ function Harness({
   vault?: boolean;
   protocol?: "http" | "https";
   autoLoginRetry?: OriginAutoLoginRetryController;
+  onOpenTypingSettings?: () => void;
 }) {
   const [overlay, setOverlay] = useState(false);
   const connection = useRef({
@@ -161,6 +163,7 @@ function Harness({
           },
         }}
         autoLoginRetry={autoLoginRetry}
+        onOpenTypingSettings={onOpenTypingSettings}
       />
     </>
   );
@@ -214,6 +217,21 @@ function cancelNotification() {
 }
 
 describe("native credential toolbar parity", () => {
+  it("offers connection settings from the typing-unavailable toast", async () => {
+    const settings = vi.fn();
+    const request = transport();
+    request.mockImplementation(async (request) => {
+      if (request.action.kind === "capture") throw new Error("unavailable");
+      return { status: "cancelled", captureId: "" };
+    });
+    render(<Harness transport={request} onOpenTypingSettings={settings} />);
+    await open();
+    fireEvent.click(screen.getByRole("button", { name: "Type password" }));
+    await waitFor(() => expect(mock.update.mock.calls.some(([, patch]) => patch.action?.label === "Connection settings")).toBe(true));
+    const update = mock.update.mock.calls.find(([, patch]) => patch.action?.label === "Connection settings")![1];
+    act(() => update.action!.onClick());
+    expect(settings).toHaveBeenCalledOnce();
+  });
   it.each([false, true])(
     "offers auto-login retry in the Credentials & 2FA panel and closes it first (vault: %s)",
     async (vault) => {

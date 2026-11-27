@@ -69,6 +69,7 @@ import {
   getWindowsToolIcon,
 } from "../windows/WindowsToolPanel.helpers";
 import MenuSurface from "../ui/overlays/MenuSurface";
+import MenuSubmenu from "../ui/overlays/MenuSubmenu";
 import {
   type Connection,
   ConnectionSession,
@@ -1666,7 +1667,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                     }
                   >
                     <Layers size={14} className="mr-2" />
-                    <span className="flex-1">Add to Group</span>
+                    <span className="flex-1">Tab groups</span>
                     <ChevronRight size={12} className="ml-2" />
                   </button>
                   <div
@@ -1675,7 +1676,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                     className="sor-menu-submenu-panel"
                     role="menu"
                     tabIndex={-1}
-                    aria-label="Add to group submenu"
+                    aria-label="Tab groups submenu"
                     aria-labelledby={groupSubmenuTriggerId}
                     onKeyDown={(event) =>
                       handleSubmenuPanelKeyDown(
@@ -1702,6 +1703,16 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                     {tabGroups.length > 0 && (
                       <div className="sor-menu-divider" />
                     )}
+                    {isInGroup && (
+                      <button
+                        role="menuitem"
+                        onClick={() => handleRemoveFromGroup(sessionId)}
+                        className="sor-menu-item"
+                      >
+                        <FolderMinus size={14} className="mr-2" />
+                        Remove from Group
+                      </button>
+                    )}
                     <button
                       role="menuitem"
                       onClick={() => handleCreateNewGroup(sessionId)}
@@ -1711,20 +1722,6 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                     </button>
                   </div>
                 </div>
-                {isInGroup && (
-                  <button
-                    onClick={() => handleRemoveFromGroup(sessionId)}
-                    className="sor-menu-item"
-                  >
-                    <FolderMinus size={14} className="mr-2" /> Remove from Group
-                  </button>
-                )}
-                <button
-                  onClick={() => handleCreateNewGroup(sessionId)}
-                  className="sor-menu-item"
-                >
-                  <FolderPlus size={14} className="mr-2" /> New Group from Tab
-                </button>
 
                 <div className="sor-menu-divider" />
 
@@ -1837,278 +1834,288 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                 <div className="sor-menu-divider" />
 
                 {/* ── Window / layout ─────────────────────────── */}
-                <button
-                  onClick={() => act(() => onSessionDetach(sessionId))}
-                  className="sor-menu-item"
-                  data-testid="session-tab-detach"
-                  disabled={
-                    targetSession?.protocol === RDP_INTERNALS_PROTOCOL ||
-                    targetSession?.protocol === WEB_POPUP_PROTOCOL
-                  }
-                  title={
-                    targetSession?.protocol === WEB_POPUP_PROTOCOL
-                      ? WEB_POPUP_WINDOW_MESSAGE
-                      : targetSession?.protocol === RDP_INTERNALS_PROTOCOL
-                        ? RDP_INTERNALS_WINDOW_MESSAGE
-                        : undefined
-                  }
+                <MenuSubmenu
+                  label="Move / layout"
+                  icon={<LayoutGrid size={14} className="mr-2" />}
                 >
-                  <ExternalLink size={14} className="mr-2" /> Detach to New
-                  Window
-                </button>
-                {detachedWindows.length > 0 &&
-                  targetSession?.protocol !== WEB_POPUP_PROTOCOL &&
-                  targetSession?.protocol !== RDP_INTERNALS_PROTOCOL && (
+                  <button
+                    onClick={() => act(() => onSessionDetach(sessionId))}
+                    className="sor-menu-item"
+                    data-testid="session-tab-detach"
+                    disabled={
+                      targetSession?.protocol === RDP_INTERNALS_PROTOCOL ||
+                      targetSession?.protocol === WEB_POPUP_PROTOCOL
+                    }
+                    title={
+                      targetSession?.protocol === WEB_POPUP_PROTOCOL
+                        ? WEB_POPUP_WINDOW_MESSAGE
+                        : targetSession?.protocol === RDP_INTERNALS_PROTOCOL
+                          ? RDP_INTERNALS_WINDOW_MESSAGE
+                          : undefined
+                    }
+                  >
+                    <ExternalLink size={14} className="mr-2" /> Detach to New
+                    Window
+                  </button>
+                  {detachedWindows.length > 0 &&
+                    targetSession?.protocol !== WEB_POPUP_PROTOCOL &&
+                    targetSession?.protocol !== RDP_INTERNALS_PROTOCOL && (
+                      <div
+                        className="sor-menu-submenu"
+                        data-submenu-open={sendToSubmenuOpen ? "true" : "false"}
+                        onMouseLeave={() => setSendToSubmenuOpen(false)}
+                        onBlurCapture={(event) => {
+                          const next = event.relatedTarget as Node | null;
+                          if (!event.currentTarget.contains(next)) {
+                            setSendToSubmenuOpen(false);
+                          }
+                        }}
+                      >
+                        <button
+                          id={sendToSubmenuTriggerId}
+                          ref={sendToSubmenuTriggerRef}
+                          className="sor-menu-item"
+                          role="menuitem"
+                          aria-haspopup="menu"
+                          aria-expanded={sendToSubmenuOpen}
+                          aria-controls={sendToSubmenuPanelId}
+                          onMouseEnter={() => setSendToSubmenuOpen(true)}
+                          onKeyDown={(event) =>
+                            handleSubmenuTriggerKeyDown(
+                              event,
+                              setSendToSubmenuOpen,
+                              sendToSubmenuPanelRef,
+                            )
+                          }
+                        >
+                          <Send size={14} className="mr-2" />
+                          <span className="flex-1">Send to Window</span>
+                          <ChevronRight size={12} className="ml-2" />
+                        </button>
+                        <div
+                          id={sendToSubmenuPanelId}
+                          ref={sendToSubmenuPanelRef}
+                          className="sor-menu-submenu-panel"
+                          role="menu"
+                          tabIndex={-1}
+                          aria-label="Send to window submenu"
+                          aria-labelledby={sendToSubmenuTriggerId}
+                          onKeyDown={(event) =>
+                            handleSubmenuPanelKeyDown(
+                              event,
+                              setSendToSubmenuOpen,
+                              sendToSubmenuTriggerRef,
+                            )
+                          }
+                        >
+                          {detachedWindows.map((w) => (
+                            <button
+                              key={w.label}
+                              role="menuitem"
+                              onClick={() =>
+                                act(() => {
+                                  import("@tauri-apps/api/event").then(
+                                    ({ emit }) => {
+                                      emit("wm:command", {
+                                        type: "MOVE_SESSION",
+                                        sessionId,
+                                        targetWindow: w.label,
+                                        sourceWindow: "main",
+                                      });
+                                    },
+                                  );
+                                })
+                              }
+                              className="sor-menu-item"
+                            >
+                              <Monitor size={14} className="mr-2" />
+                              {w.title}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  <button
+                    onClick={() => act(() => onSessionSelect(sessionId))}
+                    className="sor-menu-item"
+                  >
+                    <Maximize2 size={14} className="mr-2" /> Focus Tab
+                  </button>
+                  <button
+                    onClick={() =>
+                      act(() => {
+                        window.dispatchEvent(
+                          new CustomEvent("split-session", {
+                            detail: { sessionId, direction: "right" },
+                          }),
+                        );
+                      })
+                    }
+                    className="sor-menu-item"
+                  >
+                    <Columns size={14} className="mr-2" /> Split Right
+                  </button>
+                  <button
+                    onClick={() =>
+                      act(() => {
+                        window.dispatchEvent(
+                          new CustomEvent("split-session", {
+                            detail: { sessionId, direction: "down" },
+                          }),
+                        );
+                      })
+                    }
+                    className="sor-menu-item"
+                  >
+                    <Rows size={14} className="mr-2" /> Split Down
+                  </button>
+                  {tilingActive && totalTiles > 0 && onAssignSessionToSlot && (
                     <div
                       className="sor-menu-submenu"
-                      data-submenu-open={sendToSubmenuOpen ? "true" : "false"}
-                      onMouseLeave={() => setSendToSubmenuOpen(false)}
+                      data-submenu-open={tileSubmenuOpen ? "true" : "false"}
+                      onMouseLeave={() => setTileSubmenuOpen(false)}
                       onBlurCapture={(event) => {
                         const next = event.relatedTarget as Node | null;
                         if (!event.currentTarget.contains(next)) {
-                          setSendToSubmenuOpen(false);
+                          setTileSubmenuOpen(false);
                         }
                       }}
                     >
                       <button
-                        id={sendToSubmenuTriggerId}
-                        ref={sendToSubmenuTriggerRef}
+                        id={tileSubmenuTriggerId}
+                        ref={tileSubmenuTriggerRef}
                         className="sor-menu-item"
                         role="menuitem"
                         aria-haspopup="menu"
-                        aria-expanded={sendToSubmenuOpen}
-                        aria-controls={sendToSubmenuPanelId}
-                        onMouseEnter={() => setSendToSubmenuOpen(true)}
+                        aria-expanded={tileSubmenuOpen}
+                        aria-controls={tileSubmenuPanelId}
+                        onMouseEnter={() => setTileSubmenuOpen(true)}
                         onKeyDown={(event) =>
                           handleSubmenuTriggerKeyDown(
                             event,
-                            setSendToSubmenuOpen,
-                            sendToSubmenuPanelRef,
+                            setTileSubmenuOpen,
+                            tileSubmenuPanelRef,
                           )
                         }
                       >
-                        <Send size={14} className="mr-2" />
-                        <span className="flex-1">Send to Window</span>
+                        <LayoutGrid size={14} className="mr-2" />
+                        <span className="flex-1">Move to tile</span>
                         <ChevronRight size={12} className="ml-2" />
                       </button>
                       <div
-                        id={sendToSubmenuPanelId}
-                        ref={sendToSubmenuPanelRef}
+                        id={tileSubmenuPanelId}
+                        ref={tileSubmenuPanelRef}
                         className="sor-menu-submenu-panel"
                         role="menu"
                         tabIndex={-1}
-                        aria-label="Send to window submenu"
-                        aria-labelledby={sendToSubmenuTriggerId}
+                        aria-label="Move to tile submenu"
+                        aria-labelledby={tileSubmenuTriggerId}
                         onKeyDown={(event) =>
                           handleSubmenuPanelKeyDown(
                             event,
-                            setSendToSubmenuOpen,
-                            sendToSubmenuTriggerRef,
+                            setTileSubmenuOpen,
+                            tileSubmenuTriggerRef,
                           )
                         }
                       >
-                        {detachedWindows.map((w) => (
-                          <button
-                            key={w.label}
-                            role="menuitem"
-                            onClick={() =>
-                              act(() => {
-                                import("@tauri-apps/api/event").then(
-                                  ({ emit }) => {
-                                    emit("wm:command", {
-                                      type: "MOVE_SESSION",
-                                      sessionId,
-                                      targetWindow: w.label,
-                                      sourceWindow: "main",
-                                    });
-                                  },
-                                );
-                              })
-                            }
-                            className="sor-menu-item"
-                          >
-                            <Monitor size={14} className="mr-2" />
-                            {w.title}
-                          </button>
-                        ))}
+                        {tabLayout?.sessions.map((slot, slotIdx) => {
+                          const occupying = state.sessions.find(
+                            (s) => s.id === slot.sessionId,
+                          );
+                          const isCurrentSlot = slot.sessionId === sessionId;
+                          return (
+                            <button
+                              key={`tile-slot-${slotIdx}`}
+                              role="menuitem"
+                              onClick={() => {
+                                onAssignSessionToSlot(sessionId, slotIdx);
+                                closeContextMenu();
+                              }}
+                              disabled={isCurrentSlot}
+                              className={`sor-menu-item ${isCurrentSlot ? "opacity-50 pointer-events-none" : ""}`}
+                              data-testid={`move-to-tile-${slotIdx}`}
+                            >
+                              <span className="text-[10px] mr-2 text-[var(--color-textMuted)] w-5">
+                                {slotIdx + 1}/{totalTiles}
+                              </span>
+                              <span className="truncate flex-1">
+                                {occupying?.name ?? "(empty)"}
+                              </span>
+                              {isCurrentSlot && (
+                                <span className="text-[10px] ml-2 text-[var(--color-textMuted)]">
+                                  current
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
-                <button
-                  onClick={() => act(() => onSessionSelect(sessionId))}
-                  className="sor-menu-item"
-                >
-                  <Maximize2 size={14} className="mr-2" /> Focus Tab
-                </button>
-                <button
-                  onClick={() =>
-                    act(() => {
-                      window.dispatchEvent(
-                        new CustomEvent("split-session", {
-                          detail: { sessionId, direction: "right" },
-                        }),
-                      );
-                    })
-                  }
-                  className="sor-menu-item"
-                >
-                  <Columns size={14} className="mr-2" /> Split Right
-                </button>
-                <button
-                  onClick={() =>
-                    act(() => {
-                      window.dispatchEvent(
-                        new CustomEvent("split-session", {
-                          detail: { sessionId, direction: "down" },
-                        }),
-                      );
-                    })
-                  }
-                  className="sor-menu-item"
-                >
-                  <Rows size={14} className="mr-2" /> Split Down
-                </button>
-                {tilingActive && totalTiles > 0 && onAssignSessionToSlot && (
-                  <div
-                    className="sor-menu-submenu"
-                    data-submenu-open={tileSubmenuOpen ? "true" : "false"}
-                    onMouseLeave={() => setTileSubmenuOpen(false)}
-                    onBlurCapture={(event) => {
-                      const next = event.relatedTarget as Node | null;
-                      if (!event.currentTarget.contains(next)) {
-                        setTileSubmenuOpen(false);
-                      }
-                    }}
+                  <button
+                    onClick={() => handleMoveTab(sessionId, "left")}
+                    className={`sor-menu-item ${isFirst ? "opacity-40 pointer-events-none" : ""}`}
+                    disabled={isFirst}
                   >
-                    <button
-                      id={tileSubmenuTriggerId}
-                      ref={tileSubmenuTriggerRef}
-                      className="sor-menu-item"
-                      role="menuitem"
-                      aria-haspopup="menu"
-                      aria-expanded={tileSubmenuOpen}
-                      aria-controls={tileSubmenuPanelId}
-                      onMouseEnter={() => setTileSubmenuOpen(true)}
-                      onKeyDown={(event) =>
-                        handleSubmenuTriggerKeyDown(
-                          event,
-                          setTileSubmenuOpen,
-                          tileSubmenuPanelRef,
-                        )
-                      }
-                    >
-                      <LayoutGrid size={14} className="mr-2" />
-                      <span className="flex-1">Move to tile</span>
-                      <ChevronRight size={12} className="ml-2" />
-                    </button>
-                    <div
-                      id={tileSubmenuPanelId}
-                      ref={tileSubmenuPanelRef}
-                      className="sor-menu-submenu-panel"
-                      role="menu"
-                      tabIndex={-1}
-                      aria-label="Move to tile submenu"
-                      aria-labelledby={tileSubmenuTriggerId}
-                      onKeyDown={(event) =>
-                        handleSubmenuPanelKeyDown(
-                          event,
-                          setTileSubmenuOpen,
-                          tileSubmenuTriggerRef,
-                        )
-                      }
-                    >
-                      {tabLayout?.sessions.map((slot, slotIdx) => {
-                        const occupying = state.sessions.find(
-                          (s) => s.id === slot.sessionId,
-                        );
-                        const isCurrentSlot = slot.sessionId === sessionId;
-                        return (
-                          <button
-                            key={`tile-slot-${slotIdx}`}
-                            role="menuitem"
-                            onClick={() => {
-                              onAssignSessionToSlot(sessionId, slotIdx);
-                              closeContextMenu();
-                            }}
-                            disabled={isCurrentSlot}
-                            className={`sor-menu-item ${isCurrentSlot ? "opacity-50 pointer-events-none" : ""}`}
-                            data-testid={`move-to-tile-${slotIdx}`}
-                          >
-                            <span className="text-[10px] mr-2 text-[var(--color-textMuted)] w-5">
-                              {slotIdx + 1}/{totalTiles}
-                            </span>
-                            <span className="truncate flex-1">
-                              {occupying?.name ?? "(empty)"}
-                            </span>
-                            {isCurrentSlot && (
-                              <span className="text-[10px] ml-2 text-[var(--color-textMuted)]">
-                                current
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                <button
-                  onClick={() => handleMoveTab(sessionId, "left")}
-                  className={`sor-menu-item ${isFirst ? "opacity-40 pointer-events-none" : ""}`}
-                  disabled={isFirst}
-                >
-                  <ArrowLeft size={14} className="mr-2" /> Move to Left
-                </button>
-                <button
-                  onClick={() => handleMoveTab(sessionId, "right")}
-                  className={`sor-menu-item ${isLast ? "opacity-40 pointer-events-none" : ""}`}
-                  disabled={isLast}
-                >
-                  <ArrowRight size={14} className="mr-2" /> Move to Right
-                </button>
+                    <ArrowLeft size={14} className="mr-2" /> Move to Left
+                  </button>
+                  <button
+                    onClick={() => handleMoveTab(sessionId, "right")}
+                    className={`sor-menu-item ${isLast ? "opacity-40 pointer-events-none" : ""}`}
+                    disabled={isLast}
+                  >
+                    <ArrowRight size={14} className="mr-2" /> Move to Right
+                  </button>
 
-                <div className="sor-menu-divider" />
+                  <div className="sor-menu-divider" />
 
-                {/* ── Close actions ───────────────────────────── */}
-                <button
-                  onClick={() => act(() => onSessionClose(sessionId))}
-                  className="sor-menu-item sor-menu-item-danger"
+                  {/* ── Close actions ───────────────────────────── */}
+                </MenuSubmenu>
+                <MenuSubmenu
+                  label="Close tabs"
+                  icon={<XCircle size={14} className="mr-2" />}
                 >
-                  <X size={14} className="mr-2" /> Close Tab
-                </button>
-                <button
-                  onClick={() => handleCloseOtherTabs(sessionId)}
-                  className={`sor-menu-item sor-menu-item-danger ${!hasOtherTabs ? "opacity-40 pointer-events-none" : ""}`}
-                  disabled={!hasOtherTabs}
-                >
-                  <XCircle size={14} className="mr-2" /> Close Other Tabs
-                </button>
-                <button
-                  onClick={() => handleCloseTabsToRight(sessionId)}
-                  className={`sor-menu-item sor-menu-item-danger ${!hasTabsToRight ? "opacity-40 pointer-events-none" : ""}`}
-                  disabled={!hasTabsToRight}
-                >
-                  <ArrowRightFromLine size={14} className="mr-2" /> Close Tabs
-                  to Right
-                </button>
-                <button
-                  onClick={() => {
-                    sessions
-                      .slice(0, sessionIndex)
-                      .forEach((s) => onSessionClose(s.id));
-                    closeContextMenu();
-                  }}
-                  className={`sor-menu-item sor-menu-item-danger ${!hasTabsToLeft ? "opacity-40 pointer-events-none" : ""}`}
-                  disabled={!hasTabsToLeft}
-                >
-                  <ArrowLeftFromLine size={14} className="mr-2" /> Close Tabs to
-                  Left
-                </button>
-                <button
-                  onClick={handleCloseAllTabs}
-                  className="sor-menu-item sor-menu-item-danger"
-                >
-                  <XCircle size={14} className="mr-2" /> Close All Tabs
-                </button>
+                  <button
+                    onClick={() => act(() => onSessionClose(sessionId))}
+                    className="sor-menu-item sor-menu-item-danger"
+                  >
+                    <X size={14} className="mr-2" /> Close Tab
+                  </button>
+                  <button
+                    onClick={() => handleCloseOtherTabs(sessionId)}
+                    className={`sor-menu-item sor-menu-item-danger ${!hasOtherTabs ? "opacity-40 pointer-events-none" : ""}`}
+                    disabled={!hasOtherTabs}
+                  >
+                    <XCircle size={14} className="mr-2" /> Close Other Tabs
+                  </button>
+                  <button
+                    onClick={() => handleCloseTabsToRight(sessionId)}
+                    className={`sor-menu-item sor-menu-item-danger ${!hasTabsToRight ? "opacity-40 pointer-events-none" : ""}`}
+                    disabled={!hasTabsToRight}
+                  >
+                    <ArrowRightFromLine size={14} className="mr-2" /> Close Tabs
+                    to Right
+                  </button>
+                  <button
+                    onClick={() => {
+                      sessions
+                        .slice(0, sessionIndex)
+                        .forEach((s) => onSessionClose(s.id));
+                      closeContextMenu();
+                    }}
+                    className={`sor-menu-item sor-menu-item-danger ${!hasTabsToLeft ? "opacity-40 pointer-events-none" : ""}`}
+                    disabled={!hasTabsToLeft}
+                  >
+                    <ArrowLeftFromLine size={14} className="mr-2" /> Close Tabs
+                    to Left
+                  </button>
+                  <button
+                    onClick={handleCloseAllTabs}
+                    className="sor-menu-item sor-menu-item-danger"
+                  >
+                    <XCircle size={14} className="mr-2" /> Close All Tabs
+                  </button>
+                </MenuSubmenu>
               </>
             );
           })()}

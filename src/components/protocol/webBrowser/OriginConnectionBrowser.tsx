@@ -1735,6 +1735,7 @@ export default function OriginConnectionBrowser({
               runInteractive: popupBridge.runInteractive,
             }}
             autoLoginRetry={autoLoginRetry}
+            onOpenTypingSettings={() => recover("connection")}
           />
         )}
         <OriginToolbarPopover

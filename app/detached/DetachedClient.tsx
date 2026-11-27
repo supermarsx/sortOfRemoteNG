@@ -1,4 +1,7 @@
 "use client";
+import { useSessionRevealFeedback } from "../../src/hooks/session/useSessionRevealFeedback";
+import { SESSION_REVEAL_EVENT } from "../../src/utils/session/revealSession";
+import MenuSubmenu from "../../src/components/ui/overlays/MenuSubmenu";
 
 import React, {
   useCallback,
@@ -211,6 +214,24 @@ export const DetachedSessionContent: React.FC<{
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const revealFeedback = useSessionRevealFeedback(activeTabId);
+  const revealGroupsRef = useRef(state.tabGroups);
+  revealGroupsRef.current = state.tabGroups;
+  useEffect(() => {
+    let disposed = false;
+    let off: (() => void) | undefined;
+    void listen<{ sessionId?: string }>(SESSION_REVEAL_EVENT, (event) => {
+      const id = event.payload?.sessionId;
+      if (typeof id !== "string" || disposed) return;
+      const session = sessionsRef.current.find((item) => item.id === id);
+      if (!session) return; // Never select a tab belonging to another window.
+      const group = revealGroupsRef.current.find((item) => item.id === session.tabGroupId);
+      if (group?.collapsed) dispatch({ type: "UPDATE_TAB_GROUP", payload: { ...group, collapsed: false } });
+      setActiveTabId(id);
+      revealFeedback(id);
+    }).then((unlisten) => { if (disposed) unlisten(); else off = unlisten; }).catch(() => {});
+    return () => { disposed = true; off?.(); };
+  }, [dispatch, revealFeedback]);
   activeTabIdRef.current = activeTabId;
   const [windowTitleOverride, setWindowTitleOverride] = useState<string | null>(
     null,
@@ -1504,6 +1525,7 @@ export const DetachedSessionContent: React.FC<{
           data-tauri-disable-drag="true"
           role="tablist"
           aria-label="Detached session tabs"
+          data-session-tab-strip="true"
           onDragOver={(e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = "move";
@@ -2129,6 +2151,7 @@ export const DetachedSessionContent: React.FC<{
                   <div className="sor-menu-divider" />
 
                   {/* ── Move ── */}
+                  <MenuSubmenu label="Move tabs" icon={<ArrowRight size={14} className="mr-2" />}>
                   <button
                     onClick={() =>
                       act(() => {
@@ -2163,6 +2186,8 @@ export const DetachedSessionContent: React.FC<{
                   <div className="sor-menu-divider" />
 
                   {/* ── Close actions ── */}
+                  </MenuSubmenu>
+                  <MenuSubmenu label="Close tabs" icon={<XCircle size={14} className="mr-2" />}>
                   <button
                     onClick={() => act(() => handleTabClose(sid))}
                     className="sor-menu-item sor-menu-item-danger"
@@ -2215,6 +2240,7 @@ export const DetachedSessionContent: React.FC<{
                       Tabs to Left
                     </button>
                   )}
+                  </MenuSubmenu>
                 </>
               );
             })()}
@@ -2260,6 +2286,8 @@ export const DetachedSessionContent: React.FC<{
                 className="h-full"
                 hidden={candidate.id !== activeSession.id}
                 id={`detached-session-panel-${candidate.id}`}
+                data-session-id={candidate.id}
+                data-session-viewer-state="mounted"
                 role="tabpanel"
                 aria-labelledby={`detached-session-tab-${candidate.id}`}
               >

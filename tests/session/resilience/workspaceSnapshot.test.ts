@@ -40,6 +40,22 @@ const session = (
   }) as ConnectionSession;
 
 describe("buildWorkspaceSnapshot", () => {
+  it("carries the saved database owner through durable restart rows", () => {
+    const snapshot = buildWorkspaceSnapshot({
+      sessions: [session({ ownerDatabaseId: "database-1" })],
+      now: 1000,
+    });
+    const parsed = parseWorkspaceSnapshot(
+      JSON.parse(JSON.stringify(snapshot)),
+    )!;
+    expect(snapshotToRows(parsed)[0].ownerDatabaseId).toBe("database-1");
+    expect(
+      parseWorkspaceSnapshot({
+        ...snapshot,
+        tabs: [{ ...snapshot.tabs[0], ownerDatabaseId: 42 }],
+      }),
+    ).toBeNull();
+  });
   it("records ids, order, active tab and backend id for connected adoptable protocols", () => {
     const snap = buildWorkspaceSnapshot({
       sessions: [

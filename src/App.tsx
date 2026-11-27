@@ -1,6 +1,8 @@
 import { uniqueSessionsById } from "./utils/session/uniqueSessions";
 import { useSecureClipboardConfig } from "./hooks/security/useSecureClipboardConfig";
 import { requestInPlaceSshReconnect } from "./utils/ssh/sshReconnectEvent";
+import { revealSessionInLayout, SESSION_REVEAL_EVENT } from "./utils/session/revealSession";
+import { useSessionRevealFeedback } from "./hooks/session/useSessionRevealFeedback";
 import React, {
   useState,
   useCallback,
@@ -20,7 +22,7 @@ import { Monitor, Zap, Plus, Database } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, emitTo } from "@tauri-apps/api/event";
 import {
   Connection,
   ConnectionSession,
@@ -643,6 +645,21 @@ const AppContent: React.FC = () => {
 
   // Real-origin pages shown in a detached window: still owned and mounted here.
   const displayedElsewhereIds = useNativeDisplayedSessionIds();
+  const revealFeedback = useSessionRevealFeedback(activeSessionId);
+  const handleRevealSession = useCallback((sessionId: string) => {
+    const session = state.sessions.find((item) => item.id === sessionId);
+    if (!session) { setActiveSessionId(sessionId); revealFeedback(sessionId); return; }
+    const owner = wmRegistry.current.sessionOwnership.get(sessionId) ?? session.layout?.windowId;
+    if (owner && owner !== "main") {
+      void emitTo(owner, SESSION_REVEAL_EVENT, { sessionId }).then(() => focusDetachedWindow(owner)).catch(console.error);
+      return;
+    }
+    const group = state.tabGroups.find((item) => item.id === session.tabGroupId);
+    if (group?.collapsed) dispatch({ type: "UPDATE_TAB_GROUP", payload: { ...group, collapsed: false } });
+    setTabLayout((layout) => revealSessionInLayout(layout, sessionId, activeSessionId));
+    setActiveSessionId(sessionId);
+    revealFeedback(sessionId);
+  }, [state.sessions, state.tabGroups, wmRegistry, focusDetachedWindow, activeSessionId, dispatch, setActiveSessionId, revealFeedback]);
   const displayedElsewhereSessions = useMemo(
     () =>
       state.sessions.filter(
@@ -1833,7 +1850,7 @@ const AppContent: React.FC = () => {
           onSessionReconnect={handleSessionReconnect}
           onDiagnostics={handleDiagnostics}
           onSessionDetach={handleSessionDetach}
-          onActivateSession={setActiveSessionId}
+          onActivateSession={handleRevealSession}
           onShowPasswordDialog={() => handleOpenSettings("security")}
           enableConnectionReorder={appSettings.enableConnectionReorder}
           onOpenBulkEditor={() => toolShowSetters.current.bulkEditor(true)}

@@ -34,14 +34,15 @@ const mock = vi.hoisted(() => ({
   update: vi.fn<(id: string, patch: unknown) => void>(),
   remove: vi.fn<(id: string) => void>(),
 }));
-vi.mock("../../src/contexts/ToastContext", () => {
+vi.mock("../../src/contexts/ToastContext", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/contexts/ToastContext")>();
   const toast = {
     info: vi.fn(),
     loading: mock.loading,
     update: mock.update,
     remove: mock.remove,
   };
-  return { useToastContext: () => ({ toast }) };
+  return { ...actual, useToastContext: () => ({ toast }) };
 });
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({

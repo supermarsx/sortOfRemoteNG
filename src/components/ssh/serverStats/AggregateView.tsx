@@ -168,6 +168,18 @@ const Row = React.memo(
                 ? e.hostname
                 : row.host || MISSING}
             </span>
+            {(row.aliases?.length ?? 0) > 1 && (
+              <span
+                className="block text-xs text-[var(--color-textSecondary)]"
+                title={row
+                  .aliases!.map((alias) => `${alias.name} (${alias.host})`)
+                  .join("\n")}
+              >
+                Same server ·{" "}
+                {new Set(row.aliases!.map((alias) => alias.connectionId)).size}{" "}
+                connections · {row.aliases!.length} sessions
+              </span>
+            )}
           </button>
         </th>
         <td
@@ -212,6 +224,7 @@ const Row = React.memo(
     a.row.status === b.row.status &&
     a.row.name === b.row.name &&
     a.row.host === b.row.host &&
+    JSON.stringify(a.row.aliases) === JSON.stringify(b.row.aliases) &&
     a.onOpen === b.onOpen &&
     a.labels === b.labels,
 );

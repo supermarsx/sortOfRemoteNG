@@ -78,6 +78,40 @@ function choose(label: string, option: string) {
   fireEvent.mouseDown(screen.getByRole("option", { name: option }));
 }
 
+it("lets CEF automatic login explicitly submit on reopened connections without losing browser overrides", () => {
+  render(
+    <Fixture
+      value={{
+        ...initial,
+        httpApplication: { version: 1, id: "generic-form", loginMode: "form" },
+        browserSession: {
+          version: 1,
+          manualFormSubmit: true,
+          defaultZoomPercent: 125,
+        },
+      }}
+    />,
+  );
+  const submit = screen.getByRole("checkbox", {
+    name: /Automatically submit sign-in/,
+  });
+  expect(submit).not.toBeChecked();
+  fireEvent.click(submit);
+  expect(JSON.parse(screen.getByTestId("value").textContent!)).toMatchObject({
+    browserSession: {
+      version: 1,
+      manualFormSubmit: false,
+      defaultZoomPercent: 125,
+    },
+    httpApplication: { loginMode: "form" },
+  });
+  fireEvent.click(submit);
+  expect(
+    JSON.parse(screen.getByTestId("value").textContent!).browserSession
+      .manualFormSubmit,
+  ).toBe(true);
+});
+
 it("keeps HTTP form login opt-in and warns with its exact configured port", () => {
   render(
     <Fixture

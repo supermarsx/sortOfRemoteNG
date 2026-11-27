@@ -197,6 +197,7 @@ export default function OriginCredentialControls({
   onOverlayChange,
   typingOptions,
   autoLoginRetry,
+  onOpenTypingSettings,
 }: {
   session: ConnectionSession;
   connection: Connection;
@@ -210,6 +211,7 @@ export default function OriginCredentialControls({
   >;
   /** Retry rows for automatic login; omitted where the tab cannot restart. */
   autoLoginRetry?: OriginAutoLoginRetryController;
+  onOpenTypingSettings?: () => void;
 }) {
   const { toast } = useToastContext();
   const vaultTotp = useRuntimeVaultTotp(session, connection);
@@ -265,7 +267,13 @@ export default function OriginCredentialControls({
           (typing.finished > active.finished
             ? "Typing completed."
             : "Typing stopped."),
-        action: undefined,
+        action:
+          typing.notice &&
+          onOpenTypingSettings &&
+          (typing.noticeCode === "typing-unavailable" ||
+            typing.noticeCode === "typing-origin-not-allowed")
+            ? { label: "Connection settings", onClick: onOpenTypingSettings }
+            : undefined,
         duration: 5000,
       });
     }
@@ -274,6 +282,8 @@ export default function OriginCredentialControls({
     typing.phase,
     typing.remaining,
     typing.notice,
+    typing.noticeCode,
+    onOpenTypingSettings,
     typing.finished,
     toast,
     cancelTyping,

@@ -173,6 +173,7 @@ export function useOriginCredentialTyping(
   >("idle");
   const [remaining, setRemaining] = useState(0);
   const [notice, setNotice] = useState("");
+  const [noticeCode, setNoticeCode] = useState<CredentialFailureCode | null>(null);
   const [finished, setFinished] = useState(0);
   const [mode, setMode] = useState<"simulated" | "instant">("simulated");
   const [delaySeconds, setDelaySeconds] = useState(0);
@@ -192,6 +193,7 @@ export function useOriginCredentialTyping(
   useLayoutEffect(() => {
     alive.current = true;
     setNotice("");
+    setNoticeCode(null);
     cancel();
     return () => {
       alive.current = false;
@@ -323,6 +325,7 @@ export function useOriginCredentialTyping(
         if (signal.aborted) abort();
       });
     setNotice("");
+    setNoticeCode(null);
     // Suspend immediately, including countdown and waiting, to release CEF input.
     setPhase(delaySeconds ? "countdown" : "waiting");
     setRemaining(delaySeconds || focusTimeoutMs / 1000);
@@ -457,6 +460,7 @@ export function useOriginCredentialTyping(
               const failure = typingFailure(error, job.typingStarted);
               if (alive.current && sequence.current === ticket)
                 setNotice(failure.message);
+                setNoticeCode(failure.code);
               return failure;
             };
             try {
@@ -554,6 +558,7 @@ export function useOriginCredentialTyping(
           Date.now() >= deadline,
         );
         setNotice(failure.message);
+        setNoticeCode(failure.code);
         if (failure.code === "typing-origin-not-allowed") {
           const origin = httpTypingOrigin(latest.current.documentUrl);
           if (origin) latest.current.onOriginNotAllowed?.(origin);
@@ -581,6 +586,7 @@ export function useOriginCredentialTyping(
     suspended: phase !== "idle",
     remaining,
     notice,
+    ...(noticeCode ? { noticeCode } : {}),
     finished,
     mode,
     setMode: (next: "simulated" | "instant") => {

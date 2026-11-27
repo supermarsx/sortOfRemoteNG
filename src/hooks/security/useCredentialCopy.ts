@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
+import { ToastContext } from "../../contexts/ToastContext";
 import { useConnections } from "../../contexts/useConnections";
 import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import type {
@@ -45,6 +46,7 @@ export function useCredentialCopy(
   connection?: Connection,
   typingTarget?: CredentialTypingTarget | null,
 ) {
+  const toast = useContext(ToastContext)?.toast;
   const {
     state,
     databaseAvailability,
@@ -341,12 +343,15 @@ export function useCredentialCopy(
           typingTarget!.dispose();
           return stopped;
         });
-      if (live())
+      if (live()) {
+        const message = `${isCode ? "Code" : field === "username" ? "Username" : "Password"} ${action === "copy" ? "copied" : typingTarget!.confirmation === "sent" ? "sent to the session" : "typed"}.`;
+        if (action === "copy") toast?.success(message, 2500);
         setStatus({
           epoch,
           busy: false,
-          message: `${isCode ? "Code" : field === "username" ? "Username" : "Password"} ${action === "copy" ? "copied" : typingTarget!.confirmation === "sent" ? "sent to the session" : "typed"}.`,
+          message: action === "copy" && toast ? "" : message,
         });
+      }
     } catch (error) {
       const failure =
         error instanceof CredentialFailure
@@ -359,7 +364,14 @@ export function useCredentialCopy(
                 ? new CredentialFailure("typing-target-lost")
                 : // An unknown stop after typing began may have left characters.
                   new CredentialFailure("typing-not-confirmed", true);
-      if (live()) setStatus({ epoch, busy: false, message: failure.message });
+      if (live()) {
+        if (action === "copy") toast?.error(failure.message, 6000);
+        setStatus({
+          epoch,
+          busy: false,
+          message: action === "copy" && toast ? "" : failure.message,
+        });
+      }
       throw failure;
     } finally {
       clearTimeout(deadline);

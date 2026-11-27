@@ -390,6 +390,16 @@ wrap_app! {
                 // Set before profile/renderer creation. Chromium propagates
                 // this browser-process preference to its renderer command line.
                 if process_type.is_none_or(|process| process.to_string().is_empty()) {
+                    if startup_features::windows_software_webgl() {
+                        // Select Chromium's supported software feature policy,
+                        // not a blocklist bypass or a global WebGL shutdown.
+                        command_line.append_switch_with_value(
+                            Some(&CefString::from("use-gl")), Some(&CefString::from("angle")),
+                        );
+                        command_line.append_switch_with_value(
+                            Some(&CefString::from("use-angle")), Some(&CefString::from("d3d11-warp-webgl")),
+                        );
+                    }
                     if let Some(path) = std::env::var_os("SORNG_CEF_NETLOG").filter(|path| std::path::Path::new(path).is_absolute()) {
                         if let Some(path) = path.to_str().filter(|path| !path.chars().any(char::is_control)) {
                             command_line.append_switch_with_value(Some(&CefString::from("log-net-log")), Some(&CefString::from(path)));
@@ -1206,6 +1216,12 @@ mod tests {
                     Some(&CefString::from(process)),
                     Some(&mut command),
                 );
+                let software_graphics = process.is_empty() && startup_features::windows_software_webgl();
+                assert_eq!(command.has_switch(Some(&CefString::from("use-angle"))), i32::from(software_graphics));
+                if software_graphics {
+                    assert_eq!(CefString::from(&command.switch_value(Some(&CefString::from("use-angle")))).to_string(), "d3d11-warp-webgl");
+                    assert_eq!(CefString::from(&command.switch_value(Some(&CefString::from("use-gl")))).to_string(), "angle");
+                }
                 assert_eq!(
                     command.has_switch(Some(&CefString::from("disable-default-apps"))),
                     1

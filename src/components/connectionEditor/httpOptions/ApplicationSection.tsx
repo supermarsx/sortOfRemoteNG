@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import AutoLoginSubmitControl from "./AutoLoginSubmitControl";
 import { Checkbox, Select, PasswordInput } from "../../ui/forms";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 import type {
@@ -637,6 +638,9 @@ export default function ApplicationSection({
                     disabled={settings?.invalid}
                     variant="form"
                   />
+                  {settings?.loginMode === "form" && (
+                    <AutoLoginSubmitControl mgr={mgr} />
+                  )}
                   {stepsEntryPage && (
                     <p
                       data-testid="login-steps-entry"

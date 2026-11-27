@@ -691,3 +691,26 @@ input[type="radio"][aria-disabled="true"] {
   font-size: 0.875rem;
   white-space: nowrap;
 }
+/* Use the editor's width: split panes can be narrow on a wide application. */
+@container connection-editor (min-width: 760px) {
+  .connection-editor-primary-tabs {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .connection-editor-protocol-layout {
+    grid-template-columns: 190px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .connection-editor-section-navigation {
+    position: sticky;
+    top: 1rem;
+  }
+
+  .connection-editor-section-tabs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .connection-editor-protocol-note {
+    grid-column: 1 / -1;
+  }
+}

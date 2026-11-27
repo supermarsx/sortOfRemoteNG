@@ -59,7 +59,7 @@ function formatHistoryDate(value: string): string {
 }
 
 function resolutionLabel(entry: RDPSessionHistoryEntry): string {
-  if (entry.desktopWidth <= 0 || entry.desktopHeight <= 0) return "Unknown";
+  if (!Number.isInteger(entry.desktopWidth) || !Number.isInteger(entry.desktopHeight) || entry.desktopWidth <= 0 || entry.desktopHeight <= 0) return "Unknown";
   return `${entry.desktopWidth} × ${entry.desktopHeight}`;
 }
 

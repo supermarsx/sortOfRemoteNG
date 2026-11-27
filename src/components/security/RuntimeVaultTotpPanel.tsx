@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
+import { ToastContext } from "../../contexts/ToastContext";
 import { Copy, KeyRound, X } from "lucide-react";
 import type {
   RuntimeVaultTotpController,
@@ -35,6 +36,7 @@ function Codes({
   typingRef,
   renderTypeCode,
 }: Omit<Props, "anchorRef">) {
+  const toast = useContext(ToastContext)?.toast;
   const connectionSource = controller.sourceKind === "connection";
   const title = credentialActions
     ? "Credentials & 2FA"
@@ -161,15 +163,20 @@ function Codes({
       if (epoch.current === ticket) {
         setNow(Date.now());
         setCode({ ...value, entryId: id });
+        toast?.success("One-time code copied.", 2500);
       }
     } catch (error) {
       // A known cause (clipboard, code window, vault) says so itself.
-      if (epoch.current === ticket)
-        setError(
+      if (epoch.current === ticket) {
+        const message =
           error instanceof CredentialFailure
             ? error.message
-            : "The code could not be copied safely. Check vault access and try again.",
-        );
+            : "The code could not be copied safely. Check vault access and try again.";
+        if (toast) {
+          setError("");
+          toast.error(message, 6000);
+        } else setError(message);
+      }
     } finally {
       pending.current = false;
       if (epoch.current === ticket) setBusy(false);

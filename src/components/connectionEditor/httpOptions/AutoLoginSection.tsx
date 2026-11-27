@@ -1,5 +1,6 @@
 import { Mgr } from "./types";
 import React from "react";
+import AutoLoginSubmitControl from "./AutoLoginSubmitControl";
 import { Checkbox } from "../../ui/forms";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 import type { HttpAutoLoginSelectors } from "../../../types/connection/connection";
@@ -65,6 +66,7 @@ const AutoLoginSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
       {enabled && (
         <div className="mt-3 space-y-3 pl-1">
+          <AutoLoginSubmitControl mgr={mgr} />
           <HttpCredentialWarning connection={mgr.formData} />
           <p className="text-xs font-medium text-[var(--color-textSecondary)]">
             Advanced: form field selectors (optional){" "}

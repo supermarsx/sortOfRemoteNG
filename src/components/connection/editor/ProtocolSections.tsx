@@ -40,6 +40,7 @@ interface ProtocolSectionsProps {
   activeSubtabId?: ProtocolSubtabId;
   onActiveSubtabChange?: (subtabId: ProtocolSubtabId) => void;
   category?: "protocol" | "authentication";
+  authenticationContent?: React.ReactNode;
 }
 
 const RecoverySections: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
@@ -278,15 +279,14 @@ const ProtocolSubtabContent: React.FC<{
   }
 
   if (protocol === "rdp") {
+    if (subtabId === "management")
+      return (
+        <WinRMOptions formData={mgr.formData} setFormData={mgr.setFormData} />
+      );
     if (subtabId === "connection") {
       return (
         <>
           <RDPOptions
-            formData={mgr.formData}
-            setFormData={mgr.setFormData}
-            sections={["connection"]}
-          />
-          <WinRMOptions
             formData={mgr.formData}
             setFormData={mgr.setFormData}
             sections={["connection"]}
@@ -303,11 +303,6 @@ const ProtocolSubtabContent: React.FC<{
             sshSecretManager={mgr.sshSecrets}
             sections={["authentication"]}
           />
-          <WinRMOptions
-            formData={mgr.formData}
-            setFormData={mgr.setFormData}
-            sections={["authentication"]}
-          />
         </>
       );
     }
@@ -316,7 +311,18 @@ const ProtocolSubtabContent: React.FC<{
         <RDPOptions
           formData={mgr.formData}
           setFormData={mgr.setFormData}
-          sections={["display", "audio", "input"]}
+          sections={["display"]}
+        />
+      );
+    }
+    if (subtabId === "audio-input" || subtabId === "performance") {
+      return (
+        <RDPOptions
+          formData={mgr.formData}
+          setFormData={mgr.setFormData}
+          sections={
+            subtabId === "audio-input" ? ["audio", "input"] : ["performance"]
+          }
         />
       );
     }
@@ -325,7 +331,7 @@ const ProtocolSubtabContent: React.FC<{
         <RDPOptions
           formData={mgr.formData}
           setFormData={mgr.setFormData}
-          sections={["devices", "performance"]}
+          sections={["devices"]}
         />
       );
     }
@@ -333,11 +339,6 @@ const ProtocolSubtabContent: React.FC<{
       return (
         <>
           <RDPOptions
-            formData={mgr.formData}
-            setFormData={mgr.setFormData}
-            sections={["security"]}
-          />
-          <WinRMOptions
             formData={mgr.formData}
             setFormData={mgr.setFormData}
             sections={["security"]}
@@ -353,11 +354,6 @@ const ProtocolSubtabContent: React.FC<{
             setFormData={mgr.setFormData}
             sections={["gateway", "tcp"]}
           />
-          <WinRMOptions
-            formData={mgr.formData}
-            setFormData={mgr.setFormData}
-            sections={["transport"]}
-          />
         </>
       );
     }
@@ -367,11 +363,6 @@ const ProtocolSubtabContent: React.FC<{
           formData={mgr.formData}
           setFormData={mgr.setFormData}
           sections={["hyperv", "negotiation", "advanced"]}
-        />
-        <WinRMOptions
-          formData={mgr.formData}
-          setFormData={mgr.setFormData}
-          sections={["advanced"]}
         />
       </>
     );
@@ -412,7 +403,13 @@ const ProtocolSubtabContent: React.FC<{
         setFormData={mgr.setFormData}
         sections={[
           subtabId as
-            "application" | "authentication" | "security" | "advanced",
+            | "application"
+            | "authentication"
+            | "security"
+            | "advanced"
+            | "browser"
+            | "privacy"
+            | "automation",
         ]}
       />
     );
@@ -447,6 +444,7 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
   activeSubtabId,
   onActiveSubtabChange,
   category,
+  authenticationContent,
 }) => {
   const protocolKey = mgr.formData.protocol ?? "";
   const subtabs = getProtocolSubtabs(mgr.formData).filter(
@@ -482,9 +480,9 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
     index: number,
   ) => {
     let nextIndex: number | undefined;
-    if (event.key === "ArrowRight") {
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
       nextIndex = (index + 1) % subtabs.length;
-    } else if (event.key === "ArrowLeft") {
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
       nextIndex = (index - 1 + subtabs.length) % subtabs.length;
     } else if (event.key === "Home") {
       nextIndex = 0;
@@ -503,12 +501,12 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
     <div
       data-editor-search-section="protocol-options"
       data-editor-search-field="protocol-options"
-      className="space-y-3"
+      className="connection-editor-protocol-layout grid min-w-0 gap-4"
     >
       {mgr.formData.credentialSource?.kind === "vault" && (
         <p
           role="note"
-          className="rounded border border-primary/30 p-3 text-xs text-[var(--color-textSecondary)]"
+          className="connection-editor-protocol-note rounded border border-primary/30 p-3 text-xs text-[var(--color-textSecondary)]"
         >
           This connection uses a database vault reference. Local username,
           password, key and TOTP values below are preserved but ignored. Change
@@ -516,7 +514,7 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
           provider-specific tokens are not vault password/key facets.
         </p>
       )}
-      <div className="-mx-1 overflow-x-auto px-1 pb-1">
+      <div className="connection-editor-section-navigation min-w-0">
         <div
           role="tablist"
           aria-label={
@@ -524,8 +522,8 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
               ? "Authentication settings sections"
               : "Protocol settings sections"
           }
-          aria-orientation="horizontal"
-          className="flex min-w-max items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/35 p-1"
+          aria-orientation="vertical"
+          className="connection-editor-section-tabs grid grid-cols-2 gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/35 p-1"
         >
           {subtabs.map((subtab, index) => {
             const Icon = subtab.icon;
@@ -546,13 +544,14 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
                 data-testid={`connection-editor-protocol-subtab-${subtab.id}`}
                 onClick={() => selectSubtab(subtab.id)}
                 onKeyDown={(event) => handleTabKeyDown(event, index)}
-                className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                title={subtab.description}
+                className={`flex min-h-10 items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                   isActive
                     ? "bg-primary/15 text-primary shadow-sm"
                     : "text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)]"
                 }`}
               >
-                <Icon size={13} aria-hidden="true" />
+                <Icon size={15} className="shrink-0" aria-hidden="true" />
                 {category === "authentication" && subtab.id === "authentication"
                   ? "Sign-in"
                   : subtab.label}
@@ -569,7 +568,7 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
         data-testid={`connection-editor-protocol-subtab-panel-${activeSubtab.id}`}
         data-protocol-subtab={activeSubtab.id}
         tabIndex={0}
-        className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/20 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        className="min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/20 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
         <header className="mb-4 flex items-start gap-2 border-b border-[var(--color-border)] pb-3">
           <ActiveIcon
@@ -590,6 +589,7 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
           </div>
         </header>
         <div className="space-y-3">
+          {activeSubtab.id === "authentication" && authenticationContent}
           <ProtocolSubtabContent mgr={mgr} subtabId={activeSubtab.id} />
         </div>
       </section>

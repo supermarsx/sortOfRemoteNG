@@ -425,6 +425,7 @@ const AvailableConnectionTree: React.FC<ConnectionTreeProps> = ({
           onConnect={onConnect}
           onDisconnect={onDisconnect}
               onSessionReconnect={onSessionReconnect}
+          onRevealSession={onActivateSession}
           onEdit={onEdit}
           onNewConnection={onNewConnection}
           onDocuments={(parentFolderId, create) =>

@@ -115,6 +115,30 @@ describe("AggregateView", () => {
     serverStatsHistory.record("s2", snap(10, "bravo-host"), Date.now());
     act(() => serverStatsHistory.flush());
   });
+  it("shows one observed server with its connection aliases instead of duplicate metric rows", () => {
+    const shared = {
+      ...snap(35, "same-server"),
+      serverIdentity: "observed-machine-boot-and-namespace",
+    };
+    serverStatsHistory.record("s1", shared, Date.now());
+    serverStatsHistory.record("s2", shared, Date.now());
+    act(() => serverStatsHistory.flush());
+    render(
+      <AggregateView
+        sessions={sessions}
+        connections={connections}
+        onOpenSession={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByTestId("aggregate-row")).toHaveLength(1);
+    expect(
+      screen.getByText(/Same server · 2 connections · 2 sessions/),
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("searchbox"), {
+      target: { value: "b.local" },
+    });
+    expect(screen.getAllByTestId("aggregate-row")).toHaveLength(1);
+  });
 
   it("renders a row per server with sparklines and a dash for missing stats", () => {
     render(

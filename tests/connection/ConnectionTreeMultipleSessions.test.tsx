@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
   connect: vi.fn(),
   disconnect: vi.fn(),
   reconnect: vi.fn(),
+  reveal: vi.fn(),
+  diagnostics: vi.fn(),
+  check: vi.fn(),
   sessions: [] as Array<{ id: string; connectionId: string; protocol: string }>,
   emit: vi.fn(),
 }));
@@ -41,7 +44,11 @@ const connection: Connection = {
   updatedAt: "2026-10-10T00:00:00Z",
 };
 
-function mount(overrides: Partial<Connection> = {}, active = true) {
+function mount(
+  overrides: Partial<Connection> = {},
+  active = true,
+  openSpecial = true,
+) {
   const row = { ...connection, ...overrides };
   const noop = vi.fn();
   render(
@@ -57,6 +64,9 @@ function mount(overrides: Partial<Connection> = {}, active = true) {
       onConnect={mocks.connect}
       onDisconnect={mocks.disconnect}
       onSessionReconnect={mocks.reconnect}
+      onRevealSession={mocks.reveal}
+      onDiagnostics={mocks.diagnostics}
+      onCheckConnection={mocks.check}
       onEdit={noop}
       onDelete={noop}
       onCopyHostname={noop}
@@ -68,6 +78,10 @@ function mount(overrides: Partial<Connection> = {}, active = true) {
       onDuplicate={noop}
     />,
   );
+  if (openSpecial)
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Connect / reconnect" }),
+    );
   return row;
 }
 
@@ -79,6 +93,52 @@ beforeEach(() => {
 });
 
 describe("connection tree repeated sessions", () => {
+  it("keeps diagnostic actions inside an accessible submenu", () => {
+    const row = mount({}, true, false);
+    expect(screen.queryByRole("menuitem", { name: "Connection diagnostics" })).toBeNull();
+    const trigger = screen.getByRole("menuitem", { name: "Diagnostics" });
+    fireEvent.mouseEnter(trigger.parentElement!);
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Connection diagnostics" }));
+    expect(mocks.diagnostics).toHaveBeenCalledExactlyOnceWith(row);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Check connection" }));
+    expect(mocks.check).toHaveBeenCalledExactlyOnceWith(row);
+  });
+  it("reveals the selected existing tab without connecting another session", () => {
+    mocks.sessions = [{ id: "one", connectionId: connection.id, protocol: "https" }, { id: "two", connectionId: connection.id, protocol: "https" }];
+    mount({}, true, false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Reveal tab" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /HTTPS 2/ }));
+    expect(mocks.reveal).toHaveBeenCalledExactlyOnceWith("two");
+    expect(mocks.connect).not.toHaveBeenCalled();
+    expect(mocks.reconnect).not.toHaveBeenCalled();
+  });
+  it("keeps Disconnect on the main menu and opens special actions through a submenu", () => {
+    mount({}, true, false);
+    expect(
+      screen.getByRole("button", { name: "Disconnect" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reconnect this tab" }),
+    ).toBeNull();
+    const trigger = screen.getByRole("menuitem", {
+      name: "Connect / reconnect",
+    });
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("button", { name: "Reconnect this tab" }),
+    ).toBeInTheDocument();
+    fireEvent.keyDown(
+      screen.getByRole("menu", { name: "Connect / reconnect" }),
+      { key: "Escape" },
+    );
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("button", { name: "Reconnect this tab" }),
+    ).toBeNull();
+  });
   it("reconnects this tab using the existing session action", () => {
     mount();
     fireEvent.click(screen.getByRole("button", { name: "Reconnect this tab" }));

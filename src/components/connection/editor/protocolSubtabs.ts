@@ -26,6 +26,43 @@ export interface ProtocolSubtabDescriptor {
 }
 
 const SUBTABS: Record<ProtocolSubtabId, ProtocolSubtabDescriptor> = {
+  "audio-input": {
+    id: "audio-input",
+    label: "Keyboard & audio",
+    description: "Keyboard layout, pointer behavior, sound and microphone.",
+    icon: MonitorUp,
+  },
+  performance: {
+    id: "performance",
+    label: "Performance",
+    description: "Visual effects, graphics quality and bandwidth tuning.",
+    icon: Gauge,
+  },
+  browser: {
+    id: "browser",
+    label: "Appearance & loading",
+    description: "Zoom, browser toolbar and page loading timeouts.",
+    icon: MonitorUp,
+  },
+  privacy: {
+    id: "privacy",
+    label: "Cookies & cache",
+    description: "Saved sign-in, session retention and cached website data.",
+    icon: ShieldCheck,
+  },
+  automation: {
+    id: "automation",
+    label: "Form automation",
+    description: "Advanced login form fields and autofill timing.",
+    icon: Settings2,
+  },
+  management: {
+    id: "management",
+    label: "Windows management",
+    description:
+      "Optional WinRM transport and credentials for management tools.",
+    icon: Network,
+  },
   favorites: {
     id: "favorites",
     label: "Favorites",
@@ -161,13 +198,35 @@ export function getProtocolSubtabs(
       "connection",
       "authentication",
       "display-input",
+      "audio-input",
       "resources",
+      "performance",
       "security",
       "network-path",
       "network",
       "advanced",
+      ...((formData.osType ?? "windows") === "windows"
+        ? ["management" as const]
+        : []),
       "recovery",
-    ]);
+    ]).map((tab) =>
+      tab.id === "display-input"
+        ? {
+            ...tab,
+            label: "Display",
+            description: "Resolution, scaling and remote desktop sizing.",
+          }
+        : tab.id === "resources"
+          ? {
+              ...tab,
+              label: "Devices & sharing",
+              description:
+                "Clipboard, drives, printers and redirected devices.",
+            }
+          : tab.id === "network"
+            ? { ...tab, label: "Gateway & transport" }
+            : tab,
+    );
   }
 
   if (protocol === "ssh") {
@@ -302,14 +361,33 @@ export function getProtocolSubtabs(
         [
           "application",
           "authentication",
+          "browser",
+          "privacy",
           "security",
           "network-path",
           "favorites",
           "advanced",
+          "automation",
           "recovery",
         ],
         formData,
       ),
+    ).map((tab) =>
+      tab.id === "advanced"
+        ? {
+            ...tab,
+            label: "Website permissions",
+            description:
+              "Website content, scripts, redirects and allowed destinations.",
+          }
+        : tab.id === "security"
+          ? {
+              ...tab,
+              label: "TLS & certificates",
+              description:
+                "Certificate trust, HTTPS inspection and legacy device compatibility.",
+            }
+          : tab,
     );
   }
 

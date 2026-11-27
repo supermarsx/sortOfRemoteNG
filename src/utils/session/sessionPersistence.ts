@@ -27,6 +27,7 @@ const SESSION_STATUSES = new Set<ConnectionSession["status"]>([
 export interface PersistedConnectionSession {
   id: string;
   connectionId: string;
+  ownerDatabaseId?: string;
   name: string;
   protocol: string;
   hostname: string;
@@ -196,6 +197,13 @@ export const parsePersistedConnectionSession = (
     return { valid: false, reason: "Saved session is not an object." };
   }
   const raw = value as Record<string, unknown>;
+  if (
+    raw.ownerDatabaseId !== undefined &&
+    (!nonEmptyString(raw.ownerDatabaseId) ||
+      raw.ownerDatabaseId.length > MAX_SESSION_ID_CHARS)
+  ) {
+    return { valid: false, reason: "Saved session database owner is invalid." };
+  }
   if (
     !nonEmptyString(raw.id) ||
     raw.id.length > MAX_SESSION_ID_CHARS ||
@@ -446,6 +454,9 @@ export const parsePersistedConnectionSession = (
     session: {
       id: raw.id,
       connectionId: raw.connectionId,
+      ...(typeof raw.ownerDatabaseId === "string"
+        ? { ownerDatabaseId: raw.ownerDatabaseId }
+        : {}),
       name: raw.name,
       protocol: raw.protocol,
       hostname: raw.hostname as string,
@@ -501,6 +512,9 @@ export const serializePersistedConnectionSession = (
   const parsed = parsePersistedConnectionSession({
     id: session.id,
     connectionId: session.connectionId,
+    ...(session.ownerDatabaseId
+      ? { ownerDatabaseId: session.ownerDatabaseId }
+      : {}),
     name: session.name,
     protocol: session.protocol,
     hostname: session.hostname,

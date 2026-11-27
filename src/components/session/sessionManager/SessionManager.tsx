@@ -24,6 +24,7 @@ import {
   Database,
   Wrench,
   Search,
+  Route,
   ChevronLeft,
   ChevronRight,
   NotebookText,
@@ -49,6 +50,7 @@ import {
   UnifiedSessionRow,
 } from "../../../hooks/session/useUnifiedSessionManager";
 import { RdpHistoryView } from "./RdpHistoryView";
+import { rdpResolutionLabel } from "../../../utils/rdp/rdpSessionInfo";
 import { SshSessionsView } from "./SshSessionsView";
 import { OrphanedLiveSessions } from "./OrphanedLiveSessions";
 import { useOrphanedLiveSessions } from "../../../hooks/session/useOrphanedLiveSessions";
@@ -295,10 +297,9 @@ function sessionDetails(row: UnifiedSessionRow): string {
   const withError = (details: string) =>
     row.errorMessage ? `${details} · Error: ${row.errorMessage}` : details;
 
-  if (row.source === "rdp" && row.rdpStats) {
-    const resolution = row.rdpSession
-      ? `${row.rdpSession.desktop_width}×${row.rdpSession.desktop_height}`
-      : "Unknown resolution";
+  if (row.source === "rdp") {
+    const resolution = rdpResolutionLabel(row.rdpSession);
+    if (!row.rdpStats) return withError(resolution);
     return withError(
       `${resolution} · ${formatUptime(row.rdpStats.uptime_secs)} uptime · ${row.rdpStats.phase} · ${row.rdpStats.fps.toFixed(0)} fps · ↓ ${formatBytes(row.rdpStats.bytes_received)} · ↑ ${formatBytes(row.rdpStats.bytes_sent)}`,
     );
@@ -1070,6 +1071,7 @@ const SessionsView: React.FC<{
                             title={row.title}
                           >
                             {row.title}
+                            {row.rdpSession?.tunneled && <span className="inline-flex ml-1.5 align-middle text-[var(--color-textSecondary)]" title="Tunneled connection" aria-label="Tunneled connection"><Route size={13} aria-hidden="true" /></span>}
                           </div>
                           <div
                             className="truncate font-mono text-[10px] text-[var(--color-textMuted)]"

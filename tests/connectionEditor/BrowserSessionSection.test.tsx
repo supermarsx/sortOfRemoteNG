@@ -20,7 +20,10 @@ beforeEach(() => {
   shared.settingsReady = true;
 });
 
-function setup(initial: Partial<Connection> = {}) {
+function setup(
+  initial: Partial<Connection> = {},
+  view?: "browser" | "privacy" | "security" | "automation",
+) {
   const change = vi.fn();
   function Harness() {
     const [formData, setFormData] = useState<Partial<Connection>>({
@@ -34,7 +37,10 @@ function setup(initial: Partial<Connection> = {}) {
         return next;
       });
     return (
-      <BrowserSessionSection mgr={{ formData, setFormData: update } as Mgr} />
+      <BrowserSessionSection
+        mgr={{ formData, setFormData: update } as Mgr}
+        view={view}
+      />
     );
   }
   return { ...render(<Harness />), change };
@@ -45,6 +51,55 @@ function choose(label: string, option: string | RegExp) {
 }
 
 describe("browser connection overrides", () => {
+  it.each([
+    ["browser", "Website zoom (%)"],
+    ["privacy", "Restore saved cookies"],
+    ["security", "Device SSL/TLS compatibility"],
+    ["automation", "Require manual form submission"],
+  ] as const)("shows only the controls owned by the %s page", (view, label) => {
+    setup({}, view);
+    const role = view === "browser" ? "spinbutton" : "combobox";
+    expect(screen.getByRole(role, { name: label })).toBeInTheDocument();
+    if (view !== "privacy")
+      expect(
+        screen.queryByRole("combobox", { name: "Restore saved cookies" }),
+      ).not.toBeInTheDocument();
+    if (view !== "security")
+      expect(
+        screen.queryByRole("combobox", {
+          name: "Device SSL/TLS compatibility",
+        }),
+      ).not.toBeInTheDocument();
+    if (view !== "automation")
+      expect(
+        screen.queryByRole("combobox", {
+          name: "Require manual form submission",
+        }),
+      ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reset browser session overrides" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("preserves unrelated overrides when editing cookies on the privacy page", () => {
+    const { change } = setup(
+      {
+        browserSession: {
+          version: 1,
+          defaultZoomPercent: 125,
+          upstreamTlsProfile: "tls10",
+        },
+      },
+      "privacy",
+    );
+    choose("Restore saved cookies", "Off");
+    expect(change.mock.lastCall?.[0].browserSession).toEqual({
+      version: 1,
+      defaultZoomPercent: 125,
+      upstreamTlsProfile: "tls10",
+      restoreCookies: false,
+    });
+  });
   it.each([undefined, true, false])(
     "inherits cookie restoration default %s and supports on, off and returning to inheritance",
     (restoreCookies) => {

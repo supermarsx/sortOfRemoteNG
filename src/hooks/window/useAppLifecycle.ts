@@ -109,6 +109,12 @@ export const useAppLifecycle = ({
 }: Options) => {
   const { t, i18n } = useTranslation();
   const { state, loadData } = useConnections();
+  // Session updates recreate the manager callbacks. They must not cancel a
+  // restore batch that is itself adding and connecting those sessions.
+  const restoreSessionRef = useRef(restoreSession);
+  restoreSessionRef.current = restoreSession;
+  const handleConnectRef = useRef(handleConnect);
+  handleConnectRef.current = handleConnect;
   // Re-runs the restore effect when the user explicitly allows a restore.
   const { restoreAllowed: safeModeRestoreAllowed } = useSafeMode();
 
@@ -451,16 +457,16 @@ export const useAppLifecycle = ({
     const settings = settingsManager.getSettings();
     sessionStorage.removeItem(INVALID_ACTIVE_SESSIONS_KEY);
     if (
-      settings.reconnectOnReload &&
+      (settings.reconnectOnReload || settings.reconnectPreviousSessions) &&
       !safeModeRef.current &&
       !isWorkspaceRestoreBlocked() &&
       isInitialized &&
       state.connections.length > 0
     ) {
       let savedSessions = sessionStorage.getItem(ACTIVE_SESSIONS_KEY);
-      // sessionStorage dies with the window. When it is empty, a fresh durable
-      // workspace snapshot may still describe backend sessions that outlived a
-      // webview recreation; those (and only those) are adopted.
+      // A full restart loses sessionStorage. Explicit startup reconnect uses
+      // the durable open-tab set, including web tabs and ended transports.
+      // Without that opt-in, only fresh surviving backends may be adopted.
       let fromDurableSnapshot = false;
       if (
         !savedSessions &&
@@ -470,8 +476,9 @@ export const useAppLifecycle = ({
         const durable = loadWorkspaceSnapshot();
         if (
           durable &&
-          isSnapshotFresh(durable, Date.now()) &&
-          durable.tabs.some((tab) => tab.backendSessionId)
+          (settings.reconnectPreviousSessions ||
+            (isSnapshotFresh(durable, Date.now()) &&
+              durable.tabs.some((tab) => tab.backendSessionId)))
         ) {
           savedSessions = JSON.stringify(snapshotToRows(durable));
           fromDurableSnapshot = true;
@@ -515,8 +522,8 @@ export const useAppLifecycle = ({
               if (cancelled || !mountedRef.current) {
                 throw new Error("Session restoration was cancelled.");
               }
-              if (restoreSession) {
-                await restoreSession(sessionData, connection, {
+              if (restoreSessionRef.current) {
+                await restoreSessionRef.current(sessionData, connection, {
                   adoptLive: adoptedTabIds.has(sessionData.id),
                 });
                 return;
@@ -528,7 +535,7 @@ export const useAppLifecycle = ({
               }
               // Await an async implementation even though the compatibility
               // surface permits a synchronous handleConnect callback.
-              await Promise.resolve(handleConnect(connection));
+              await Promise.resolve(handleConnectRef.current(connection));
             })()
               .then(resolve, reject)
               .finally(() => {
@@ -556,6 +563,7 @@ export const useAppLifecycle = ({
 
           const invalidSessionReasons: string[] = [];
           const retryRows: PersistedConnectionSession[] = [];
+          let waitingForDatabase = false;
           const candidates: Array<{
             sessionData: PersistedConnectionSession;
             /** Row exactly as persisted; retries keep its ownership metadata. */
@@ -581,7 +589,8 @@ export const useAppLifecycle = ({
               (settings as { adoptLiveSessionsOnReload?: boolean })
                 .adoptLiveSessionsOnReload !== false,
             isQuarantined: hasSessionVpnCleanupQuarantine,
-            adoptOnly: fromDurableSnapshot,
+            adoptOnly:
+              fromDurableSnapshot && !settings.reconnectPreviousSessions,
           });
           bootPlan.adoptedTabIds.forEach((id) => adoptedTabIds.add(id));
           const plannedRows = new Map(
@@ -608,7 +617,7 @@ export const useAppLifecycle = ({
 
             const plannedRow = plannedRows.get(parsed.session.id);
             if (!plannedRow && fromDurableSnapshot) {
-              // Durable recovery restores only adoptable live sessions.
+              // Recovery without startup reconnect only adopts live sessions.
               return;
             }
             const sessionData = plannedRow ?? parsed.session;
@@ -617,8 +626,15 @@ export const useAppLifecycle = ({
             );
             if (
               !connection ||
-              reconnectingSessions.current.has(sessionData.id)
+              (sessionData.ownerDatabaseId &&
+                sessionData.ownerDatabaseId !==
+                  databaseManager.getCurrentDatabase()?.id)
             ) {
+              waitingForDatabase = true;
+              retryRows.push(parsed.session);
+              return;
+            }
+            if (reconnectingSessions.current.has(sessionData.id)) {
               retryRows.push(parsed.session);
               return;
             }
@@ -654,7 +670,7 @@ export const useAppLifecycle = ({
           // Re-activate the tab that was active before the reload. Restoring
           // an already-restored session id only focuses it.
           if (
-            restoreSession &&
+            restoreSessionRef.current &&
             wantedActiveTabId &&
             bootPlan.activeTabId === wantedActiveTabId
           ) {
@@ -666,9 +682,9 @@ export const useAppLifecycle = ({
               outcomes[activeIndex]?.status === "fulfilled"
             ) {
               const { sessionData, connection } = candidates[activeIndex];
-              await restoreSession(sessionData, connection).catch(
-                () => undefined,
-              );
+              await restoreSessionRef
+                .current(sessionData, connection)
+                .catch(() => undefined);
             }
           }
 
@@ -713,7 +729,9 @@ export const useAppLifecycle = ({
           } else {
             sessionStorage.removeItem(INVALID_ACTIVE_SESSIONS_KEY);
           }
-          hasReconnected.current = true;
+          // A later database open/unlock reloads the connection rows and may
+          // resume deferred tabs. Do not redial already completed candidates.
+          hasReconnected.current = !waitingForDatabase;
         } catch (error) {
           if (!cancelled && mountedRef.current) {
             console.error("Failed to restore saved sessions safely.");
@@ -743,9 +761,8 @@ export const useAppLifecycle = ({
   }, [
     isInitialized,
     state.connections,
-    handleConnect,
-    restoreSession,
     settingsManager,
+    databaseManager,
     safeModeRestoreAllowed,
   ]);
 
@@ -761,7 +778,7 @@ export const useAppLifecycle = ({
     // just bloat sessionStorage with garbage that the next launch
     // would discard anyway.
     const restorable = state.sessions.filter(isRestorableConnectionSession);
-    if (!settings.reconnectOnReload) {
+    if (!settings.reconnectOnReload && !settings.reconnectPreviousSessions) {
       failedRecoveryRowsRef.current = [];
       sessionStorage.removeItem(ACTIVE_SESSIONS_KEY);
       sessionStorage.removeItem(INVALID_ACTIVE_SESSIONS_KEY);

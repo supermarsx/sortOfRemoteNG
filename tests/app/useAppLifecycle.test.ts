@@ -6,6 +6,7 @@ import { SettingsManager } from "../../src/utils/settings/settingsManager";
 import { ThemeManager } from "../../src/utils/settings/themeManager";
 import { DatabaseManager } from "../../src/utils/connection/databaseManager";
 import i18n, { loadLanguage } from "../../src/i18n";
+import { WORKSPACE_SNAPSHOT_STORAGE_KEY } from "../../src/services/session/workspaceSnapshot";
 import {
   __resetSafeModeForTests,
   __setSafeModeForTests,
@@ -74,6 +75,7 @@ describe("useAppLifecycle", () => {
     lifecycleMocks.loadData.mockResolvedValue(true);
     lifecycleMocks.state = { sessions: [], connections: [] };
     sessionStorage.clear();
+    localStorage.removeItem(WORKSPACE_SNAPSHOT_STORAGE_KEY);
 
     // Setup mock instances
     mockSettingsManager = {
@@ -117,6 +119,209 @@ describe("useAppLifecycle", () => {
     vi.restoreAllMocks();
     document.documentElement.removeAttribute("dir");
     sessionStorage.clear();
+    localStorage.removeItem(WORKSPACE_SNAPSHOT_STORAGE_KEY);
+  });
+
+  it("reconnects every durable tab after a full restart, including web tabs and duplicate connections", async () => {
+    mockSettingsManager.getSettings.mockReturnValue({
+      language: "en",
+      theme: "dark",
+      colorScheme: "blue",
+      reconnectOnReload: false,
+      reconnectPreviousSessions: true,
+    });
+    lifecycleMocks.state.connections = [
+      { id: "ssh", name: "SSH", protocol: "ssh", hostname: "ssh.example" },
+      { id: "web", name: "RMM", protocol: "https", hostname: "rmm.example" },
+    ];
+    localStorage.setItem(
+      WORKSPACE_SNAPSHOT_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        savedAt: Date.now() - 7 * 24 * 60 * 60 * 1000,
+        tabs: [
+          {
+            tabId: "ssh-1",
+            connectionId: "ssh",
+            protocol: "ssh",
+            order: 0,
+            backendSessionId: "expired",
+          },
+          { tabId: "web-1", connectionId: "web", protocol: "https", order: 1 },
+          { tabId: "ssh-2", connectionId: "ssh", protocol: "ssh", order: 2 },
+        ],
+        activeTabId: "web-1",
+      }),
+    );
+    const restoreSession = vi.fn().mockResolvedValue(undefined);
+    const handleConnect = vi.fn();
+    const mounted = renderHook(() =>
+      useAppLifecycle({
+        handleConnect,
+        restoreSession,
+        setShowDatabasePanel: vi.fn(),
+      }),
+    );
+    await waitFor(() => expect(restoreSession).toHaveBeenCalledTimes(4), {
+      timeout: 3000,
+    });
+    expect(
+      restoreSession.mock.calls.slice(0, 3).map(([row]) => row.id),
+    ).toEqual(["ssh-1", "web-1", "ssh-2"]);
+    expect(restoreSession.mock.calls[0][0].backendSessionId).toBeUndefined();
+    expect(restoreSession.mock.calls[1][2]).toEqual({ adoptLive: false });
+    expect(restoreSession.mock.calls[3][0].id).toBe("web-1");
+    expect(handleConnect).not.toHaveBeenCalled();
+    mounted.unmount();
+  });
+
+  it("does not redial durable web tabs when startup reconnect is disabled", async () => {
+    mockSettingsManager.getSettings.mockReturnValue({
+      language: "en",
+      theme: "dark",
+      colorScheme: "blue",
+      reconnectOnReload: true,
+      reconnectPreviousSessions: false,
+    });
+    lifecycleMocks.state.connections = [
+      { id: "web", name: "RMM", protocol: "https", hostname: "rmm.example" },
+    ];
+    localStorage.setItem(
+      WORKSPACE_SNAPSHOT_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        savedAt: Date.now(),
+        tabs: [
+          { tabId: "web-1", connectionId: "web", protocol: "https", order: 0 },
+        ],
+      }),
+    );
+    const restoreSession = vi.fn();
+    const mounted = renderHook(() =>
+      useAppLifecycle({
+        handleConnect: vi.fn(),
+        restoreSession,
+        setShowDatabasePanel: vi.fn(),
+      }),
+    );
+    await waitFor(() =>
+      expect(mounted.result.current.isInitialized).toBe(true),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+    });
+    expect(restoreSession).not.toHaveBeenCalled();
+    mounted.unmount();
+  });
+
+  it("does not cancel recovery when the session manager recreates its callbacks", async () => {
+    mockSettingsManager.getSettings.mockReturnValue({
+      language: "en",
+      theme: "dark",
+      colorScheme: "blue",
+      reconnectOnReload: true,
+    });
+    lifecycleMocks.state.connections = [
+      { id: "web", name: "RMM", protocol: "https", hostname: "rmm.example" },
+    ];
+    sessionStorage.setItem(
+      "mremote-active-sessions",
+      JSON.stringify([
+        {
+          id: "web-1",
+          connectionId: "web",
+          name: "RMM",
+          protocol: "https",
+          hostname: "rmm.example",
+          status: "connected",
+        },
+      ]),
+    );
+    let complete!: () => void;
+    const restore = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          complete = resolve;
+        }),
+    );
+    const mounted = renderHook(() =>
+      useAppLifecycle({
+        handleConnect: () => {},
+        restoreSession: () => restore(),
+        setShowDatabasePanel: vi.fn(),
+      }),
+    );
+    await waitFor(() => expect(restore).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    });
+    mounted.rerender();
+    await act(async () => complete());
+    await waitFor(() =>
+      expect(sessionStorage.getItem("mremote-active-sessions")).toBeNull(),
+    );
+    expect(restore).toHaveBeenCalledTimes(1);
+    mounted.unmount();
+  });
+
+  it("waits for the owning database instead of connecting a same-ID row from another database", async () => {
+    mockSettingsManager.getSettings.mockReturnValue({
+      language: "en",
+      theme: "dark",
+      colorScheme: "blue",
+      reconnectOnReload: true,
+      reconnectPreviousSessions: true,
+    });
+    let current = { id: "other-database", isEncrypted: false };
+    vi.spyOn(
+      DatabaseManager.getInstance(),
+      "getCurrentDatabase",
+    ).mockImplementation(() => current as any);
+    lifecycleMocks.state.connections = [
+      { id: "web", name: "RMM", protocol: "https", hostname: "rmm.example" },
+    ];
+    sessionStorage.setItem(
+      "mremote-active-sessions",
+      JSON.stringify([
+        {
+          id: "web-1",
+          connectionId: "web",
+          ownerDatabaseId: "saved-database",
+          name: "RMM",
+          protocol: "https",
+          hostname: "rmm.example",
+          status: "connected",
+        },
+      ]),
+    );
+    const restoreSession = vi.fn().mockResolvedValue(undefined);
+    const mounted = renderHook(() =>
+      useAppLifecycle({
+        handleConnect: vi.fn(),
+        restoreSession,
+        setShowDatabasePanel: vi.fn(),
+      }),
+    );
+    await waitFor(() =>
+      expect(mounted.result.current.isInitialized).toBe(true),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(restoreSession).not.toHaveBeenCalled();
+    expect(
+      JSON.parse(sessionStorage.getItem("mremote-active-sessions")!)[0]
+        .ownerDatabaseId,
+    ).toBe("saved-database");
+    current = { id: "saved-database", isEncrypted: false };
+    lifecycleMocks.state.connections = [...lifecycleMocks.state.connections];
+    mounted.rerender();
+    await waitFor(() => expect(restoreSession).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    });
+    expect(restoreSession.mock.calls[0][0].ownerDatabaseId).toBe(
+      "saved-database",
+    );
+    mounted.unmount();
   });
 
   it("should initialize app successfully", async () => {

@@ -35,6 +35,28 @@ fi
 
   // ── Header marker ────────────────────────────────────────────────
   sections.push('echo "===SORNG_STATS_BEGIN==="');
+  // Identity is collected even when System details are disabled. A hostname
+  // or an SSH endpoint cannot distinguish aliases, NAT, clones or containers.
+  sections.push(`
+echo "===IDENTITY_BEGIN==="
+(
+  case "$(uname -s 2>/dev/null)" in
+    Linux)
+      echo "kind:linux"
+      machine=$(cat /etc/machine-id 2>/dev/null || cat /var/lib/dbus/machine-id 2>/dev/null)
+      printf 'machine:%s\\n' "$machine"
+      printf 'boot:%s\\n' "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"
+      printf 'namespace:%s,%s\\n' "$(readlink /proc/self/ns/uts 2>/dev/null)" "$(readlink /proc/self/ns/pid 2>/dev/null)"
+      ;;
+    Darwin|FreeBSD)
+      echo "kind:bsd"
+      printf 'machine:%s\\n' "$(sysctl -n kern.hostuuid 2>/dev/null)"
+      printf 'boot:%s\\n' "$(sysctl -n kern.boottime 2>/dev/null | sed -n 's/.*sec = \\([0-9]*\\),.*/\\1/p')"
+      ;;
+  esac
+) 2>/dev/null
+echo "===IDENTITY_END==="
+`);
 
   // ── CPU ──────────────────────────────────────────────────────────
   if (options.cpu) {
