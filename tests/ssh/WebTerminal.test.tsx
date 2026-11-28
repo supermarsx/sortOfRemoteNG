@@ -459,7 +459,7 @@ describe("WebTerminal", () => {
       expect(button).toBeDisabled();
       expect(button.parentElement).toHaveAttribute(
         "data-tooltip",
-        expect.stringContaining("Connection-local codes are ignored"),
+        "Unlock the owning database",
       );
       fireEvent.click(button);
       expect(

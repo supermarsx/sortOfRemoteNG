@@ -214,7 +214,7 @@ describe("code-only owner-scoped website TOTP", () => {
   );
   it("gives enrollment guidance without generating an unregistered secret or fake recovery codes", () => {
     mount([]);
-    expect(screen.getByText(/already-enrolled secret/)).toBeInTheDocument();
+    expect(screen.getByText(/Add one in this connection/)).toBeInTheDocument();
     expect(boundary.compute).not.toHaveBeenCalled();
   });
   it("clears immediately on suspension and refuses a delayed computation after unlock", async () => {

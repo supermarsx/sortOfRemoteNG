@@ -25,7 +25,7 @@ function TotpPopover({ mgr }: { mgr: WebTerminalMgr }) {
     <div
       className="relative"
       ref={mgr.totpBtnRef}
-      data-tooltip="Credentials & 2FA"
+      data-tooltip={vaultSelected && !mgr.vaultTotp.available ? "Unlock the owning database" : "Credentials & 2FA"}
     >
       <button
         type="button"
