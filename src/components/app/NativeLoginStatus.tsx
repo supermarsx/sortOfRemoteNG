@@ -136,14 +136,21 @@ export function NativeLoginStatus({
       <button
         type="button"
         onClick={() => setDetails(true)}
-        className="flex items-center gap-2 text-[var(--color-textSecondary)]"
+        className="flex min-w-0 max-w-[60%] items-center gap-2 text-[var(--color-textSecondary)]"
         aria-label={`${label}: ${stage}`}
       >
-        <span role="status" aria-live="polite" aria-atomic="true">
+        <span
+          className="truncate"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
           {label}: {stage}
         </span>
         {running && (
-          <span aria-hidden="true">{Math.floor(elapsedMs / 1000)}s</span>
+          <span className="shrink-0" aria-hidden="true">
+            {Math.floor(elapsedMs / 1000)}s
+          </span>
         )}
         {busy > 1 && (
           <span

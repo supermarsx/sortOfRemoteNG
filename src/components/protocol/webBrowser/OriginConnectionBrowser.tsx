@@ -97,6 +97,7 @@ import NativeBrowserExtensionControls from "./NativeBrowserExtensionControls";
 import progressStyles from "./NavigationProgress.module.css";
 import OriginMfaOriginRepair from "./OriginMfaOriginRepair";
 import { useNativeLoginActivity } from "../../../hooks/protocol/useNativeLoginActivity";
+import { NativeLoginStatus } from "../../app/NativeLoginStatus";
 import { useOriginAutoLoginRetry } from "../../../hooks/protocol/useOriginAutoLoginRetry";
 import { autoLoginRetryMessage } from "../../../utils/protocol/autoLoginRetryMessages";
 import { useTranslation } from "react-i18next";
@@ -2217,7 +2218,7 @@ export default function OriginConnectionBrowser({
       />
       <div
         className="flex shrink-0 min-w-0 items-center gap-1.5 border-t border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-textSecondary)]"
-        role="status"
+        role="group"
         aria-label="Browser status"
       >
         <span className="min-w-0 flex-1 truncate">
@@ -2235,6 +2236,14 @@ export default function OriginConnectionBrowser({
                 ? ` · ${viewportState.phase}`
                 : ""}
         </span>
+        {ownerAvailable && connection && (
+          <NativeLoginStatus
+            key={`${session.id}:${connection.id}:${session.ownerDatabaseId ?? ""}`}
+            connections={[connection]}
+            sessions={[session]}
+            activeSessionId={session.id}
+          />
+        )}
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import {
   renderHook,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -259,6 +260,42 @@ async function attached(tab = session()) {
 }
 
 describe("native Quick Connect shell", () => {
+  it("keeps login progress and details in this browser's status bar", async () => {
+    registerQuickConnectConnection(connection());
+    const tab = session();
+    await attached(tab);
+    const listeners = f.listen.mock.calls
+      .filter(([name]) => name === "origin-browser-login-activity")
+      .map(([, listener]) => listener);
+    const report = (sessionId: string, stage: string, timestampMs: number) =>
+      act(() => {
+        for (const listener of listeners)
+          listener({
+            payload: {
+              connectionId: tab.connectionId,
+              sessionId,
+              attemptId: "login-attempt",
+              stage,
+              timestampMs,
+              elapsedMs: 2500,
+            },
+          });
+      });
+    report(tab.id, "filling-password", 100);
+    const status = within(screen.getByRole("group", { name: "Browser status" }));
+    const progress = status.getByRole("button", {
+      name: "Automatic login: Typing password",
+    });
+    expect(progress).toBeVisible();
+    report("another-tab", "waiting-2fa", 200);
+    expect(progress).toHaveTextContent("Typing password");
+    expect(status.queryByText(/Waiting for two-factor/)).toBeNull();
+    fireEvent.click(progress);
+    expect(
+      screen.getByRole("dialog", { name: "Automatic login details" }),
+    ).toHaveTextContent("Typing password");
+  });
+
   it.each(["none", "suspended", "ready"] as const)(
     "attaches without database proof when database availability is %s",
     async (status) => {

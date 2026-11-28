@@ -12,7 +12,6 @@ import {
   ConnectionSession,
 } from "../../types/connection/connection";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
-import { NativeLoginStatus } from "./NativeLoginStatus";
 
 interface AppStatusBarProps {
   connections: Connection[];
@@ -119,11 +118,6 @@ export const AppStatusBar: React.FC<AppStatusBarProps> = (props) => {
         <ProtocolTags mgr={mgr} />
       </div>
       <div className="flex items-center gap-3">
-        <NativeLoginStatus
-          connections={props.connections}
-          sessions={props.sessions}
-          activeSessionId={props.activeSessionId}
-        />
         <span className="text-[var(--color-textMuted)]">sortOfRemoteNG</span>
       </div>
     </div>
