@@ -907,6 +907,15 @@ describe("SessionTabs context menu: close all and reconnect", () => {
     fireEvent.click(screen.getByText("Reconnect"));
     expect(onSessionReconnect).toHaveBeenCalledWith("a");
   });
+  it("duplicates the selected connection into a new tab without closing the existing session", () => {
+    const onSessionDuplicate = vi.fn();
+    renderTabs({ onSessionDuplicate });
+    openMenu("a");
+    fireEvent.click(screen.getByText("Duplicate connection in new tab"));
+    expect(onSessionDuplicate).toHaveBeenCalledWith("a");
+    expect(onSessionClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
 
   it("hides Reconnect for tool tabs and unsaved connections", () => {
     const onSessionReconnect = vi.fn();

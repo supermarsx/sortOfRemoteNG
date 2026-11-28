@@ -1803,7 +1803,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                     onClick={() => act(() => onSessionDuplicate(sessionId))}
                     className="sor-menu-item"
                   >
-                    <Copy size={14} className="mr-2" /> Duplicate Tab
+                    <Copy size={14} className="mr-2" /> Duplicate connection in new tab
                   </button>
                 )}
                 <button

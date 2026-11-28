@@ -52,6 +52,7 @@ import { useCloudSyncScheduler } from "./hooks/sync/useCloudSyncScheduler";
 import { showCloudSyncReviewToast } from "./components/sync/cloudSyncReviewToast";
 import { StatusChecker } from "./utils/connection/statusChecker";
 import { DatabaseManager } from "./utils/connection/databaseManager";
+import { captureSessionDatabaseAccess } from "./utils/session/sessionDatabaseOwnership";
 import {
   DatabaseNotFoundError,
   InvalidPasswordError,
@@ -181,8 +182,15 @@ const AppContent: React.FC = () => {
   useAppFormPrivacy();
   const { begin: beginDatabaseOpening } = useDatabaseOpenNotification();
   const { t } = useTranslation();
-  const { state, dispatch, loadData, saveData, flushPendingSave, recycleBin } =
-    useConnections();
+  const {
+    state,
+    dispatch,
+    loadData,
+    saveData,
+    flushPendingSave,
+    recycleBin,
+    databaseAvailability,
+  } = useConnections();
   const sessionFullscreen = useSessionFullscreenController();
   const isSessionFullscreen = sessionFullscreen?.activeSessionId != null;
   const settingsManager = SettingsManager.getInstance();
@@ -1260,6 +1268,24 @@ const AppContent: React.FC = () => {
     [handleConnect, handleSessionClose, state.connections, state.sessions],
   );
 
+  const handleSessionDuplicate = useCallback(
+    async (sessionId: string) => {
+      const session = state.sessions.find((item) => item.id === sessionId);
+      const connection = state.connections.find(
+        (item) => item.id === session?.connectionId,
+      );
+      if (
+        !session ||
+        !connection ||
+        databaseAvailability?.status !== "ready" ||
+        session.ownerDatabaseId !== databaseAvailability.databaseId
+      )
+        return;
+      await handleConnect(connection, captureSessionDatabaseAccess(session));
+    },
+    [handleConnect, state.connections, state.sessions, databaseAvailability],
+  );
+
   // handleSessionDetach and handleReattachRdpSession are in useSessionDetach hook
 
   const showConfirm = (
@@ -1995,6 +2021,7 @@ const AppContent: React.FC = () => {
                 onSessionForceClose={forceSessionClose}
                 onSessionDetach={handleSessionDetach}
                 onSessionReconnect={handleSessionReconnect}
+                onSessionDuplicate={handleSessionDuplicate}
                 enableReorder={appSettings.enableTabReorder}
                 middleClickCloseTab={appSettings.middleClickCloseTab}
                 tabLayout={tabLayout}
