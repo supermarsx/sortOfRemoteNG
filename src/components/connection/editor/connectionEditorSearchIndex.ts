@@ -189,7 +189,9 @@ export function buildConnectionEditorSearchIndex({
         formData,
       );
       const authField =
-        ["authentication", "recovery"].includes(protocolSubtabId ?? "") ||
+        ["authentication", "two-factor", "typing", "recovery"].includes(
+          protocolSubtabId ?? "",
+        ) ||
         (["username", "password", "credential-source"].includes(field.id) &&
           !String(formData.protocol).startsWith("integration:"));
       const tabId = authField ? "authentication" : descriptor.tabId;

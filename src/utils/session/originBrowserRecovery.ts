@@ -7,6 +7,7 @@ import type {
   ConnectionEditorTabId,
   ConnectionEditorProtocolSubtabId,
 } from "../../components/connection/editor/editorRegistry";
+import { httpTypingOrigin } from "../connection/httpTypingOrigins";
 
 export const ORIGIN_BROWSER_RECOVERY_EVENT = "origin-browser-recovery";
 
@@ -19,6 +20,7 @@ export interface OriginBrowserRecoveryRequest {
   sessionId: string;
   connectionId: string;
   ownerDatabaseId?: string;
+  typingOrigin?: string;
 }
 
 export interface ConnectionEditorRecoveryNavigation {
@@ -27,6 +29,7 @@ export interface ConnectionEditorRecoveryNavigation {
   ownerDatabaseId: string;
   tab: ConnectionEditorTabId;
   subtab?: ConnectionEditorProtocolSubtabId;
+  typingOrigin?: string;
 }
 
 export type BrowserRecoveryEditorSession = ConnectionSession & {
@@ -67,7 +70,11 @@ export function readOriginBrowserRecovery(event: Event) {
 export function browserRecoveryEditorTarget(
   action: BrowserRecoveryDestination,
   connection: Connection,
-): Pick<ConnectionEditorRecoveryNavigation, "tab" | "subtab"> | null {
+  typingOrigin?: string,
+): Pick<
+  ConnectionEditorRecoveryNavigation,
+  "tab" | "subtab" | "typingOrigin"
+> | null {
   switch (action) {
     case "connection":
       return { tab: "general" };
@@ -75,6 +82,14 @@ export function browserRecoveryEditorTarget(
       return { tab: "protocol", subtab: "application" };
     case "credentials":
       return { tab: "authentication", subtab: "authentication" };
+    case "typing-settings":
+      return {
+        tab: "authentication",
+        subtab: "typing",
+        ...(httpTypingOrigin(typingOrigin) === typingOrigin && typingOrigin
+          ? { typingOrigin }
+          : {}),
+      };
     case "network":
       return { tab: "protocol", subtab: "network-path" };
     case "browser-session":

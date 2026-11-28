@@ -1,4 +1,5 @@
 import type { Connection } from "../../types/connection/connection";
+import { normalizeConnectionCredentialAccounts } from "./connectionCredentialAccounts";
 import type { DatabaseCredentialVault } from "../../types/security/databaseCredentialVault";
 import type { DatabaseVaultArchive } from "../../types/security/vaultArchive";
 import {
@@ -267,6 +268,20 @@ export function normalizeDatabaseVaultArchive(
     const protocol = normalizeImportedProtocol({ raw: row.protocol });
     if (protocol.protocol !== row.protocol) return invalid();
     const source = normalizeConnectionCredentialSource(row.credentialSource);
+    const accounts = normalizeConnectionCredentialAccounts(
+      row.credentialAccounts,
+    );
+    for (const account of accounts ?? []) {
+      const credential = credentials.find(
+        (entry) => entry.id === account.credentialId,
+      );
+      if (
+        !credential ||
+        (account.totpId &&
+          !credential.facets.totp?.some((entry) => entry.id === account.totpId))
+      )
+        throw new VaultArchiveError("dependencies");
+    }
     if (source?.kind !== "vault" || !credentialIds.has(source.credentialId))
       return invalid();
     if (LOCAL_CREDENTIAL_FIELDS.some((key) => row[key] !== undefined))
@@ -274,6 +289,7 @@ export function normalizeDatabaseVaultArchive(
     const normalized = normalizeAdvancedProtocolConnection({
       ...row,
       credentialSource: source,
+      ...(accounts ? { credentialAccounts: accounts } : {}),
     } as unknown as Connection);
     if (
       normalized.httpAutomation?.items.length ||
@@ -413,6 +429,15 @@ export function prepareVaultArchiveImport(
       credentialId: vaultIds.get(originalSource.credentialId)!,
       ...(remappedTotp ? { totpId: remappedTotp } : {}),
     };
+    if (row.credentialAccounts)
+      result.credentialAccounts = row.credentialAccounts.map((account) => {
+        const credentialId = vaultIds.get(account.credentialId);
+        const totpId = account.totpId
+          ? totpIds.get(`${account.credentialId}:${account.totpId}`)
+          : undefined;
+        if (!credentialId || (account.totpId && !totpId)) return invalid();
+        return { credentialId, ...(totpId ? { totpId } : {}) };
+      });
     // The archive is not an authorization grant or a copy of separate libraries.
     delete result.parentId;
     if (

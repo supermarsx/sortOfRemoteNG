@@ -128,7 +128,7 @@ describe("RuntimeVaultTotpPanel manual disclosure", () => {
       screen.queryByLabelText("Generated authenticator code"),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText(/Connection-local authenticators are ignored/),
+      screen.getByText("2FA"),
     ).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: "Copy code Vault authenticator (1)" }),

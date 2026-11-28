@@ -12,6 +12,7 @@ import {
   type SetStateAction,
 } from "react";
 import { normalizeConnectionCredentialSource } from "../../utils/security/databaseCredentialVault";
+import { normalizeConnectionCredentialAccounts } from "../../utils/security/connectionCredentialAccounts";
 import {
   EDITOR_WEB_ADDRESS_ERROR,
   normalizeEditorAddress,
@@ -809,8 +810,8 @@ const DEFAULT_FORM: Partial<Connection> = {
   privateKey: "",
   passphrase: "",
   ignoreSshSecurityErrors: false,
-  sshConnectTimeout: 30,
-  sshKeepAliveInterval: 30,
+
+
   sshKnownHostsPath: "",
   icon: "",
   basicAuthUsername: "",
@@ -1262,8 +1263,8 @@ export function useConnectionEditor(
             }
           : {}),
         ignoreSshSecurityErrors: connection.ignoreSshSecurityErrors ?? false,
-        sshConnectTimeout: connection.sshConnectTimeout ?? 30,
-        sshKeepAliveInterval: connection.sshKeepAliveInterval ?? 30,
+        sshConnectTimeout: connection.sshConnectTimeout,
+        sshKeepAliveInterval: connection.sshKeepAliveInterval,
         sshKnownHostsPath: connection.sshKnownHostsPath || "",
         icon: connection.icon || "",
         basicAuthUsername: connection.basicAuthUsername || "",
@@ -1399,6 +1400,9 @@ export function useConnectionEditor(
         ...effectiveFormData,
         credentialSource: normalizeConnectionCredentialSource(
           effectiveFormData.credentialSource,
+        ),
+        credentialAccounts: normalizeConnectionCredentialAccounts(
+          effectiveFormData.credentialAccounts,
         ),
         id: connection?.id || generateId(),
         name: effectiveFormData.name || "New Connection",

@@ -1,4 +1,5 @@
 import type { Connection } from "../../types/connection/connection";
+import { connectionCredentialAccounts } from "./connectionCredentialAccounts";
 import { getVaultRuntimeUnsupportedMessage } from "./runtimeCredentialVault";
 import { getHttpApplicationProfile } from "../connection/httpApplicationProfiles";
 import type { ConnectionCredentialInventoryRow } from "./connectionCredentialInventory";
@@ -43,24 +44,24 @@ export function credentialVaultAssignments(
   const indexed = new Map(inventoryRows.map((row) => [row.id, row]));
   const seen = new Map<string, Set<string>>();
   for (const connection of connections) {
-    const source = connection.credentialSource;
-    if (source?.kind !== "vault" || !source.credentialId || !connection.id)
-      continue;
-    const rows = assignments.get(source.credentialId) ?? [];
-    const ids = seen.get(source.credentialId) ?? new Set<string>();
-    if (ids.has(connection.id)) continue;
-    ids.add(connection.id);
-    seen.set(source.credentialId, ids);
-    const inventory = indexed.get(connection.id);
-    // Local VPN/key fields on a referencing connection are independent secrets,
-    // not evidence that the linked vault entry supplies those credential types.
-    rows.push(
-      credentialConnectionAssignment(
-        connection,
-        inventory ? { ...inventory, kinds: [] } : undefined,
-      ),
-    );
-    assignments.set(source.credentialId, rows);
+    for (const source of connectionCredentialAccounts(connection)) {
+      if (!source.credentialId || !connection.id) continue;
+      const rows = assignments.get(source.credentialId) ?? [];
+      const ids = seen.get(source.credentialId) ?? new Set<string>();
+      if (ids.has(connection.id)) continue;
+      ids.add(connection.id);
+      seen.set(source.credentialId, ids);
+      const inventory = indexed.get(connection.id);
+      // Local VPN/key fields on a referencing connection are independent secrets,
+      // not evidence that the linked vault entry supplies those credential types.
+      rows.push(
+        credentialConnectionAssignment(
+          connection,
+          inventory ? { ...inventory, kinds: [] } : undefined,
+        ),
+      );
+      assignments.set(source.credentialId, rows);
+    }
   }
   return assignments;
 }
@@ -72,12 +73,12 @@ export function credentialVaultUsage(
 ): Map<string, number> {
   const references = new Map<string, Set<string>>();
   for (const connection of connections) {
-    const source = connection.credentialSource;
-    if (source?.kind !== "vault" || !source.credentialId || !connection.id)
-      continue;
-    const ids = references.get(source.credentialId) ?? new Set<string>();
-    ids.add(connection.id);
-    references.set(source.credentialId, ids);
+    for (const source of connectionCredentialAccounts(connection)) {
+      if (!source.credentialId || !connection.id) continue;
+      const ids = references.get(source.credentialId) ?? new Set<string>();
+      ids.add(connection.id);
+      references.set(source.credentialId, ids);
+    }
   }
   return new Map(
     [...references].map(([id, connections]) => [id, connections.size]),

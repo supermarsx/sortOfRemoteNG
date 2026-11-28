@@ -210,6 +210,7 @@ const recoveryLabels: Record<BrowserRecoveryAction, string> = {
   connection: "Review connection settings",
   application: "Review application settings",
   credentials: "Review Authentication settings",
+  "typing-settings": "Review typing permissions",
   permissions: "Review website permissions",
   network: "Review network route",
   "browser-session": "Review browser session settings",

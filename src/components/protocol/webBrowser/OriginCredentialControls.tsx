@@ -272,7 +272,7 @@ export default function OriginCredentialControls({
           onOpenTypingSettings &&
           (typing.noticeCode === "typing-unavailable" ||
             typing.noticeCode === "typing-origin-not-allowed")
-            ? { label: "Connection settings", onClick: onOpenTypingSettings }
+            ? { label: "Typing settings", onClick: onOpenTypingSettings }
             : undefined,
         duration: 5000,
       });

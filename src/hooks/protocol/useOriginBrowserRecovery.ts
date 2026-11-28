@@ -78,7 +78,11 @@ export function useOriginBrowserRecovery(options: {
           )
             return;
           const row = rows[0];
-          const target = browserRecoveryEditorTarget(request.action, row);
+          const target = browserRecoveryEditorTarget(
+            request.action,
+            row,
+            request.typingOrigin,
+          );
           if (!target) return;
           const existing = current.state.sessions.find(
             (candidate) =>

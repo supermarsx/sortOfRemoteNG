@@ -22,6 +22,22 @@ vi.mock("../../src/utils/security/passwordPolicy", () => ({
 }));
 
 describe("full database portable archive", () => {
+  it("preserves all associated credential accounts in a complete database backup", async () => {
+    const data = await fullData();
+    const row = data.connections.find(
+      (entry) => entry.credentialSource?.kind === "vault",
+    )!;
+    row.credentialAccounts = [{ credentialId: VAULT_ID }];
+    const archive = await buildFullDatabaseArchive(collection, data, trust);
+    const restored = await normalizeFullDatabaseArchive(archive);
+    expect(
+      restored.connections.find((entry) => entry.id === row.id)
+        ?.credentialAccounts,
+    ).toEqual(row.credentialAccounts);
+    expect(
+      restored.credentialVault.entries.some((entry) => entry.id === VAULT_ID),
+    ).toBe(true);
+  });
   it("keeps sparse projection history stable across timestamp-only writes without redating existing children", async () => {
     const data: StorageData = {
       connections: [connection("future-child")],

@@ -11,6 +11,7 @@ import { ConnectionContext } from "../../src/contexts/ConnectionContextTypes";
 import type { Connection } from "../../src/types/connection/connection";
 import type { DatabaseCredentialVaultApi } from "../../src/types/security/databaseCredentialVault";
 import CredentialSourceSection from "../../src/components/connectionEditor/CredentialSourceSection";
+import ConnectionAuthenticators from "../../src/components/connectionEditor/ConnectionAuthenticators";
 import AutomaticMfaSection from "../../src/components/connectionEditor/httpOptions/AutomaticMfaSection";
 import { getHttpApplicationProfile } from "../../src/utils/connection/httpApplicationProfiles";
 import { normalizeConnectionCredentialSource } from "../../src/utils/security/databaseCredentialVault";
@@ -22,9 +23,11 @@ let api: DatabaseCredentialVaultApi;
 function Fixture({
   initial,
   automatic = false,
+  sourceOnly = false,
 }: {
   initial: Partial<Connection>;
   automatic?: boolean;
+  sourceOnly?: boolean;
 }) {
   const [formData, setFormData] = useState(initial);
   latest = formData;
@@ -42,8 +45,13 @@ function Fixture({
           mgr={mgr}
           profile={getHttpApplicationProfile("wordpress")!}
         />
-      ) : (
+      ) : sourceOnly ? (
         <CredentialSourceSection
+          formData={formData}
+          setFormData={setFormData}
+        />
+      ) : (
+        <ConnectionAuthenticators
           formData={formData}
           setFormData={setFormData}
         />
@@ -122,6 +130,7 @@ it("removes the optional authenticator field on None and atomically disarms prio
 it("requires new consent after switching from vault to connection-local credentials", () => {
   render(
     <Fixture
+      sourceOnly
       initial={{
         credentialSource: { kind: "vault", credentialId, totpId },
         httpAutoMfa: {

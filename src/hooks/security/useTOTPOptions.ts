@@ -29,6 +29,7 @@ const toAlgo = (a?: string): TotpAlgorithm =>
 export function useTOTPOptions(
   formData: Partial<Connection>,
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>,
+  defaultExpanded = false,
 ) {
   const { settings } = useSettings();
   const { state: connState, dispatch: connDispatch } = useConnections();
@@ -36,7 +37,7 @@ export function useTOTPOptions(
   const toast = useContext(ToastContext)?.toast;
 
   // ── Panel state ────────────────────────────────────────────────
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [showAddForm, setShowAddForm] = useState(false);
 
   // ── New config state ──────────────────────────────────────────

@@ -308,6 +308,8 @@ describe("ConnectionEditor subcomponents", () => {
     ).not.toBeInTheDocument();
 
     rerender(<SSHOptions {...props} sections={["connection"]} />);
+    expect(screen.getByText("Connect Timeout")).toBeInTheDocument();
+    expect(screen.getByText("Keep Alive Interval")).toBeInTheDocument();
     expect(
       screen.getByText("SSH Connection Settings Override"),
     ).toBeInTheDocument();
@@ -318,6 +320,8 @@ describe("ConnectionEditor subcomponents", () => {
 
     rerender(<SSHOptions {...props} sections={["authentication"]} />);
     expect(screen.getByText("Username")).toBeInTheDocument();
+    expect(screen.queryByText("Connect Timeout")).not.toBeInTheDocument();
+    expect(screen.queryByText("Keep Alive Interval")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Terminal Settings Override"),
     ).not.toBeInTheDocument();

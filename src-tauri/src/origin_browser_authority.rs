@@ -1252,7 +1252,8 @@ async fn authorize_create_inner<R: Runtime>(
     .with_network_origin_grant(request_network_grant(
         permissions.clone(), initial_url.origin().ascii_serialization(),
     ))
-    .with_http_typing_origins(saved_http_typing_origins(&connection));
+    .with_http_typing_origins(saved_http_typing_origins(&connection))
+    .with_manual_typing_any_origin(connection.get("httpTypingAnyOrigin").and_then(Value::as_bool) == Some(true));
     let ssh_route = ssh_route::prepare(
         window,
         state,

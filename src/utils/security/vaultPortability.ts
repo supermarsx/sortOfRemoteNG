@@ -20,7 +20,14 @@ export function assertPortableCredentialSources(
   connections: readonly unknown[],
 ): void {
   for (const connection of connections) {
-    if (!record(connection) || !("credentialSource" in connection)) continue;
+    if (!record(connection)) continue;
+    if (
+      connection.credentialAccounts !== undefined &&
+      (!Array.isArray(connection.credentialAccounts) ||
+        connection.credentialAccounts.length > 0)
+    )
+      throw new VaultPortabilityError();
+    if (!("credentialSource" in connection)) continue;
     const source = connection.credentialSource;
     if (source === undefined) continue;
     if (

@@ -17,7 +17,7 @@ import {
   type TrustRecord,
 } from "../../utils/auth/trustStore";
 import { useSSHOptions } from "../../hooks/ssh/useSSHOptions";
-import { Checkbox, NumberInput, Select } from "../ui/forms";
+import { Checkbox, Select } from "../ui/forms";
 
 interface SSHOptionsProps {
   formData: Partial<Connection>;
@@ -26,7 +26,13 @@ interface SSHOptionsProps {
   sections?: readonly SSHOptionsSection[];
 }
 
-export type SSHOptionsSection = "authentication" | "terminal" | "connection";
+export type SSHOptionsSection =
+  | "authentication"
+  | "terminal"
+  | "connection"
+  | "security"
+  | "forwarding"
+  | "advanced";
 
 export const SSHOptions: React.FC<SSHOptionsProps> = ({
   formData,
@@ -255,43 +261,8 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                     </div>
                   );
                 })()}
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <div>
-                  <label className="sor-form-label">
-                    Connect Timeout (sec){" "}
-                    <InfoTooltip text="Maximum time in seconds to wait for the SSH connection to be established." />
-                  </label>
-                  <NumberInput
-                    value={formData.sshConnectTimeout ?? 30}
-                    onChange={(v: number) =>
-                      setFormData({
-                        ...formData,
-                        sshConnectTimeout: v || 30,
-                      })
-                    }
-                    variant="form"
-                    min={5}
-                    max={300}
-                  />
-                </div>
-                <div>
-                  <label className="sor-form-label">
-                    Keep Alive (sec){" "}
-                    <InfoTooltip text="Interval in seconds between keep-alive messages sent to prevent idle disconnection." />
-                  </label>
-                  <NumberInput
-                    value={formData.sshKeepAliveInterval ?? 30}
-                    onChange={(v: number) =>
-                      setFormData({
-                        ...formData,
-                        sshKeepAliveInterval: v || 30,
-                      })
-                    }
-                    variant="form"
-                    min={10}
-                    max={600}
-                  />
-                </div>
+              <div>
+                {" "}
                 <div>
                   <label className="sor-form-label">
                     Known Hosts Path{" "}
@@ -451,8 +422,24 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
 
       {/* SSH Connection Settings Override */}
       {shows("connection") && formData.protocol === "ssh" && (
-        <SSHConnectionOverrides formData={formData} setFormData={setFormData} />
+        <>
+          <SSHConnectionOverrides
+            formData={formData}
+            setFormData={setFormData}
+            section="connection"
+          />
+        </>
       )}
+      {(["security", "forwarding", "advanced"] as const)
+        .filter(shows)
+        .map((section) => (
+          <SSHConnectionOverrides
+            key={section}
+            section={section}
+            formData={formData}
+            setFormData={setFormData}
+          />
+        ))}
     </>
   );
 };

@@ -240,7 +240,12 @@ export function connectionCredentialInventory(
       any(ps?.ssh?.privateKeyPath, ps?.wsman?.tls?.clientCertificateRef),
       "external",
     );
-    add("vault", connection.credentialSource?.kind === "vault", "vault");
+    add(
+      "vault",
+      connection.credentialSource?.kind === "vault" ||
+        !!connection.credentialAccounts?.length,
+      "vault",
+    );
     // Only persisted references. Integration launch secrets and providerFields are excluded.
     add(
       "integration",

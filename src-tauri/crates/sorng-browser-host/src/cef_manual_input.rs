@@ -145,10 +145,11 @@ fn current(slot: &Slot, require_input: bool) -> bool {
         && slot.frame.is_main() == 1
         && CefString::from(&slot.frame.url()).to_string() == slot.url
         && shared.session.lock().is_ok_and(|session| {
-            wire::document_allowed(
+            wire::document_allowed_with_override(
                 session.policy().source_origin(),
                 session.policy().http_typing_origins(),
                 &slot.url,
+                session.policy().manual_typing_any_origin(),
             )
         })
         && shared
@@ -241,10 +242,11 @@ pub(super) fn operate(
             };
             let url = CefString::from(&frame.url()).to_string();
             if !host.shared.session.lock().is_ok_and(|session| {
-                wire::document_allowed(
+                wire::document_allowed_with_override(
                     session.policy().source_origin(),
                     session.policy().http_typing_origins(),
                     &url,
+                    session.policy().manual_typing_any_origin(),
                 )
             }) {
                 completion(Err(wire::refusal_for_document(&url).unwrap_or(FIELD)));

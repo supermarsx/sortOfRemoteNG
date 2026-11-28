@@ -7,6 +7,12 @@ import type {
 export type ConnectionCredentialSource =
   { kind: "local" } | { kind: "vault"; credentialId: string; totpId?: string };
 
+/** Named accounts remain in the owning vault; a connection stores references only. */
+export interface ConnectionCredentialAccount {
+  credentialId: string;
+  totpId?: string;
+}
+
 export interface VaultTotpFacet {
   id: string;
   label: string;

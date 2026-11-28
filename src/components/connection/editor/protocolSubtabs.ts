@@ -26,6 +26,20 @@ export interface ProtocolSubtabDescriptor {
 }
 
 const SUBTABS: Record<ProtocolSubtabId, ProtocolSubtabDescriptor> = {
+  typing: {
+    id: "typing",
+    label: "Credential typing",
+    description:
+      "Allow exact HTTP origins and review how to type safely into website fields.",
+    icon: KeyRound,
+  },
+  "two-factor": {
+    id: "two-factor",
+    label: "2FA",
+    description:
+      "Authenticator codes for this connection.",
+    icon: ShieldCheck,
+  },
   "audio-input": {
     id: "audio-input",
     label: "Keyboard & audio",
@@ -141,7 +155,8 @@ const SUBTABS: Record<ProtocolSubtabId, ProtocolSubtabDescriptor> = {
   recovery: {
     id: "recovery",
     label: "Recovery",
-    description: "Two-factor, backup code, and account recovery information.",
+    description:
+      "Backup codes, security questions and account recovery information.",
     icon: LifeBuoy,
   },
 };
@@ -170,7 +185,12 @@ export const isVoipPhoneProtocol = (protocol: string): boolean =>
 
 const selectSubtabs = (
   ids: readonly ProtocolSubtabId[],
-): readonly ProtocolSubtabDescriptor[] => ids.map((id) => SUBTABS[id]);
+): readonly ProtocolSubtabDescriptor[] =>
+  ids.flatMap((id) =>
+    id === "recovery"
+      ? [SUBTABS["two-factor"], SUBTABS.recovery]
+      : [SUBTABS[id]],
+  );
 
 const withWindowsManagement = (
   ids: readonly ProtocolSubtabId[],
@@ -230,14 +250,33 @@ export function getProtocolSubtabs(
   }
 
   if (protocol === "ssh") {
-    return selectSubtabs([
-      "authentication",
-      "terminal",
-      "favorites",
-      "network-path",
-      "network",
-      "recovery",
-    ]);
+    return selectSubtabs(
+      withWindowsManagement(
+        [
+          "connection",
+          "authentication",
+          "security",
+          "terminal",
+          "resources",
+          "advanced",
+          "favorites",
+          "network-path",
+          "recovery",
+        ],
+        formData,
+      ),
+    ).map((tab) =>
+      tab.id === "resources"
+        ? {
+            ...tab,
+            label: "Forwarding",
+            description:
+              "Agent, X11, TCP forwarding and proxy command overrides.",
+          }
+        : tab.id === "network"
+          ? { ...tab, label: "Windows management" }
+          : tab,
+    );
   }
 
   if (protocol === "ard") {
@@ -361,6 +400,7 @@ export function getProtocolSubtabs(
         [
           "application",
           "authentication",
+          "typing",
           "browser",
           "privacy",
           "security",

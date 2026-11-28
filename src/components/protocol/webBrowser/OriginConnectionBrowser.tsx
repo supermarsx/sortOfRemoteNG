@@ -79,7 +79,10 @@ import { useNativeBrowserRecording } from "../../../hooks/protocol/useNativeBrow
 import { useOriginWebsiteAutomation } from "../../../hooks/protocol/useOriginWebsiteAutomation";
 import OriginAutomationControls from "./OriginAutomationControls";
 import { useOriginBrowserNotices } from "../../../hooks/protocol/useOriginBrowserNotices";
-import { saveHttpTypingOrigin } from "../../../utils/connection/httpTypingOrigins";
+import {
+  httpTypingOrigin,
+  saveHttpTypingOrigin,
+} from "../../../utils/connection/httpTypingOrigins";
 import OriginBrowserNotices from "./OriginBrowserNotices";
 import NativeBrowserDownloads from "./NativeBrowserDownloads";
 import { useOriginSelectedDownloads } from "../../../hooks/protocol/useOriginSelectedDownloads";
@@ -1275,6 +1278,14 @@ export default function OriginConnectionBrowser({
       const accepted = requestOriginBrowserRecovery(
         {
           action: isTemporary ? "quick-connect" : action,
+          ...(action === "typing-settings" &&
+          httpTypingOrigin(snapshot?.currentUrl ?? snapshot?.displayUrl)
+            ? {
+                typingOrigin: httpTypingOrigin(
+                  snapshot?.currentUrl ?? snapshot?.displayUrl,
+                )!,
+              }
+            : {}),
           sessionId: session.id,
           connectionId: session.connectionId,
           ownerDatabaseId: session.ownerDatabaseId,
@@ -1735,7 +1746,7 @@ export default function OriginConnectionBrowser({
               runInteractive: popupBridge.runInteractive,
             }}
             autoLoginRetry={autoLoginRetry}
-            onOpenTypingSettings={() => recover("connection")}
+            onOpenTypingSettings={() => recover("typing-settings")}
           />
         )}
         <OriginToolbarPopover

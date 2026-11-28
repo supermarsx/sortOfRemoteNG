@@ -2,6 +2,7 @@ import type {
   Connection,
   ConnectionDatabase,
 } from "../../types/connection/connection";
+import { normalizeConnectionCredentialAccounts } from "../security/connectionCredentialAccounts";
 import type { StorageData } from "../storage/storage";
 import type { BrowserSessionsTransfer } from "../../types/security/browserSessions";
 import {
@@ -431,6 +432,28 @@ function collectClosure(
     if (row.parentId && !connections.get(row.parentId)?.isGroup)
       collector.add(row.id, `${path}.parentId`, "folder", row.parentId);
     const source = normalizeConnectionCredentialSource(row.credentialSource);
+    for (const [index, account] of (
+      normalizeConnectionCredentialAccounts(row.credentialAccounts) ?? []
+    ).entries()) {
+      const credential = credentials.get(account.credentialId);
+      if (!credential)
+        collector.add(
+          row.id,
+          `${path}.credentialAccounts[${index}].credentialId`,
+          "credential",
+          account.credentialId,
+        );
+      else if (
+        account.totpId &&
+        !credential.facets.totp?.some((item) => item.id === account.totpId)
+      )
+        collector.add(
+          row.id,
+          `${path}.credentialAccounts[${index}].totpId`,
+          "totp",
+          account.totpId,
+        );
+    }
     if (source?.kind === "vault") {
       const credential = credentials.get(source.credentialId);
       if (!credential)
@@ -687,6 +710,9 @@ export async function normalizeFullDatabaseArchive(
       const credentialSource = normalizeConnectionCredentialSource(
         row.credentialSource,
       );
+      const credentialAccounts = normalizeConnectionCredentialAccounts(
+        row.credentialAccounts,
+      );
       // Literal credentials in a full backup are not generic-export sentinels.
       // Do not expose them to the generic importer's placeholder normalization.
       const { password, basicAuthPassword, ...portable } = row;
@@ -700,6 +726,7 @@ export async function normalizeFullDatabaseArchive(
         {
           ...portable,
           ...(credentialSource ? { credentialSource } : {}),
+          ...(credentialAccounts ? { credentialAccounts } : {}),
         } as unknown as Connection,
         true,
       );

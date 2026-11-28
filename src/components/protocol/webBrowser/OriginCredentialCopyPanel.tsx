@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Copy, Info, Keyboard } from "lucide-react";
+import { Keyboard } from "lucide-react";
 import type {
   Connection,
   ConnectionSession,
@@ -10,6 +10,7 @@ import {
 } from "../../../hooks/security/useCredentialCopy";
 import type { OriginCredentialTypingController } from "../../../hooks/security/useOriginCredentialTyping";
 import { Select } from "../../ui/forms/Select";
+import { CredentialActionRows } from "../../security/CredentialActionRows";
 import HttpCredentialWarning from "../../security/HttpCredentialWarning";
 
 /** The shared hook owns secret resolution and database lease checks. */
@@ -30,56 +31,28 @@ export default function OriginCredentialCopyPanel({
   const { copy, typeOrThrow, typingAvailable, available, busy, message } =
     useCredentialCopy(session, connection, typing?.target);
   const help = typing
-    ? "Copy uses the secure clipboard, which other apps may read. Type hides this popup: click an empty field on an allowed origin within 30 seconds. HTTP typing stays on the configured origin and port. Cancel from the typing notification. Credentials are read only when needed; typing never presses Enter."
+    ? "Copy uses the secure clipboard, which other apps may read. Type hides this popup: click an empty field on an allowed origin within 30 seconds. HTTP typing follows this connection’s origin permissions. Cancel from the typing notification. Credentials are read only when needed; typing never presses Enter."
     : "Copy uses the secure clipboard, which other apps may read. Credentials are read only when needed. Open Credentials & 2FA on the toolbar to type into a website field.";
   return (
     <div ref={setPortalContainer} className="space-y-3">
       <HttpCredentialWarning connection={connection} />
-      <div className="flex flex-wrap gap-2">
-        {(["username", "password"] as const).map((field) => (
-          <React.Fragment key={field}>
-            <button
-              key={field}
-              type="button"
-              className="sor-btn sor-btn-secondary gap-2"
-              data-tooltip={`Copy ${field}`}
-              disabled={!available || busy || typing?.busy}
-              onClick={() => {
-                try {
-                  assertOwner();
-                  void copy(field);
-                } catch {
-                  /* The owning scope has expired. */
-                }
-              }}
-            >
-              <Copy size={16} aria-hidden="true" />
-              Copy {field}
-            </button>
-            {typing && (
-              <button
-                type="button"
-                className="sor-btn sor-btn-secondary gap-2"
-                disabled={!typingAvailable || busy || typing.busy}
-                // Rejecting, so the typing notice names why nothing was typed.
-                onClick={() => void typing.run(() => typeOrThrow(field))}
-              >
-                <Keyboard size={16} aria-hidden="true" />
-                Type {field}
-              </button>
-            )}
-          </React.Fragment>
-        ))}
-        <button
-          type="button"
-          className="sor-icon-btn-sm ml-auto"
-          aria-label="Copy and typing help"
-          aria-description={help}
-          data-tooltip={help}
-        >
-          <Info size={16} aria-hidden="true" />
-        </button>
-      </div>
+      <CredentialActionRows
+        canCopy={available && !busy && !typing?.busy}
+        canType={typingAvailable && !busy && !typing?.busy}
+        showType={!!typing}
+        onCopy={(field) => {
+          try {
+            assertOwner();
+            void copy(field);
+          } catch {
+            /* Owner expired. */
+          }
+        }}
+        onType={(field) => {
+          if (typing) void typing.run(() => typeOrThrow(field));
+        }}
+        help={help}
+      />
       {typing && (
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-2">

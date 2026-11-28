@@ -597,8 +597,12 @@ describe("ConnectionEditor", () => {
         fireEvent.change(screen.getByLabelText("Website password"), {
           target: { value: "edited-password" },
         });
-        fireEvent.click(screen.getByRole("tab", { name: "Recovery" }));
-        fireEvent.click(screen.getByRole("button", { name: /2FA \/ TOTP/ }));
+        fireEvent.click(
+          screen.getByRole("tab", { name: "2FA" }),
+        );
+        expect(
+          screen.getByRole("button", { name: /2FA \/ TOTP/ }),
+        ).toHaveAttribute("aria-expanded", "true");
         fireEvent.click(
           screen.getByRole("button", { name: "Add TOTP configuration" }),
         );
@@ -2308,7 +2312,7 @@ describe("ConnectionEditor", () => {
       expect(
         screen.getByRole("tablist", { name: "Protocol settings sections" }),
       ).toBeInTheDocument();
-      expect(screen.getByRole("tab", { name: "Terminal" })).toHaveAttribute(
+      expect(screen.getByRole("tab", { name: "Connection" })).toHaveAttribute(
         "aria-selected",
         "true",
       );
@@ -2317,10 +2321,8 @@ describe("ConnectionEditor", () => {
       expect(screen.getByLabelText("Connection favorites")).toBeInTheDocument();
       expect(screen.getByText("No favorites configured.")).toBeInTheDocument();
       expect(screen.queryByLabelText("HTTP bookmarks")).not.toBeInTheDocument();
-      expect(
-        screen.queryByRole("tab", { name: "Security" }),
-      ).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole("tab", { name: "Network" }));
+      expect(screen.getByRole("tab", { name: "Security" })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("tab", { name: "Security" }));
 
       fireEvent.click(screen.getByTestId("connection-editor-tab-general"));
       fireEvent.click(screen.getByTestId("editor-protocol"));
@@ -2357,7 +2359,7 @@ describe("ConnectionEditor", () => {
       fireEvent.click(screen.getByTestId("editor-protocol"));
       fireEvent.click(screen.getByRole("option", { name: /^SSH/i }));
       fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
-      expect(screen.getByRole("tab", { name: "Network" })).toHaveAttribute(
+      expect(screen.getByRole("tab", { name: "Security" })).toHaveAttribute(
         "aria-selected",
         "true",
       );

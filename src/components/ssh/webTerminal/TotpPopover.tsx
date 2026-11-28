@@ -1,5 +1,5 @@
 import { WebTerminalMgr } from "./types";
-import RDPTotpPanel from "../../rdp/RDPTotpPanel";
+import SessionTotpPanel from "../../security/SessionTotpPanel";
 import { Shield } from "lucide-react";
 import RuntimeVaultTotpPanel from "../../security/RuntimeVaultTotpPanel";
 import CredentialCopyActions from "../../security/CredentialCopyActions";
@@ -25,19 +25,16 @@ function TotpPopover({ mgr }: { mgr: WebTerminalMgr }) {
     <div
       className="relative"
       ref={mgr.totpBtnRef}
-      data-tooltip={
-        vaultSelected
-          ? "Credentials & 2FA — copy credentials or generate codes from this session's owning database vault. Connection-local codes are ignored."
-          : undefined
-      }
+      data-tooltip="Credentials & 2FA"
     >
       <button
         type="button"
         disabled={vaultSelected && !mgr.vaultTotp.available}
         onClick={() => mgr.setShowTotpPanel(!mgr.showTotpPanel)}
         onPointerDown={typing.onPointerDown}
-        className={`app-bar-button p-2 relative ${mgr.showTotpPanel ? "text-primary" : ""}`}
+        className={`sor-btn sor-icon-btn-sm relative shrink-0 ${mgr.showTotpPanel ? "bg-primary/15 text-primary" : "text-[var(--color-textSecondary)]"}`}
         data-tooltip={vaultSelected ? undefined : "Credentials & 2FA"}
+        aria-expanded={mgr.showTotpPanel}
         aria-label="Credentials & 2FA"
       >
         <Shield size={14} />
@@ -56,17 +53,14 @@ function TotpPopover({ mgr }: { mgr: WebTerminalMgr }) {
         />
       )}
       {mgr.showTotpPanel && !vaultSelected && (
-        <RDPTotpPanel
+        <SessionTotpPanel
           configs={mgr.totpConfigs}
           typingRef={typing.popupRef}
           renderTypeCode={(index) => actions({ localIndex: index })}
           credentialActions={actions()}
-          onUpdate={mgr.handleUpdateTotpConfigs}
           onClose={() => mgr.setShowTotpPanel(false)}
-          defaultIssuer={mgr.settings.totpIssuer}
-          defaultDigits={mgr.settings.totpDigits}
-          defaultPeriod={mgr.settings.totpPeriod}
-          defaultAlgorithm={mgr.settings.totpAlgorithm}
+          ownerDatabaseId={mgr.session.ownerDatabaseId}
+          connectionId={mgr.connection?.id}
           anchorRef={mgr.totpBtnRef}
         />
       )}

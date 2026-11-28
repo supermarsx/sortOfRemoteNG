@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { Connection } from "../../types/connection/connection";
-import { SSHConnectionConfig, defaultSSHConnectionConfig } from "../../types/settings/settings";
+import { SSHConnectionConfig } from "../../types/settings/settings";
 import { useSettings } from "../../contexts/SettingsContext";
 
 /* ═══════════════════════════════════════════════════════════════
@@ -9,6 +9,7 @@ import { useSettings } from "../../contexts/SettingsContext";
 
 export const CIPHER_OPTIONS = [
   "aes256-gcm@openssh.com",
+  "aes128-gcm@openssh.com",
   "chacha20-poly1305@openssh.com",
   "aes256-ctr",
   "aes192-ctr",
@@ -25,6 +26,7 @@ export const MAC_OPTIONS = [
   "hmac-sha2-512",
   "hmac-sha2-256",
   "hmac-sha1",
+  "hmac-sha1-etm@openssh.com",
   "hmac-md5",
 ];
 
@@ -39,6 +41,8 @@ export const KEX_OPTIONS = [
   "diffie-hellman-group14-sha256",
   "diffie-hellman-group14-sha1",
   "diffie-hellman-group-exchange-sha256",
+  "diffie-hellman-group-exchange-sha1",
+  "diffie-hellman-group1-sha1",
 ];
 
 export const HOST_KEY_OPTIONS = [
@@ -56,6 +60,12 @@ export const HOST_KEY_OPTIONS = [
    Hook
    ═══════════════════════════════════════════════════════════════ */
 
+import {
+  sshProtocolDefaults,
+  sshProtocolOverrides,
+  clearLegacySshProtocolField,
+} from "../../utils/ssh/sshProtocolConfig";
+
 type OverrideKey = keyof SSHConnectionConfig;
 
 export function useSSHOverrides(
@@ -64,17 +74,11 @@ export function useSSHOverrides(
 ) {
   const { settings } = useSettings();
 
-  const globalConfig: SSHConnectionConfig = useMemo(
-    () =>
-      (settings as unknown as Record<string, unknown>).sshConnection as SSHConnectionConfig ??
-      defaultSSHConnectionConfig,
-    [settings],
+  const globalConfig = useMemo(
+    () => sshProtocolDefaults(settings.sshConnection, settings.sshTerminal),
+    [settings.sshConnection, settings.sshTerminal],
   );
-
-  const overrides = useMemo(
-    () => formData.sshConnectionConfigOverride || {},
-    [formData.sshConnectionConfigOverride],
-  );
+  const overrides = useMemo(() => sshProtocolOverrides(formData), [formData]);
   const hasOverrides = Object.keys(overrides).length > 0;
   const overrideCount = Object.keys(overrides).length;
 
@@ -84,17 +88,18 @@ export function useSSHOverrides(
       value: SSHConnectionConfig[K] | undefined,
     ) => {
       setFormData((prev) => {
-        const cur = prev.sshConnectionConfigOverride || {};
+        const cleaned = clearLegacySshProtocolField(prev, key);
+        const cur = cleaned.sshConnectionConfigOverride || {};
         if (value === undefined) {
           const { [key]: _, ...rest } = cur;
           return {
-            ...prev,
+            ...cleaned,
             sshConnectionConfigOverride:
               Object.keys(rest).length > 0 ? rest : undefined,
           };
         }
         return {
-          ...prev,
+          ...cleaned,
           sshConnectionConfigOverride: { ...cur, [key]: value },
         };
       });
@@ -103,10 +108,12 @@ export function useSSHOverrides(
   );
 
   const clearAllOverrides = useCallback(() => {
-    setFormData((prev) => ({
-      ...prev,
-      sshConnectionConfigOverride: undefined,
-    }));
+    setFormData((prev) => {
+      let next = prev;
+      for (const key of Object.keys(sshProtocolOverrides(prev)))
+        next = clearLegacySshProtocolField(next, key as OverrideKey);
+      return { ...next, sshConnectionConfigOverride: undefined };
+    });
   }, [setFormData]);
 
   const isOverridden = useCallback(

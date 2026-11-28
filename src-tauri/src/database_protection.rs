@@ -3238,6 +3238,7 @@ pub mod native_browser_owner {
                 (&["httpVerifySsl"], json!(false)),
                 (&["httpHeaders"], json!({"X-Fixture":"1"})),
                 (&["httpAutoLogin"], json!(true)),
+                (&["httpTypingAnyOrigin"], json!(true)),
                 (&["httpAutoLoginSelectors"], json!({"usernameSelector":"#user"})),
                 (&["httpAutoMfa"], json!({"version":1,"enabled":true})),
                 (&["httpApplication"], json!({"version":1,"id":"ilo","loginMode":"form"})),

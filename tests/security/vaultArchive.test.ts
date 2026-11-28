@@ -107,6 +107,37 @@ it("round-trips descriptive category/custom labels through encrypted archives wi
 beforeEach(() => vi.stubGlobal("crypto", webcrypto));
 afterEach(() => vi.unstubAllGlobals());
 describe("encrypted credential vault archives", () => {
+  it("remaps every associated account and authenticator to the imported vault", () => {
+    const source = archive();
+    const second = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    source.credentials.push({
+      ...structuredClone(source.credentials[0]),
+      id: second,
+      name: "Second account",
+    });
+    source.connections[0].credentialAccounts = [
+      { credentialId: id, totpId: tid },
+      { credentialId: second, totpId: tid },
+    ];
+    const imported = prepareVaultArchiveImport(
+      [],
+      { version: 1, revision: 0, entries: [] },
+      source,
+    );
+    const accounts = imported.connections[0].credentialAccounts!;
+    expect(accounts).toHaveLength(2);
+    for (const account of accounts) {
+      expect(account.credentialId).not.toBe(id);
+      expect(account.credentialId).not.toBe(second);
+      expect(
+        imported.credentialVault.entries.find(
+          (entry) => entry.id === account.credentialId,
+        )?.facets.totp?.[0].id,
+      ).toBe(account.totpId);
+    }
+    source.credentials.pop();
+    expect(() => normalizeDatabaseVaultArchive(source)).toThrow();
+  });
   it.each(["", null, false, 0, [], {}])(
     "rejects malformed direct profile declarations %j",
     (id) => {

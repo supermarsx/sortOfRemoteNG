@@ -19,6 +19,7 @@ export type BrowserRecoveryAction =
   | "connection"
   | "application"
   | "credentials"
+  | "typing-settings"
   | "permissions"
   | "network"
   | "browser-session"

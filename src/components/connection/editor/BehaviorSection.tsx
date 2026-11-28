@@ -57,7 +57,7 @@ const boolSelectValue = (value: boolean | undefined): string =>
   value === true ? "true" : value === false ? "false" : "";
 
 const buttonClass =
-  "inline-flex items-center justify-center gap-1 rounded border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex items-center justify-start gap-1 rounded border border-[var(--color-border)] px-2 py-1 text-left text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed disabled:opacity-40";
 
 const EMPTY_AUTOMATION: ConnectionBehaviorAutomationV1 = {
   version: 1,

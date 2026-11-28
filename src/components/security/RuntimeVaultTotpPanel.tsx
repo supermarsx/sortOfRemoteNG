@@ -207,12 +207,8 @@ function Codes({
         </button>
       </div>
       {credentialActions}
-      <p className="text-xs text-[var(--color-textSecondary)]">
-        Copy generates a fresh code.
-        {renderTypeCode &&
-          " Type does not press Enter or click a submit button."}
-        {!connectionSource && " Connection-local authenticators are ignored."}
-      </p>
+      <h3 className="text-xs font-medium text-[var(--color-textSecondary)]"
+        data-tooltip={`Copy generates a fresh code. Type does not press Enter.${connectionSource ? "" : " Connection-local authenticators are ignored."}`}>2FA</h3>
       {error && (
         <p role="alert" className="text-xs text-error">
           {error}

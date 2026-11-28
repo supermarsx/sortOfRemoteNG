@@ -66,6 +66,17 @@ pub(crate) fn document_allowed(
     })
 }
 
+#[cfg(any(feature = "cef-host", test))]
+pub(crate) fn document_allowed_with_override(
+    source_origin: &str,
+    typing_origins: &[String],
+    document_url: &str,
+    allow_any_origin: bool,
+) -> bool {
+    document_allowed(source_origin, typing_origins, document_url)
+        || (allow_any_origin && crate::native_features::browser_origin(document_url).is_some())
+}
+
 /// The refusal for a document that failed `document_allowed`: the distinct
 /// `origin-not-allowed` only for an HTTP document, otherwise `None` so the
 /// caller keeps its existing generic reason.
@@ -207,6 +218,15 @@ impl ManualInputRequest {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn any_page_typing_is_explicit_http_only_and_does_not_accept_special_urls() {
+        let source = "https://saved.test";
+        assert!(!super::document_allowed_with_override(source, &[], "http://other.test:8080/login", false));
+        assert!(super::document_allowed_with_override(source, &[], "http://other.test:8080/login", true));
+        for url in ["file:///tmp/login", "data:text/html,test", "javascript:void(0)", "about:blank", "not a URL"] {
+            assert!(!super::document_allowed_with_override(source, &[], url, true));
+        }
+    }
     #[test]
     fn all_fixed_manual_typing_reasons_round_trip_without_page_strings() {
         use super::ManualInputReason::*;

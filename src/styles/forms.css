@@ -691,6 +691,11 @@ input[type="radio"][aria-disabled="true"] {
   font-size: 0.875rem;
   white-space: nowrap;
 }
+/* Align labels throughout connection editing, including wrapped section titles. */
+[data-connection-editor] button {
+  text-align: left;
+}
+
 /* Use the editor's width: split panes can be narrow on a wide application. */
 @container connection-editor (min-width: 760px) {
   .connection-editor-primary-tabs {

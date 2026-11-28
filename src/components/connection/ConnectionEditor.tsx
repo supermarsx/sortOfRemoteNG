@@ -2079,7 +2079,7 @@ const EditorTabs: React.FC<{
                   .getElementById(`connection-editor-tab-${tabs[next].id}`)
                   ?.focus();
               }}
-              className="sor-accent-choice min-h-10 px-2 py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="sor-accent-choice min-h-10 px-3 py-2 rounded-lg flex items-center justify-start gap-2 text-left text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <Icon size={15} className="shrink-0" aria-hidden="true" />
               {tab.label}
@@ -2199,7 +2199,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     (subtabId: ConnectionEditorProtocolSubtabId) => {
       setProtocolSubtabsByProtocol((previous) => ({
         ...previous,
-        [`${protocolKey}:${["authentication", "recovery"].includes(subtabId) ? "authentication" : "protocol"}`]:
+        [`${protocolKey}:${["authentication", "two-factor", "typing", "recovery"].includes(subtabId) ? "authentication" : "protocol"}`]:
           subtabId,
       }));
     },
@@ -2315,7 +2315,9 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       return;
     recoveryApplied.current = recoveryNavigation.requestId;
     setActiveTab(
-      ["authentication", "recovery"].includes(recoveryNavigation.subtab ?? "")
+      ["authentication", "two-factor", "typing", "recovery"].includes(
+        recoveryNavigation.subtab ?? "",
+      )
         ? "authentication"
         : recoveryNavigation.tab,
     );
@@ -2337,6 +2339,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
 
   return (
     <form
+      data-connection-editor=""
       data-testid="connection-editor"
       onSubmit={handleSubmit}
       onKeyDown={handleSaveShortcut}
@@ -2412,6 +2415,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
             {activeTab === "authentication" && !mgr.formData.isGroup && (
               <ProtocolSections
                 category="authentication"
+                typingOrigin={recoveryNavigation?.typingOrigin}
                 mgr={mgr}
                 activeSubtabId={activeProtocolSubtabId}
                 onActiveSubtabChange={activateProtocolSubtab}

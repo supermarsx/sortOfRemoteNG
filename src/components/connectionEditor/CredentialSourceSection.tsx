@@ -18,7 +18,8 @@ import {
   vaultCredentialLocalFields,
 } from "../../utils/security/connectionCredentialConversion";
 import { Select } from "../ui/forms";
-import { useVaultTotpChoices } from "../../hooks/security/useVaultTotpChoices";
+import AssociatedCredentialAccounts from "./AssociatedCredentialAccounts";
+import { credentialAccountSelection } from "../../utils/security/connectionCredentialAccounts";
 
 const CONVERSION_FAILURES = {
   draft:
@@ -49,7 +50,6 @@ export default function CredentialSourceSection({
     apply: (patch: Partial<Connection>) => void;
   };
 }) {
-  const authenticators = useVaultTotpChoices(formData);
   const context = useContext(ConnectionContext),
     api = context?.credentialVault,
     key = credentialVaultScopeKey(api);
@@ -157,10 +157,7 @@ export default function CredentialSourceSection({
       if (same) return previous;
       return {
         ...previous,
-        credentialSource,
-        httpAutoMfa: previous.httpAutoMfa
-          ? { version: 1, enabled: false }
-          : undefined,
+        ...credentialAccountSelection(previous, credentialSource),
       };
     });
   };
@@ -348,6 +345,10 @@ export default function CredentialSourceSection({
         };
       }
       check();
+      patch = {
+        ...patch,
+        ...credentialAccountSelection(draft, patch.credentialSource),
+      };
       patch.httpAutoMfa = draft.httpAutoMfa
         ? { version: 1, enabled: false }
         : undefined;
@@ -387,6 +388,11 @@ export default function CredentialSourceSection({
       aria-label="Credential source"
     >
       <h3 className="font-medium">Credential source</h3>
+      <AssociatedCredentialAccounts
+        formData={formData}
+        setFormData={setFormData}
+        onSelect={(account) => mutate({ kind: "vault", ...account })}
+      />
       <div
         className="flex flex-wrap gap-2"
         role="group"
@@ -566,59 +572,6 @@ export default function CredentialSourceSection({
             Only this database's names and credential types are listed.
             Selecting an entry stores its reference, not a copy of its secrets.
           </p>
-          {vault && (
-            <div className="space-y-2">
-              <Select
-                label="Vault authenticator for login challenges"
-                variant="form"
-                value={source?.kind === "vault" ? (source.totpId ?? "") : ""}
-                disabled={
-                  !authenticators.available ||
-                  authenticators.loading ||
-                  conversionBusy
-                }
-                options={[
-                  { value: "", label: "None — enter codes manually" },
-                  ...authenticators.entries.map((entry) => ({
-                    value: entry.id,
-                    label: entry.label,
-                  })),
-                ]}
-                onChange={(totpId) => {
-                  if (
-                    source?.kind !== "vault" ||
-                    (totpId &&
-                      !authenticators.entries.some(
-                        (entry) => entry.id === totpId,
-                      ))
-                  )
-                    return;
-                  const { totpId: _previousTotp, ...reference } = source;
-                  mutate(totpId ? { ...reference, totpId } : reference);
-                }}
-              />
-              <p className="text-xs text-[var(--color-textSecondary)]">
-                Optional and never selected automatically. SSH and Synology use
-                this authenticator only when the server requests a code.
-                Websites additionally require explicit automatic 2FA consent in
-                Authentication settings. All vault authenticators remain
-                available for manual generation.
-              </p>
-              {authenticators.error && (
-                <p role="alert" className="text-xs text-error">
-                  {authenticators.error}
-                </p>
-              )}
-              <button
-                type="button"
-                className="sor-btn sor-btn-secondary"
-                disabled={!authenticators.available || authenticators.loading}
-                onClick={authenticators.reload}
-              >
-                Reload authenticators
-              </button>
-            </div>
-          )}
         </>
       )}
       {vault ? (

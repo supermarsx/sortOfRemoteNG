@@ -45,6 +45,7 @@ export interface ConnectionFieldDelta {
  */
 const SECRET_FIELDS = new Set<keyof Connection | string>([
   "credentialSource",
+  "credentialAccounts",
   "password",
   "basicAuthPassword",
   "httpHeaders",

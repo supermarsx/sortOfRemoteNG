@@ -169,6 +169,7 @@ pub struct OriginBrowserPolicy {
     authority: Authority,
     allowed_origins: Vec<String>,
     http_typing_origins: Vec<String>,
+    manual_typing_any_origin: bool,
     allowed_authorities: Vec<Authority>,
     network_origin_grant: Option<NetworkOriginGrant>,
     relay_endpoint: Arc<OnceLock<SocketAddr>>,
@@ -250,6 +251,7 @@ impl OriginBrowserPolicy {
             })),
             allowed_origins: origins,
             http_typing_origins: Vec::new(),
+            manual_typing_any_origin: false,
             allowed_authorities: authorities,
             network_origin_grant: None,
             relay_endpoint: Arc::new(OnceLock::new()),
@@ -298,6 +300,14 @@ impl OriginBrowserPolicy {
     }
     pub fn http_typing_origins(&self) -> &[String] {
         &self.http_typing_origins
+    }
+    /// Manual typing only. Does not grant navigation or automatic login.
+    pub fn with_manual_typing_any_origin(mut self, enabled: bool) -> Self {
+        self.manual_typing_any_origin = enabled;
+        self
+    }
+    pub fn manual_typing_any_origin(&self) -> bool {
+        self.manual_typing_any_origin
     }
     pub fn profile_key(&self) -> &str {
         &self.profile_key
@@ -1006,6 +1016,15 @@ mod tests {
         assert!(!allowed.permits_network_origin("http://other.test:9000"));
         let none = policy("http://device.test:8080");
         assert!(none.http_typing_origins().is_empty());
+    }
+    #[test]
+    fn manual_typing_override_is_off_by_default_and_never_grants_network_access() {
+        let default = policy("https://source.test");
+        assert!(!default.manual_typing_any_origin());
+        let enabled = default.with_manual_typing_any_origin(true);
+        assert!(enabled.manual_typing_any_origin());
+        assert!(!enabled.permits_network_origin("http://other.test:8080"));
+        assert_eq!(enabled.allowed_origins(), ["https://source.test"]);
     }
     fn dialer() -> Arc<dyn RouteDialer> {
         Arc::new(|_: Authority| -> DialFuture {

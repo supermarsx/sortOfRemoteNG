@@ -253,6 +253,7 @@ describe("ProtocolSections", () => {
         "authentication",
         "security",
         "advanced",
+        "two-factor",
         "recovery",
       ]);
       expect(screen.getByTestId(editorTestId)).toHaveAttribute(
@@ -285,19 +286,25 @@ describe("ProtocolSections", () => {
       "network",
       "advanced",
       "management",
+      "two-factor",
       "recovery",
     ]);
     expect(idsFor({ protocol: "ssh" })).toEqual([
+      "connection",
       "authentication",
+      "security",
       "terminal",
+      "resources",
+      "advanced",
       "favorites",
       "network-path",
-      "network",
+      "two-factor",
       "recovery",
     ]);
     expect(idsFor({ protocol: "https" })).toEqual([
       "application",
       "authentication",
+      "typing",
       "browser",
       "privacy",
       "security",
@@ -305,6 +312,7 @@ describe("ProtocolSections", () => {
       "favorites",
       "advanced",
       "automation",
+      "two-factor",
       "recovery",
     ]);
     expect(idsFor({ protocol: "winrm" })).toEqual([
@@ -332,6 +340,7 @@ describe("ProtocolSections", () => {
       "connection",
       "authentication",
       "display-input",
+      "two-factor",
       "recovery",
     ]);
     expect(idsFor({ protocol: "serial" })).toEqual([
@@ -341,6 +350,7 @@ describe("ProtocolSections", () => {
     ]);
     expect(idsFor({ protocol: "sftp" })).toEqual([
       "authentication",
+      "two-factor",
       "recovery",
     ]);
     for (const protocol of ["ftp", "scp"] as const) {
@@ -349,6 +359,7 @@ describe("ProtocolSections", () => {
         "authentication",
         "security",
         "advanced",
+        "two-factor",
         "recovery",
       ]);
     }
@@ -357,6 +368,7 @@ describe("ProtocolSections", () => {
       "authentication",
       "security",
       "advanced",
+      "two-factor",
       "recovery",
     ]);
     expect(idsFor({ protocol: "spice" })).toEqual([
@@ -383,11 +395,16 @@ describe("ProtocolSections", () => {
       ]);
     }
     for (const protocol of ["telnet", "smb", "rustdesk"] as const) {
-      expect(idsFor({ protocol })).toEqual(["connection", "recovery"]);
+      expect(idsFor({ protocol })).toEqual([
+        "connection",
+        "two-factor",
+        "recovery",
+      ]);
     }
     expect(idsFor({ protocol: "mysql" })).toEqual([
       "connection",
       "security",
+      "two-factor",
       "recovery",
     ]);
     expect(idsFor({ protocol: "mongodb" })).toEqual([
@@ -395,20 +412,24 @@ describe("ProtocolSections", () => {
       "authentication",
       "security",
       "advanced",
+      "two-factor",
       "recovery",
     ]);
     expect(idsFor({ protocol: "gcp" })).toEqual([
       "provider",
       "authentication",
+      "two-factor",
       "recovery",
     ]);
     expect(idsFor({ protocol: "integration:grafana" })).toEqual([
       "authentication",
+      "two-factor",
       "recovery",
     ]);
     expect(idsFor({ protocol: "https", osType: "windows" })).toEqual([
       "application",
       "authentication",
+      "typing",
       "browser",
       "privacy",
       "security",
@@ -417,6 +438,7 @@ describe("ProtocolSections", () => {
       "advanced",
       "automation",
       "network",
+      "two-factor",
       "recovery",
     ]);
   });
@@ -491,7 +513,7 @@ describe("ProtocolSections", () => {
     expect(
       screen.queryByLabelText("Shared sign-in username"),
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("totp-options")).toBeInTheDocument();
+    expect(screen.queryByTestId("totp-options")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Sign-in" }));
     expect(screen.getByLabelText("Shared sign-in username")).toHaveValue(
       "saved-user",
@@ -778,7 +800,7 @@ describe("ProtocolSections", () => {
     authentication.focus();
     fireEvent.keyDown(authentication, { key: "ArrowRight" });
 
-    const security = screen.getByRole("tab", { name: "Appearance & loading" });
+    const security = screen.getByRole("tab", { name: "Credential typing" });
     await waitFor(() => expect(security).toHaveFocus());
     expect(security).toHaveAttribute("aria-selected", "true");
 
@@ -804,7 +826,7 @@ describe("ProtocolSections", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: "Gateway & transport" }));
     fireEvent.click(screen.getByRole("button", { name: "Use SSH" }));
-    expect(screen.getByRole("tab", { name: "Authentication" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Connection" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -851,10 +873,14 @@ describe("ProtocolSections", () => {
     render(<Harness initial={{ protocol: "integration:grafana" }} />);
     fireEvent.click(screen.getByRole("tab", { name: "Recovery" }));
 
-    expect(screen.getByTestId("totp-options")).toBeInTheDocument();
+    expect(screen.queryByTestId("totp-options")).not.toBeInTheDocument();
     expect(screen.getByTestId("backup-codes")).toBeInTheDocument();
     expect(screen.getByTestId("security-questions")).toBeInTheDocument();
     expect(screen.getByTestId("recovery-info")).toBeInTheDocument();
     expect(screen.queryByTestId("ssh-options")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "2FA" }));
+    expect(screen.getByTestId("totp-options")).toBeInTheDocument();
+    expect(screen.queryByTestId("backup-codes")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("security-questions")).not.toBeInTheDocument();
   });
 });

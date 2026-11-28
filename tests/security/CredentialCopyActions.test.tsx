@@ -331,13 +331,13 @@ describe("explicit credential copies", () => {
       for (const field of ["username", "password"]) {
         const copy = screen.getByRole("button", { name: `Copy ${field}` });
         const type = screen.getByRole("button", { name: `Type ${field}` });
-        expect(copy).toHaveAttribute("title", `Copy ${field}`);
-        expect(type).toHaveAttribute("title", `Type ${field}`);
-        expect(copy.textContent).toBe("");
-        expect(type.textContent).toBe("");
+        expect(copy).toHaveAttribute("data-tooltip", `Copy ${field}`);
+        expect(type).toHaveAttribute("data-tooltip", `Type ${field}`);
+        expect(copy.textContent?.trim()).toBe("Copy");
+        expect(type.textContent?.trim()).toBe("Type");
         expect(copy.parentElement).toBe(type.parentElement);
         expect(copy.parentElement?.previousElementSibling).toHaveTextContent(
-          `Copy ${field}`,
+          field,
         );
       }
       fireEvent.click(screen.getByRole("button", { name: "Copy username" }));

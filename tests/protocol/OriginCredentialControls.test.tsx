@@ -227,8 +227,16 @@ describe("native credential toolbar parity", () => {
     render(<Harness transport={request} onOpenTypingSettings={settings} />);
     await open();
     fireEvent.click(screen.getByRole("button", { name: "Type password" }));
-    await waitFor(() => expect(mock.update.mock.calls.some(([, patch]) => patch.action?.label === "Connection settings")).toBe(true));
-    const update = mock.update.mock.calls.find(([, patch]) => patch.action?.label === "Connection settings")![1];
+    await waitFor(() =>
+      expect(
+        mock.update.mock.calls.some(
+          ([, patch]) => patch.action?.label === "Typing settings",
+        ),
+      ).toBe(true),
+    );
+    const update = mock.update.mock.calls.find(
+      ([, patch]) => patch.action?.label === "Typing settings",
+    )![1];
     act(() => update.action!.onClick());
     expect(settings).toHaveBeenCalledOnce();
   });
@@ -295,14 +303,14 @@ describe("native credential toolbar parity", () => {
       expect(screen.queryByRole("tooltip")).toBeNull();
       fireEvent.mouseOver(help);
       expect(screen.getByRole("tooltip")).toHaveTextContent(
-        "HTTP typing stays on the configured origin and port.",
+        "HTTP typing follows this connection’s origin permissions.",
       );
       fireEvent.mouseOut(help, { relatedTarget: document.body });
       expect(screen.queryByRole("tooltip")).toBeNull();
       act(() => help.focus());
       expect(screen.getByRole("tooltip")).toBeVisible();
       expect(screen.getByRole("tooltip")).toHaveTextContent(
-        "HTTP typing stays on the configured origin and port.",
+        "HTTP typing follows this connection’s origin permissions.",
       );
       act(() => help.blur());
       expect(screen.queryByRole("tooltip")).toBeNull();

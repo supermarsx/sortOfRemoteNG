@@ -28,6 +28,8 @@ export type ConnectionEditorProtocolSubtabId =
   | "application"
   | "favorites"
   | "authentication"
+  | "two-factor"
+  | "typing"
   | "security"
   | "display-input"
   | "audio-input"
@@ -119,7 +121,7 @@ export const PROTOCOL_SEARCH_FIELD_SUBTABS: Readonly<
   "ssh-known-hosts": "authentication",
   "ssh-password": "authentication",
   "ssh-private-key": "authentication",
-  "ssh-connection-timing": "authentication",
+  "ssh-connection-timing": "connection",
   "http-authentication": "authentication",
   "http-basic-username": "authentication",
   "http-basic-password": "authentication",
@@ -148,7 +150,7 @@ export const PROTOCOL_SEARCH_FIELD_SUBTABS: Readonly<
   "cloud-gcp": "provider",
   "cloud-azure": "provider",
   "cloud-digital-ocean": "provider",
-  "two-factor": "recovery",
+  "two-factor": "two-factor",
   "backup-codes": "recovery",
   "security-questions": "recovery",
   "recovery-information": "recovery",
@@ -2493,13 +2495,50 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
       {
         id: "ssh-connection-timing",
         focusId: "protocol-options",
-        label: "Connect Timeout (sec)",
+        label: "Connect Timeout",
         protocols: ["ssh"],
         copy: [
-          "Keep Alive (sec)",
+          "Keep Alive Interval",
           "Maximum time to wait for the SSH connection.",
         ],
       },
+      ...(
+        [
+          [
+            "preferredKeyExchanges",
+            "Key Exchanges",
+            [
+              "key exchange",
+              "kex",
+              "encryption keys",
+              "diffie hellman",
+              "curve25519",
+            ],
+          ],
+          [
+            "preferredCiphers",
+            "Preferred Ciphers",
+            ["encryption", "aes", "chacha20"],
+          ],
+          ["preferredMACs", "Preferred MACs", ["integrity", "hmac", "sha256"]],
+          [
+            "preferredHostKeyAlgorithms",
+            "Host Key Algorithms",
+            ["server signature", "rsa", "ed25519", "ecdsa"],
+          ],
+        ] as const
+      ).map(([key, label, keywords]) => ({
+        id: `ssh-${key}`,
+        focusId: "ssh-algorithms",
+        label,
+        keywords,
+        protocols: ["ssh"],
+        protocolSubtabId: "security" as const,
+        valuePaths: [
+          `sshConnectionConfigOverride.${key}`,
+          `sshTerminalConfigOverride.${key}`,
+        ],
+      })),
       {
         id: "http-application",
         focusId: "http-application-profile",
@@ -2596,6 +2635,21 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
           "submit delay",
           "form fields",
         ],
+      },
+      {
+        id: "http-typing-origins",
+        focusId: "http-typing-origins",
+        label: "Website typing permissions",
+        protocols: ["http", "https"],
+        protocolSubtabId: "typing",
+        keywords: [
+          "typing",
+          "HTTP origin",
+          "allow typing",
+          "empty field",
+          "port",
+        ],
+        valuePaths: ["httpTypingOrigins", "httpTypingAnyOrigin"],
       },
       {
         id: "http-website-permissions",
@@ -2958,6 +3012,22 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         label: "2FA / TOTP",
         copy: [
           "Time-based One-Time Password configurations for two-factor authentication.",
+        ],
+      },
+      {
+        id: "credential-accounts",
+        focusId: "credential-accounts",
+        label: "Saved accounts and default credentials",
+        protocolSubtabId: "authentication",
+        excludedProtocols: ["serial", "raw", "rlogin", "xdmcp"],
+        keywords: [
+          "multiple accounts",
+          "credentials",
+          "username",
+          "password",
+          "default account",
+          "link account",
+          "vault",
         ],
       },
       {

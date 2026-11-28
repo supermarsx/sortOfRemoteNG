@@ -235,6 +235,8 @@ export interface Connection
   port: number;
   /** Resolves only in the connection's captured owning database, never globally. */
   credentialSource?: ConnectionCredentialSource;
+  /** Additional accounts associated with this connection, never automatic fallback logins. */
+  credentialAccounts?: import("../security/databaseCredentialVault").ConnectionCredentialAccount[];
   username?: string;
   password?: string;
   domain?: string;
@@ -345,6 +347,8 @@ export interface Connection
    * allowed besides the saved source, added only by an explicit user action.
    * HTTPS needs no entry. Native reads this when the browser is created. */
   httpTypingOrigins?: string[];
+  /** Explicit manual typing on any HTTP(S) origin; no automatic login grant. */
+  httpTypingAnyOrigin?: boolean;
   httpAutomation?: import("./sessionQuickActions").HttpAutomationConfig;
   sshQuickActions?: import("./sessionQuickActions").SshQuickActionsConfig;
 

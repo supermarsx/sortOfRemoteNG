@@ -15,13 +15,15 @@ import AddForm from "./totpOptions/AddForm";
 interface TOTPOptionsProps {
   formData: Partial<Connection>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
+  defaultExpanded?: boolean;
 }
 
 export const TOTPOptions: React.FC<TOTPOptionsProps> = ({
   formData,
   setFormData,
+  defaultExpanded = false,
 }) => {
-  const mgr = useTOTPOptions(formData, setFormData);
+  const mgr = useTOTPOptions(formData, setFormData, defaultExpanded);
 
   if (formData.isGroup) return null;
 
@@ -36,19 +38,15 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({
         <div className="flex items-center space-x-2">
           <Shield size={16} className="text-[var(--color-textSecondary)]" />
           <span className="text-sm font-medium text-[var(--color-textSecondary)]">
-            2FA / TOTP <InfoTooltip text="Time-based One-Time Password configurations for two-factor authentication on this connection." />
+            2FA / TOTP{" "}
+            <InfoTooltip text="Time-based One-Time Password configurations for two-factor authentication on this connection." />
           </span>
           {mgr.configs.length > 0 && (
-            <span className="sor-micro-badge">
-              {mgr.configs.length}
-            </span>
+            <span className="sor-micro-badge">{mgr.configs.length}</span>
           )}
         </div>
         {mgr.expanded ? (
-          <ChevronUp
-            size={14}
-            className="text-[var(--color-textSecondary)]"
-          />
+          <ChevronUp size={14} className="text-[var(--color-textSecondary)]" />
         ) : (
           <ChevronDown
             size={14}

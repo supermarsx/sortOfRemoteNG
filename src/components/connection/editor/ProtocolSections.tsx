@@ -17,8 +17,11 @@ import RawSocketOptions from "../../connectionEditor/rawSocket/RawSocketOptions"
 import { PowerShellRemotingEditor } from "../../connectionEditor/powerShellRemoting/PowerShellRemotingEditor";
 import RecoveryInfoSection from "../../connectionEditor/RecoveryInfoSection";
 import SecurityQuestionsSection from "../../connectionEditor/SecurityQuestionsSection";
-import SSHOptions from "../../connectionEditor/SSHOptions";
-import TOTPOptions from "../../connectionEditor/TOTPOptions";
+import SSHOptions, {
+  type SSHOptionsSection,
+} from "../../connectionEditor/SSHOptions";
+import ConnectionAuthenticators from "../../connectionEditor/ConnectionAuthenticators";
+import HttpTypingOriginsSection from "../../connectionEditor/httpOptions/HttpTypingOriginsSection";
 import VoipPhoneOptions, {
   type VoipPhoneOptionsSection,
 } from "../../connectionEditor/VoipPhoneOptions";
@@ -41,11 +44,11 @@ interface ProtocolSectionsProps {
   onActiveSubtabChange?: (subtabId: ProtocolSubtabId) => void;
   category?: "protocol" | "authentication";
   authenticationContent?: React.ReactNode;
+  typingOrigin?: string;
 }
 
 const RecoverySections: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
   <div className="space-y-3">
-    <TOTPOptions formData={mgr.formData} setFormData={mgr.setFormData} />
     <BackupCodesSection formData={mgr.formData} setFormData={mgr.setFormData} />
     <SecurityQuestionsSection
       formData={mgr.formData}
@@ -61,10 +64,27 @@ const RecoverySections: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
 const ProtocolSubtabContent: React.FC<{
   mgr: ConnectionEditorMgr;
   subtabId: ProtocolSubtabId;
-}> = ({ mgr, subtabId }) => {
+  typingOrigin?: string;
+}> = ({ mgr, subtabId, typingOrigin }) => {
   const protocol = mgr.formData.protocol ?? "";
 
   if (subtabId === "recovery") return <RecoverySections mgr={mgr} />;
+  if (subtabId === "typing")
+    return (
+      <HttpTypingOriginsSection
+        key={typingOrigin ?? "manual"}
+        formData={mgr.formData}
+        setFormData={mgr.setFormData}
+        initialOrigin={typingOrigin}
+      />
+    );
+  if (subtabId === "two-factor")
+    return (
+      <ConnectionAuthenticators
+        formData={mgr.formData}
+        setFormData={mgr.setFormData}
+      />
+    );
   if (protocol === "synology")
     return (
       <SynologyOptions
@@ -369,12 +389,19 @@ const ProtocolSubtabContent: React.FC<{
   }
 
   if (protocol === "ssh") {
-    const sections =
-      subtabId === "authentication"
-        ? (["authentication"] as const)
-        : subtabId === "terminal"
-          ? (["terminal"] as const)
-          : (["connection"] as const);
+    if (subtabId === "network")
+      return mgr.formData.osType === "windows" ? (
+        <WinRMOptions formData={mgr.formData} setFormData={mgr.setFormData} />
+      ) : null;
+    const sections: readonly SSHOptionsSection[] = [
+      subtabId === "resources"
+        ? "forwarding"
+        : ["authentication", "terminal", "security", "advanced"].includes(
+              subtabId,
+            )
+          ? (subtabId as SSHOptionsSection)
+          : "connection",
+    ];
     return (
       <>
         <SSHOptions
@@ -383,9 +410,6 @@ const ProtocolSubtabContent: React.FC<{
           sshSecretManager={mgr.sshSecrets}
           sections={sections}
         />
-        {subtabId === "network" && mgr.formData.osType === "windows" && (
-          <WinRMOptions formData={mgr.formData} setFormData={mgr.setFormData} />
-        )}
       </>
     );
   }
@@ -445,13 +469,16 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
   onActiveSubtabChange,
   category,
   authenticationContent,
+  typingOrigin,
 }) => {
   const protocolKey = mgr.formData.protocol ?? "";
   const subtabs = getProtocolSubtabs(mgr.formData).filter(
     (subtab) =>
       !category ||
       (category === "authentication") ===
-        ["authentication", "recovery"].includes(subtab.id),
+        ["authentication", "two-factor", "typing", "recovery"].includes(
+          subtab.id,
+        ),
   );
   const [activeByProtocol, setActiveByProtocol] = useState<
     Partial<Record<string, ProtocolSubtabId>>
@@ -545,7 +572,7 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
                 onClick={() => selectSubtab(subtab.id)}
                 onKeyDown={(event) => handleTabKeyDown(event, index)}
                 title={subtab.description}
-                className={`flex min-h-10 items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                className={`flex min-h-10 items-center justify-start gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                   isActive
                     ? "bg-primary/15 text-primary shadow-sm"
                     : "text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)]"
@@ -590,7 +617,11 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
         </header>
         <div className="space-y-3">
           {activeSubtab.id === "authentication" && authenticationContent}
-          <ProtocolSubtabContent mgr={mgr} subtabId={activeSubtab.id} />
+          <ProtocolSubtabContent
+            mgr={mgr}
+            subtabId={activeSubtab.id}
+            typingOrigin={typingOrigin}
+          />
         </div>
       </section>
     </div>

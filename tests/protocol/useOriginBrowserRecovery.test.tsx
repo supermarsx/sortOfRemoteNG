@@ -96,6 +96,7 @@ describe("native browser recovery destinations", () => {
     ["trust", "protocol", "security"],
     ["network", "protocol", "network-path"],
     ["browser-session", "protocol", "browser"],
+    ["typing-settings", "authentication", "typing"],
     ["legacy-proxy", "protocol", "advanced"],
   ] as const)(
     "opens %s in its actual editor section",

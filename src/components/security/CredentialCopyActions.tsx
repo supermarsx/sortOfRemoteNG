@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { Copy, Info, Keyboard } from "lucide-react";
+import { CredentialActionRows } from "./CredentialActionRows";
+import { Keyboard } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import {
   useCredentialCopy,
@@ -57,44 +58,13 @@ export default function CredentialCopyActions({
       className="space-y-2 border-b border-[var(--color-border)] p-3"
       aria-label="Copy or type selected credential"
     >
-      <div className="space-y-1">
-        {(["username", "password"] as const).map((field) => (
-          <div key={field} className="flex items-center justify-between gap-3">
-            <span className="text-xs">Copy {field}</span>
-            <div className="ml-auto flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                className="sor-icon-btn-sm"
-                aria-label={`Copy ${field}`}
-                title={`Copy ${field}`}
-                disabled={!available || busy}
-                onClick={() => void copy(field)}
-              >
-                <Copy size={14} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className="sor-icon-btn-sm"
-                aria-label={`Type ${field}`}
-                title={`Type ${field}`}
-                disabled={!typingAvailable || busy}
-                onClick={() => void type(field)}
-              >
-                <Keyboard size={14} aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-      <button
-        type="button"
-        className="sor-icon-btn-sm"
-        aria-label="Copy and typing help"
-        aria-description={help}
-        data-tooltip={help}
-      >
-        <Info size={14} aria-hidden="true" />
-      </button>
+      <CredentialActionRows
+        canCopy={available && !busy}
+        canType={typingAvailable && !busy}
+        onCopy={(field) => void copy(field)}
+        onType={(field) => void type(field)}
+        help={help}
+      />
       {(message || !available) && (
         <p role="status" className="text-xs">
           {message ||

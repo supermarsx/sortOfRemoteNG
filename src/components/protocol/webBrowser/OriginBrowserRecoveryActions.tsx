@@ -6,6 +6,7 @@ const labels: Record<BrowserRecoveryAction, string> = {
   connection: "Edit website address",
   application: "Review application settings",
   credentials: "Review Authentication settings",
+  "typing-settings": "Review typing permissions",
   permissions: "Review website permissions",
   network: "Review proxy and tunnel settings",
   "browser-session": "Review browser session settings",
