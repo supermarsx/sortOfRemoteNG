@@ -34,7 +34,7 @@ export default function ExternalLinkReview({
         </p>
         <p className="text-sm leading-relaxed text-[var(--color-textSecondary)]">
           Your system browser uses its own network and proxy settings, outside
-          this app's private proxy route.
+          this app's internal proxy route.
         </p>
         <p
           dir="ltr"

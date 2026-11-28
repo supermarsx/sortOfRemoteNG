@@ -3,11 +3,11 @@ import { originBrowserLoadFailure } from "../../types/protocols/originBrowser";
 /** -130 is connection to the proxy itself, not a website login rejection or
  * an upstream CONNECT rejection (-111). Do not infer why the endpoint failed. */
 export const nativeProxyConnectionFailure = {
-  title: "The browser could not connect to its private proxy",
+  title: "The browser could not connect to its internal proxy",
   problem:
     "CEF could not connect to its configured proxy endpoint. This request did not reach the website through that proxy; the error does not establish a rejected website password.",
   nextStep:
-    "Use Retry browser to create a fresh private proxy session. If other tabs also fail, inspect the native startup diagnostics and restart the app. Do not change website credentials or bypass proxy protections for this error.",
+    "Use Retry browser to create a fresh internal proxy session. If other tabs also fail, inspect the native startup diagnostics and restart the app. Do not change website credentials or bypass proxy protections for this error.",
 } as const;
 
 /** Only fixed lifecycle diagnostics reach the shell. Never append native text,

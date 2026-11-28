@@ -14,6 +14,7 @@ pub struct InvalidNativeBrowserPreferences;
 
 #[derive(Clone)]
 pub struct NativeBrowserPreferences {
+    pub proxy_transport: sorng_protocols::http::ProxyTransportSettings,
     pub appearance: sorng_browser_host::native_appearance::AppearanceConfig,
     pub capabilities: NativeBrowserCapabilities,
     pub allow_downloads: bool,
@@ -284,7 +285,10 @@ impl NativeBrowserPreferences {
         };
         let integer = |key, fallback| get(key).and_then(Value::as_u64).unwrap_or(fallback);
         let enabled = |key| get(key).and_then(Value::as_bool).unwrap_or(true);
+        let proxy_transport: sorng_protocols::http::ProxyTransportSettings = serde_json::from_value(settings.get("internalProxy").cloned().unwrap_or_else(|| serde_json::json!({}))).map_err(|_| ())?;
+        proxy_transport.validate().map_err(|_| ())?;
         let result = Self {
+            proxy_transport,
             appearance: appearance_config::from_saved(connection, settings)?,
             // This is global saved policy, not a renderer flag or a connection
             // capability default. Missing settings allow normal downloads.

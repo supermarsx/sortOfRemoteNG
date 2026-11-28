@@ -11,7 +11,7 @@
 //!   further sends.
 
 use super::trust::UpstreamTrust;
-use super::upstream::{establish, Admission, ConnectRequest, Established, Offer, UpstreamFailure};
+use super::upstream::{Admission, ConnectRequest, Established, Offer, UpstreamFailure};
 use super::upstream_verify::UpstreamVerifierConfig;
 use super::ProxyBody;
 use crate::private_forward_proxy::{Authority, RouteDialer};
@@ -27,6 +27,20 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task::AbortHandle;
 
 pub(crate) const MAX_H1_PER_AUTHORITY: usize = 6;
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    #[test]
+    fn configured_http1_limit_holds_until_a_connection_slot_is_released() {
+        let entry = Entry::new(Some(Proto::H1), 1);
+        let first = entry.checkout_h1(Duration::from_secs(20), true, 1);
+        assert!(matches!(first, Checkout::Open(_)));
+        assert!(matches!(entry.checkout_h1(Duration::from_secs(20), true, 1), Checkout::Wait));
+        drop(first);
+        assert!(matches!(entry.checkout_h1(Duration::from_secs(20), true, 1), Checkout::Open(_)));
+    }
+}
 pub(crate) const IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 /// Re-check interval while every HTTP/1.1 connection of an authority is busy.
 const H1_BUSY_POLL: Duration = Duration::from_millis(2);
@@ -92,9 +106,9 @@ struct Entry {
 }
 
 impl Entry {
-    fn new(proto: Option<Proto>) -> Arc<Self> {
+    fn new(proto: Option<Proto>, max_connections: usize) -> Arc<Self> {
         Arc::new(Self {
-            slots: Arc::new(Semaphore::new(MAX_H1_PER_AUTHORITY)),
+            slots: Arc::new(Semaphore::new(max_connections)),
             connect_gate: tokio::sync::Mutex::new(()),
             trust_gate: tokio::sync::Mutex::new(()),
             state: Mutex::new(EntryState {
@@ -132,7 +146,8 @@ impl Entry {
 
     /// `may_open == false` only reuses (first pass, before yielding once so
     /// that a just-finished exchange can mark its connection ready).
-    fn checkout_h1(&self, idle: Duration, may_open: bool) -> Checkout {
+    fn checkout_h1(&self, idle: Duration, may_open: bool, max_idle: usize) -> Checkout {
+        self.prune(idle, max_idle);
         let mut state = self.state();
         state.h1.retain(|conn| !conn.expired(idle));
         if let Some(index) = state.h1.iter().position(|conn| conn.sender.is_ready()) {
@@ -149,9 +164,17 @@ impl Entry {
         }
     }
 
-    fn prune(&self, idle: Duration) {
+    fn prune(&self, idle: Duration, max_idle: usize) {
         let mut state = self.state();
         state.h1.retain(|conn| !conn.expired(idle));
+        let mut idle_kept = 0;
+        state.h1.retain(|conn| {
+            if !conn.sender.is_ready() {
+                return true;
+            } // Never drop an active response.
+            idle_kept += 1;
+            idle_kept <= max_idle
+        });
         if state
             .h2
             .as_ref()
@@ -179,6 +202,9 @@ pub(crate) struct UpstreamPool {
     trust: Arc<dyn UpstreamTrust>,
     verifier: UpstreamVerifierConfig,
     idle_timeout: Duration,
+    max_idle: usize,
+    max_connections: usize,
+    connect_timeout: Duration,
     state: Mutex<PoolState>,
 }
 
@@ -210,11 +236,49 @@ impl UpstreamPool {
         verifier: UpstreamVerifierConfig,
         idle_timeout: Duration,
     ) -> Arc<Self> {
+        Self::configured_inner(
+            dialer,
+            trust,
+            verifier,
+            idle_timeout,
+            MAX_H1_PER_AUTHORITY,
+            MAX_H1_PER_AUTHORITY,
+            super::upstream::CONNECT_TIMEOUT,
+        )
+    }
+    pub(crate) fn configured(
+        dialer: Arc<dyn RouteDialer>,
+        trust: Arc<dyn UpstreamTrust>,
+        verifier: UpstreamVerifierConfig,
+        settings: crate::http::ProxyTransportSettings,
+    ) -> Arc<Self> {
+        Self::configured_inner(
+            dialer,
+            trust,
+            verifier,
+            Duration::from_secs(if settings.max_idle_connections_per_host == 0 { 0 } else { settings.pool_idle_timeout_seconds }),
+            settings.max_idle_connections_per_host,
+            settings.max_connections_per_host,
+            settings.connect_timeout(),
+        )
+    }
+    fn configured_inner(
+        dialer: Arc<dyn RouteDialer>,
+        trust: Arc<dyn UpstreamTrust>,
+        verifier: UpstreamVerifierConfig,
+        idle_timeout: Duration,
+        max_idle: usize,
+        max_connections: usize,
+        connect_timeout: Duration,
+    ) -> Arc<Self> {
         let pool = Arc::new(Self {
             dialer,
             trust,
             verifier,
             idle_timeout,
+            max_idle,
+            max_connections,
+            connect_timeout,
             state: Mutex::new(PoolState::default()),
         });
         Self::spawn_reaper(&pool);
@@ -226,7 +290,7 @@ impl UpstreamPool {
             return; // Expiry still applies lazily on every checkout.
         };
         let weak: Weak<Self> = Arc::downgrade(pool);
-        let period = (pool.idle_timeout / 3).max(Duration::from_millis(10));
+        let period = if pool.idle_timeout.is_zero() { Duration::from_millis(250) } else { (pool.idle_timeout / 3).max(Duration::from_millis(10)) };
         let task = runtime.spawn(async move {
             let mut tick = tokio::time::interval(period);
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -258,7 +322,7 @@ impl UpstreamPool {
             state.entries.values().cloned().collect()
         };
         for entry in entries {
-            entry.prune(self.idle_timeout);
+            entry.prune(self.idle_timeout, self.max_idle);
         }
         true
     }
@@ -281,7 +345,7 @@ impl UpstreamPool {
             .entries
             .entry(key.clone())
             // Plain http:// is HTTP/1.1 only (no h2c upstream).
-            .or_insert_with(|| Entry::new((!key.tls).then_some(Proto::H1)))
+            .or_insert_with(|| Entry::new((!key.tls).then_some(Proto::H1), self.max_connections))
             .clone())
     }
 
@@ -433,7 +497,7 @@ impl UpstreamPool {
         }
         let mut pass = 0u32;
         let (conn, reused) = loop {
-            match entry.checkout_h1(self.idle_timeout, pass > 0) {
+            match entry.checkout_h1(self.idle_timeout, pass > 0, self.max_idle) {
                 Checkout::Reuse(conn) => break (conn, true),
                 Checkout::Open(permit) => {
                     let established = self.connect(key, &entry, Offer::Http11Only).await?;
@@ -480,16 +544,19 @@ impl UpstreamPool {
         offer: Offer,
     ) -> Result<Established, UpstreamFailure> {
         let hsts = self.state().hsts.contains(&key.authority);
-        let established = establish(ConnectRequest {
-            dialer: &self.dialer,
-            trust: &self.trust,
-            verifier: &self.verifier,
-            authority: &key.authority,
-            tls: key.tls,
-            hsts,
-            offer,
-            trust_gate: &entry.trust_gate,
-        })
+        let established = super::upstream::establish_with_timeout(
+            ConnectRequest {
+                dialer: &self.dialer,
+                trust: &self.trust,
+                verifier: &self.verifier,
+                authority: &key.authority,
+                tls: key.tls,
+                hsts,
+                offer,
+                trust_gate: &entry.trust_gate,
+            },
+            self.connect_timeout,
+        )
         .await?;
         let mut state = self.state();
         if state.closed {

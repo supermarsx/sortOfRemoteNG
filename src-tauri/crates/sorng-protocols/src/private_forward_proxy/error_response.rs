@@ -11,6 +11,7 @@ const MAX_CAUSES: usize = 8;
 #[derive(Clone, Copy)]
 pub(super) enum Failure {
     Status,
+    UpstreamStatus,
     Route,
     RouteTimeout,
     ResponseTimeout,
@@ -51,17 +52,28 @@ impl Failure {
             Self::BadSignature => ("certificate-bad-signature", "TLS certificate verification", "The certificate signature is invalid", "The TLS verifier could not validate a certificate or handshake signature.", &["Check the server's certificate chain and key configuration.", "A normal unknown certificate authority is a separate, reviewable condition."]),
             Self::MalformedCertificate => ("certificate-malformed", "TLS certificate verification", "The website supplied an invalid certificate", "The certificate chain was absent, malformed or could not be decoded safely.", &["Ask the administrator to install a complete, correctly encoded certificate chain."]),
             Self::WeakKey => ("certificate-weak-key", "TLS certificate verification", "The certificate uses unsupported cryptography", "A certificate key or signature algorithm was below the verifier's security requirements.", &["For an old device, enable Allow weak device certificates in this connection's browser options and reconnect. Trust review still applies.", "Very old algorithms may also require a legacy TLS profile; prefer replacing the weak certificate when possible."]),
-            Self::Tls(cause) | Self::TlsAttempt(cause, _) => (cause.code(), "TLS negotiation", "SSL/TLS negotiation failed", cause.detail(), &["Check the selected upstream TLS profile and the device configuration.", "Certificate review cannot repair a protocol, cipher or transport failure."]),
+            Self::Tls(cause @ super::intercept::tls_policy::TlsFailure::PeerAlert(112)) | Self::TlsAttempt(cause @ super::intercept::tls_policy::TlsFailure::PeerAlert(112), _) => (cause.code(), "TLS hostname negotiation", "The server rejected the TLS hostname", cause.detail(), &["Use the DNS hostname configured on the server, and check the connection's hostname and port.", "Ask the server administrator to check its SNI / virtual-host configuration. Certificate trust exceptions do not repair a rejected hostname."]),
+            Self::Tls(cause) | Self::TlsAttempt(cause, _) => (cause.code(), "TLS negotiation", cause.title(), cause.detail(), &["Check the selected upstream TLS profile and the device configuration.", "Certificate review cannot repair a protocol, cipher or transport failure."]),
             Self::TlsProtocol => ("tls-protocol", "TLS negotiation", "TLS negotiation failed", "The TLS peers could not complete a supported handshake. This does not, by itself, identify a certificate trust problem.", &["Check the server's TLS versions, cipher configuration and HTTPS port.", "Enable a supported modern TLS configuration on the server; certificate review cannot repair a protocol mismatch."]),
             Self::Hsts => ("hsts-certificate-error", "HTTPS transport policy", "HTTPS policy rejected this connection", "A certificate error on an HSTS-protected origin cannot be overridden for this connection.", &["Repair the website certificate and HTTPS configuration.", "Keep the website on HTTPS; changing the URL to HTTP does not resolve an HSTS certificate error."]),
+            Self::UpstreamStatus => match status.as_u16() {
+                401 => ("upstream-http-401", "Website response", "The website requires sign-in", "The website returned HTTP 401. It did not accept the current authentication.", &["Check the saved account and the website's authentication method."]),
+                403 => ("upstream-http-403", "Website response", "The website refused access", "The website returned HTTP 403. Its access policy refused this request.", &["Check account permissions and the website's IP or access restrictions."]),
+                404 => ("upstream-http-404", "Website response", "The website could not find this page", "The website returned HTTP 404 for the requested path.", &["Check the connection URL and bookmark path."]),
+                429 => ("upstream-http-429", "Website response", "The website is limiting requests", "The website returned HTTP 429. Its request limit was reached.", &["Wait before retrying. Check the website's rate limits and any Retry-After response."]),
+                502 => ("upstream-http-502", "Website response", "The website's gateway failed", "The upstream website returned HTTP 502 from its own gateway.", &["Check the website's reverse proxy and backend service."]),
+                503 => ("upstream-http-503", "Website response", "The website is unavailable", "The website returned HTTP 503. Its service may be busy or under maintenance.", &["Check service health and wait before retrying."]),
+                504 => ("upstream-http-504", "Website response", "The website's gateway timed out", "The upstream website returned HTTP 504 while waiting for its backend.", &["Check the website's backend and gateway timeout settings."]),
+                _ => ("upstream-http-error", "Website response", "The website returned an HTTP error", "The website supplied an error response. The HTTP status is preserved above.", &["Review the website's logs and the request path. Request bodies are never replayed automatically."]),
+            },
             Self::Status => match status.as_u16() {
-                400 | 405 | 421 | 431 => ("request-rejected", "Request validation", "The proxy could not accept this request", "The request did not satisfy the private proxy's method, destination or HTTP framing requirements.", &["Check the connection target and request configuration."]),
+                400 | 405 | 421 | 431 => ("request-rejected", "Request validation", "The proxy could not accept this request", "The request did not satisfy the application internal proxy's method, destination or HTTP framing requirements.", &["Check the connection target and request configuration."]),
                 403 => ("destination-denied", "Destination policy", "This destination was not permitted", "The current private route or request policy did not grant this destination.", &["Review the connection's website destination permissions.", "Only destinations explicitly admitted by the private route can be requested."]),
-                407 => ("proxy-authentication", "Proxy authentication", "Private proxy authentication is required", "The request did not present valid credentials for this attempt's private proxy.", &["Reconnect the owning browser tab to restore its private proxy binding."]),
-                408 => ("request-timeout", "Request admission", "The request was not received in time", "The private proxy did not receive a complete request header before its deadline.", &["Retry after checking the client connection."]),
-                503 => ("proxy-capacity", "Proxy admission", "The private proxy is busy", "The private proxy could not accept more work at this time.", &["Wait for active requests to finish, then retry."]),
+                407 => ("proxy-authentication", "Proxy authentication", "Application internal proxy authentication is required", "The request did not present valid credentials for this attempt's application internal proxy.", &["Reconnect the owning browser tab to restore its application internal proxy binding."]),
+                408 => ("request-timeout", "Request admission", "The request was not received in time", "The application internal proxy did not receive a complete request header before its deadline.", &["Retry after checking the client connection."]),
+                503 => ("proxy-capacity", "Proxy admission", "The application internal proxy is busy", "The application internal proxy could not accept more work at this time.", &["Wait for active requests to finish, then retry."]),
                 504 => return Self::ResponseTimeout.explain(status),
-                _ => ("proxy-failure", "Private proxy", "The private proxy could not complete the request", "An internal forwarding operation failed before a usable response was available.", &["Review the technical details and connection diagnostics."]),
+                _ => ("proxy-failure", "Application internal proxy", "The application internal proxy could not complete the request", "An internal forwarding operation failed before a usable response was available.", &["Review the technical details and connection diagnostics."]),
             },
         };
         Explanation {
@@ -87,6 +99,8 @@ pub(super) struct Report {
     causes: Vec<String>,
     trace: Vec<String>,
     captured: bool,
+    trace_disabled: bool,
+    expand_details: bool,
 }
 
 struct Limited {
@@ -253,10 +267,12 @@ impl Report {
             causes,
             trace: if capture_stack { stack() } else { Vec::new() },
             captured: capture_stack,
+            trace_disabled: false,
+            expand_details: false,
         }
     }
     fn text(&self, status: StatusCode) -> String {
-        let mut output = format!("SortOfRemoteNG private proxy\nHTTP {} {}\n{}\n\n{}\n\nReference ID: {}\nRecorded: {}\nFailure code: {}\nStage: {}\n\nWhat to check\n", status.as_u16(), status.canonical_reason().unwrap_or("Error"), self.title, self.detail, self.id, self.recorded, self.code, self.stage);
+        let mut output = format!("SortOfRemoteNG application internal proxy\nHTTP {} {}\n{}\n\n{}\n\nReference ID: {}\nRecorded: {}\nFailure code: {}\nStage: {}\n\nWhat to check\n", status.as_u16(), status.canonical_reason().unwrap_or("Error"), self.title, self.detail, self.id, self.recorded, self.code, self.stage);
         for hint in self.hints {
             let _ = writeln!(output, "- {hint}");
         }
@@ -266,7 +282,7 @@ impl Report {
         }
         output.push_str("\nError-response backtrace\nCaptured while preparing this response; the asynchronous failure may have originated earlier.\n");
         if self.trace.is_empty() {
-            output.push_str(if self.captured {
+            output.push_str(if self.trace_disabled { "Native stack details are disabled in Internal Proxy settings.\n" } else if self.captured {
                 "Native stack frames or function symbols are unavailable in this build.\n"
             } else {
                 "Stack capture is omitted before authenticated forwarding.\n"
@@ -278,17 +294,18 @@ impl Report {
         output
     }
     fn html(&self, status: StatusCode) -> String {
+        let details_open = if self.expand_details { " open" } else { "" };
         let short = format!("{}\n{}\nFailure code: {}\nReference ID: {}", self.title, self.detail, self.code, self.id);
-        let mut output = format!(r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{}</title><style>{}{}{}</style></head><body><main><header><span>SortOfRemoteNG <span class="muted">/ Private proxy</span></span><span class="muted">HTTP {}</span></header><p class="stage">{}</p><h1>{}</h1><p class="description">{}</p><code class="failure-code">{}</code><section class="advice"><h2>What to check</h2><ul>"#,
+        let mut output = format!(r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{}</title><style>{}{}{}</style></head><body><main><header><span>SortOfRemoteNG <span class="muted">/ Application internal proxy</span></span><span class="muted">HTTP {}</span></header><p class="stage">{}</p><h1>{}</h1><p class="description">{}</p><code class="failure-code">{}</code><section class="advice"><h2>What to check</h2><ul>"#,
             escape(self.title), self.theme_css, STYLE, crate::internal_page::ACTION_STYLE,
             status.as_u16(), escape(self.stage), escape(self.title), escape(self.detail), escape(self.code));
         for hint in self.hints { let _=write!(output,"<li>{}</li>",escape(hint)); }
         output.push_str("</ul></section>");
         output.push_str(&crate::internal_page::controls(&short, &self.text(status)));
-        let _=write!(output,r#"<details class="technical"><summary>Technical details</summary><dl><div><dt>Failure code</dt><dd>{}</dd></div><div><dt>Reference ID</dt><dd>{}</dd></div><div><dt>Recorded in UTC</dt><dd>{}</dd></div></dl><details><summary>Cause chain</summary><ol>"#,escape(self.code),escape(&self.id),escape(&self.recorded));
+        let _=write!(output,r#"<details class="technical"{details_open}><summary>Technical details</summary><dl><div><dt>Failure code</dt><dd>{}</dd></div><div><dt>Reference ID</dt><dd>{}</dd></div><div><dt>Recorded in UTC</dt><dd>{}</dd></div></dl><details><summary>Cause chain</summary><ol>"#,escape(self.code),escape(&self.id),escape(&self.recorded));
         for cause in &self.causes { let _=write!(output,"<li>{}</li>",escape(cause)); }
         output.push_str("</ol></details><details><summary>Error-response backtrace</summary><p>Captured while preparing this response; the asynchronous failure may have originated earlier.</p><pre>");
-        if self.trace.is_empty() { output.push_str(if self.captured { "Native stack frames or function symbols are unavailable in this build." } else { "Stack capture is omitted before authenticated forwarding." }); }
+        if self.trace.is_empty() { output.push_str(if self.trace_disabled { "Native stack details are disabled in Internal Proxy settings." } else if self.captured { "Native stack frames or function symbols are unavailable in this build." } else { "Stack capture is omitted before authenticated forwarding." }); }
         for (index,frame) in self.trace.iter().enumerate() { let _=writeln!(output,"{index}: {}",escape(frame)); }
         output.push_str("</pre></details></details><footer>Generated locally. Credentials and private request data are excluded.</footer></main></body></html>");
         output
@@ -297,6 +314,29 @@ impl Report {
 
 pub(super) fn apply_theme(response: &mut Response<ProxyBody>, theme: &crate::theme_tokens::ThemeTokens) {
     if let Some(report) = response.extensions_mut().get_mut::<Report>() { report.theme_css = theme.css_block(); }
+}
+
+pub(super) fn apply_options<B>(response: &mut Response<B>, settings: crate::http::ProxyTransportSettings) {
+    if let Some(report) = response.extensions_mut().get_mut::<Report>() {
+        report.expand_details = settings.expand_error_details;
+        if !settings.include_error_trace { report.trace.clear(); report.trace_disabled = true; }
+    }
+}
+
+pub(super) fn convert_upstream(status: StatusCode, headers: &hyper::http::HeaderMap, settings: crate::http::ProxyTransportSettings) -> Option<Response<ProxyBody>> {
+    use crate::http::ProxyHttpErrorConversion;
+    let convert = match settings.http_error_conversion {
+        ProxyHttpErrorConversion::Off => false,
+        ProxyHttpErrorConversion::ServerErrors => status.is_server_error(),
+        ProxyHttpErrorConversion::AllErrors => status.is_server_error() || status.is_client_error(),
+    };
+    if !convert { return None; }
+    let mut converted = response(status, Failure::UpstreamStatus, None, settings.include_error_trace);
+    for name in [header::WWW_AUTHENTICATE, header::RETRY_AFTER, header::SET_COOKIE] {
+        for value in headers.get_all(&name).iter() { converted.headers_mut().append(name.clone(), value.clone()); }
+    }
+    apply_options(&mut converted, settings);
+    Some(converted)
 }
 
 fn escape(value: &str) -> String {

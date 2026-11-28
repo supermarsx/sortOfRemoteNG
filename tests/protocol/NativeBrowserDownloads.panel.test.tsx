@@ -169,7 +169,9 @@ describe("native downloads panel availability", () => {
     );
     const panel = await openPanel();
     expect(panel).toHaveTextContent("No downloads in this browser session.");
-    expect(panel).toHaveTextContent("native browser session and private proxy");
+    expect(panel).toHaveTextContent(
+      "native browser session and internal proxy",
+    );
     expect(panel).toHaveTextContent(
       "locking its database cancels active downloads",
     );

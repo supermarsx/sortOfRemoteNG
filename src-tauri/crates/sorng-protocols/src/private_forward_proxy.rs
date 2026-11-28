@@ -167,6 +167,8 @@ pub fn exact_authority_grant(authority: Authority) -> DestinationGrant {
 
 #[derive(Clone, Copy, Debug)]
 pub struct ProxyLimits {
+    /// Native-authorized transport snapshot; absent preserves the legacy relay API.
+    pub transport: Option<crate::http::ProxyTransportSettings>,
     /// Includes unauthenticated readers, pending dials and established tunnels.
     pub max_clients: usize,
     pub max_header_bytes: usize,
@@ -196,6 +198,7 @@ impl Default for ProxyLimits {
             // which the page and the user see as a proxy failure. The cap still
             // bounds one relay to this many sockets, dials and relay buffers,
             // whoever connects to its port.
+            transport: None,
             max_clients: ENGINE_REQUEST_SOCKETS_PER_PROXY + ENGINE_WEBSOCKET_SOCKETS_PER_PROXY,
             max_header_bytes: 8 * 1024,
             header_timeout: Duration::from_secs(10),
@@ -209,6 +212,7 @@ impl Default for ProxyLimits {
 
 impl ProxyLimits {
     fn validate(self) -> io::Result<Self> {
+        if let Some(settings) = self.transport { settings.validate().map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid proxy transport settings"))?; }
         if !(1..=256).contains(&self.max_clients)
             || !(256..=16 * 1024).contains(&self.max_header_bytes)
             || [
@@ -308,10 +312,13 @@ impl PrivateForwardProxy {
         verifier.allow_weak_certificates = allow_weak_certificates;
         verifier.legacy_helper = legacy_tls_helper;
         let (cache, cache_use) = intercept::cache::ProxyCache::open(cache);
-        let pool = intercept::pool::UpstreamPool::new(dialer.clone(), trust, verifier);
+        let pool = match limits.transport {
+            Some(settings) => intercept::pool::UpstreamPool::configured(dialer.clone(), trust, verifier, settings),
+            None => intercept::pool::UpstreamPool::new(dialer.clone(), trust, verifier),
+        };
         let exchange = Arc::new(intercept::forward::Exchange::new(
             authority, pool, cache, cache_use, hooks,
-        ).with_theme(theme));
+        ).with_theme(theme).with_transport(limits.transport));
         Self::start_inner(LoopbackSource, dialer, grant, limits, Some(exchange)).await
     }
 

@@ -10,7 +10,10 @@ fn legacy_and_partial_configs_use_the_exact_defaults() {
         serde_json::to_value(config.transport_settings).unwrap(),
         json!({
             "version":1, "connectTimeoutSeconds":15, "requestTimeoutSeconds":120,
-            "poolIdleTimeoutSeconds":20, "maxIdleConnectionsPerHost":4, "tcpKeepaliveSeconds":30
+            "poolIdleTimeoutSeconds":20, "maxIdleConnectionsPerHost":4, "tcpKeepaliveSeconds":30,
+            "tcpNoDelay":true,"maxClients":256,"maxHeaderBytes":8192,"headerTimeoutSeconds":10,
+            "responseTimeoutSeconds":5,"httpResponseTimeoutSeconds":60,"httpIdleTimeoutSeconds":60,
+            "dnsTimeoutSeconds":10,"dnsCacheTtlSeconds":0,"dnsCacheMaxEntries":256,"addressFamily":"system"
         })
     );
     for value in [json!({}), json!({"requestTimeoutSeconds":240})] {
@@ -245,4 +248,15 @@ async fn zero_idle_connections_disables_reuse_without_adding_headers_or_cookies(
         assert!(!headers.contains_key("authorization"));
         assert!(!headers.contains_key("cookie"));
     }
+}
+
+#[test]
+fn native_relay_limits_are_derived_from_the_same_validated_settings() {
+    let settings = ProxyTransportSettings { max_clients: 128, max_header_bytes: 16_384, connect_timeout_seconds: 19, header_timeout_seconds: 8, http_idle_timeout_seconds: 42, ..Default::default() };
+    let limits = settings.relay_limits().unwrap();
+    assert_eq!(limits.max_clients, 128); assert_eq!(limits.max_header_bytes, 16_384);
+    assert_eq!(limits.dial_timeout, Duration::from_secs(19));
+    assert_eq!(limits.header_timeout, Duration::from_secs(8)); assert_eq!(limits.http_idle_timeout, Duration::from_secs(42));
+    assert!(ProxyTransportSettings { max_clients: 0, ..settings }.relay_limits().is_err());
+    assert!(serde_json::from_value::<ProxyTransportSettings>(json!({"addressFamily":"invalid"})).is_err());
 }

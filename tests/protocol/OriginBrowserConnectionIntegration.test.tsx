@@ -2635,7 +2635,7 @@ describe("real-origin connection-tab integration", () => {
       name: "Open in system browser?",
     });
     expect(dialog).toHaveTextContent(url);
-    expect(dialog).toHaveTextContent("outside this app's private proxy route");
+    expect(dialog).toHaveTextContent("outside this app's internal proxy route");
     expect(dialog).toHaveTextContent("sensitive query or fragment");
     expect(calls("open_url_external")).toHaveLength(0);
     expect(screen.getByRole("button", { name: "Reload" })).toBeDisabled();

@@ -120,7 +120,7 @@ describe("observed connection health", () => {
     );
     const value = health({ observation: { ...observation(), routeHealth } });
     expect(value.hops.map((hop) => hop.label)).toEqual([
-      "Private proxy · component 1",
+      "Internal proxy · component 1",
       "Proxy · component 2",
       "SSH jump · component 3",
       "Website",
@@ -188,7 +188,7 @@ describe("observed connection health", () => {
     expect(result.label).toBe("Last load succeeded");
     expect(result.summary).toContain("not continuously probed");
     expect(result.hops.map((hop) => hop.label)).toEqual([
-      "Private proxy",
+      "Internal proxy",
       "SSH jump",
       "Proxy",
       "Website",

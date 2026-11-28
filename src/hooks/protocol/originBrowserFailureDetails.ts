@@ -106,7 +106,7 @@ const startupDetails: Record<
     "browser-settings",
   ],
   "private-proxy": [
-    "Native browser private proxy",
+    "Native browser internal proxy",
     "The private browser proxy could not start. No direct route was used.",
     "Review the connection's proxy or tunnel route and native startup diagnostics, then reopen the tab.",
     "network",
@@ -810,7 +810,7 @@ export function getOriginBrowserFailureDetails(
     ) {
       return [
         detail("load-proxy-connection", [
-          "Native browser private proxy connection",
+          "Native browser internal proxy connection",
           nativeProxyConnectionFailure.problem,
           nativeProxyConnectionFailure.nextStep,
           "browser-settings",

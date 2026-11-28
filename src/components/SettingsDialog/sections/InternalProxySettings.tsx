@@ -11,6 +11,9 @@ import {
   Toggle,
 } from "../../ui/settings/SettingsPrimitives";
 import { BrowserNumberRow } from "../BrowserSettingsFields";
+import InternalProxyDnsSettings from "./InternalProxyDnsSettings";
+import InternalProxyCacheSettings from "./InternalProxyCacheSettings";
+import InternalProxyErrorSettings from "./InternalProxyErrorSettings";
 import InternalProxyRequestLog from "./InternalProxyRequestLog";
 
 interface InternalProxySettingsProps {
@@ -94,9 +97,9 @@ function InternalProxySettingsContent({
         <SectionHeader icon={<Network size={16} />} title="Transport" />
         <Card>
           <p className="text-sm text-[var(--color-textSecondary)]">
-            Saved transport changes apply to new proxy sessions. Close and
-            reopen the browser tab to create a new session; reloading an active
-            page keeps its existing transport.
+            Saved transport and DNS changes apply to new legacy and native proxy
+            sessions. Close and reopen the browser tab to create a new session;
+            reloading an active page keeps its existing transport.
           </p>
           <fieldset
             disabled={settingsReady === false}
@@ -163,6 +166,14 @@ function InternalProxySettingsContent({
                 update({ tcpKeepaliveSeconds })
               }
             />
+            <Toggle
+              settingKey="internalProxy.tcpNoDelay"
+              label="Send TCP data immediately"
+              description="Disable Nagle’s algorithm on upstream sockets to reduce interactive latency."
+              checked={config.tcpNoDelay}
+              disabled={settingsReady === false}
+              onChange={(tcpNoDelay) => update({ tcpNoDelay })}
+            />
           </fieldset>
           {error && (
             <p role="alert" className="text-sm text-error">
@@ -171,6 +182,117 @@ function InternalProxySettingsContent({
           )}
         </Card>
       </div>
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<Network size={16} />}
+          title="Native relay limits"
+        />
+        <Card>
+          <p className="text-xs text-[var(--color-textSecondary)]">
+            These limits apply to each native browser relay, including HTTPS
+            interception. Upgraded WebSocket and remote-control tunnels keep
+            their existing stream lifetime; HTTP idle limits do not cut them
+            off.
+          </p>
+          {(
+            [
+              [
+                "maxClients",
+                "Concurrent relay clients",
+                "Includes header readers, connecting sockets and established tunnels. The browser can use 256 sockets per proxy; lower limits may reject page resources.",
+                16,
+                256,
+              ],
+              [
+                "maxConnectionsPerHost",
+                "HTTP/1 connections per host",
+                "Parallel upstream HTTP/1 connections per host in each intercepted session. HTTP/2 multiplexes over one connection. This is a concurrency limit, not an OS thread count.",
+                1,
+                64,
+              ],
+              [
+                "dnsConcurrency",
+                "Parallel DNS lookups per session",
+                "Bounds blocking name-resolution work for this session. All sessions also share the process limit of 16 active DNS jobs.",
+                1,
+                16,
+              ],
+              [
+                "maxHeaderBytes",
+                "Proxy request header limit",
+                "Maximum CONNECT or plain HTTP request header size in bytes.",
+                1024,
+                16384,
+              ],
+              [
+                "headerTimeoutSeconds",
+                "Proxy header timeout",
+                "Seconds to receive a complete request header, including slow partial writes.",
+                1,
+                120,
+              ],
+              [
+                "responseTimeoutSeconds",
+                "Proxy response write timeout",
+                "Seconds to send the local relay’s response header.",
+                1,
+                120,
+              ],
+              [
+                "httpResponseTimeoutSeconds",
+                "HTTP response header timeout",
+                "Seconds to receive the upstream response header, including the request upload.",
+                5,
+                120,
+              ],
+              [
+                "httpIdleTimeoutSeconds",
+                "HTTP idle timeout",
+                "Seconds without progress on ordinary plain HTTP request or response bodies.",
+                5,
+                120,
+              ],
+            ] as const
+          ).map(([key, label, description, min, max]) => (
+            <BrowserNumberRow
+              key={key}
+              settingKey={`internalProxy.${key}`}
+              label={label}
+              description={description}
+              min={min}
+              max={max}
+              value={config[key]}
+              disabled={settingsReady === false}
+              onChange={(value) => update({ [key]: value })}
+            />
+          ))}
+        </Card>
+      </div>
+      <div className="space-y-4">
+        <SectionHeader icon={<Network size={16} />} title="Name resolution" />
+        <Card>
+          <InternalProxyDnsSettings
+            config={config}
+            update={update}
+            disabled={settingsReady === false}
+          />
+        </Card>
+      </div>
+      <div className="space-y-4">
+        <SectionHeader icon={<Activity size={16} />} title="Page cache" />
+        <Card>
+          <InternalProxyCacheSettings
+            settings={settings}
+            updateSettings={updateSettings}
+            disabled={settingsReady === false}
+          />
+        </Card>
+      </div>
+      <InternalProxyErrorSettings
+        config={config}
+        onChange={update}
+        disabled={settingsReady === false}
+      />
       <div className="space-y-4">
         <SectionHeader
           icon={<Wifi size={16} />}

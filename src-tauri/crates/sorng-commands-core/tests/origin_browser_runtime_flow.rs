@@ -2030,7 +2030,7 @@ fn a_relay_that_cannot_start_or_ends_during_preparation_is_the_retried_private_p
     in_order(
         &create,
         &[
-            "OriginBrowserSession::start(authorized.policy, authorized.route, ProxyLimits::default())",
+            "OriginBrowserSession::start(authorized.policy, authorized.route, authorized.preferences.proxy_transport.relay_limits()?)",
             ".map_err(|error| {",
             "log::error!(\"Native browser stage=private-proxy error={error}\");",
             "login.revoke();",

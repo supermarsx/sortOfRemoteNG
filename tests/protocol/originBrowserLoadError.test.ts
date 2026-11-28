@@ -3,7 +3,7 @@ import { originBrowserLoadError } from "../../src/hooks/protocol/originBrowserSe
 import { originBrowserLoadFailure } from "../../src/types/protocols/originBrowser";
 
 describe("safe native document failure evidence", () => {
-  it("distinguishes reaching the private proxy from an upstream tunnel rejection", () => {
+  it("distinguishes reaching the internal proxy from an upstream tunnel rejection", () => {
     const endpointFailure = originBrowserLoadError({
       code: -130,
       category: "proxy",

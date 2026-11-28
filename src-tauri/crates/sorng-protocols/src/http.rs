@@ -21,11 +21,12 @@ pub use tls_ca::{
 #[path = "http_proxy_transport.rs"]
 mod proxy_transport;
 pub(crate) use proxy_transport::connect_browser_transport;
-pub use proxy_transport::{fetch_tls_certificate_info, CertificateInspectionError};
+pub use proxy_transport::{connect_browser_transport_configured, fetch_tls_certificate_info, CertificateInspectionError};
 
 #[path = "http_proxy_transport_settings.rs"]
 mod proxy_transport_settings;
-pub use proxy_transport_settings::ProxyTransportSettings;
+pub use proxy_transport_settings::{ProxyTransportSettings, ProxyAddressFamily, ProxyHttpErrorConversion};
+pub use crate::browser_dns::{stats as proxy_dns_stats, clear_caches as clear_proxy_dns_caches, BrowserDnsStats};
 
 #[path = "http_proxy_start.rs"]
 #[doc(hidden)]

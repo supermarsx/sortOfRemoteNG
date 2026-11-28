@@ -570,6 +570,7 @@ define_command_group!(
         ssh_commands::check_fido2_support,
         http_commands::check_proxy_health,
         ssh_commands::clear_highlight_rules,
+        http_commands::clear_proxy_dns_caches,
         http_commands::clear_proxy_request_log,
         ssh_commands::clear_terminal_buffer,
         ssh_commands::close_ssh3_channel,
@@ -608,6 +609,7 @@ define_command_group!(
         ssh_commands::get_highlight_status,
         // ProxyCommand
         ssh_commands::get_proxy_command_info,
+        http_commands::get_proxy_dns_stats,
         http_commands::get_proxy_request_log,
         http_commands::get_proxy_session_details,
         ssh_commands::get_rdp_tunnel_status,

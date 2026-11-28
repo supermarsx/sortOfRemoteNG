@@ -321,7 +321,7 @@ describe("native browser failure diagnostics", () => {
   });
 
   it.each([
-    ["proxy", -130, "The browser could not connect to its private proxy"],
+    ["proxy", -130, "The browser could not connect to its internal proxy"],
     ["proxy", -111, "The configured proxy route failed"],
     ["certificate", -202, "The website certificate was not accepted"],
     ["tls", -107, "The secure connection could not be negotiated"],
@@ -679,7 +679,9 @@ describe("native browser failure diagnostics", () => {
     expect(screen.getByText("24 ms")).toBeInTheDocument();
     expect(screen.getByText("25 bytes")).toBeInTheDocument();
     expect(
-      screen.getAllByText("Delegated to the private proxy; no separate timing"),
+      screen.getAllByText(
+        "Delegated to the internal proxy; no separate timing",
+      ),
     ).toHaveLength(2);
     expect(screen.getByText(/HTTPS probe uses strict PKI/)).toBeInTheDocument();
     expect(

@@ -1276,10 +1276,18 @@ describe("Internal Proxy settings", () => {
     ["Pool idle timeout", "poolIdleTimeoutSeconds", 0, 300],
     ["Maximum idle connections per host", "maxIdleConnectionsPerHost", 0, 32],
     ["TCP keepalive interval", "tcpKeepaliveSeconds", 0, 300],
+    ["Concurrent relay clients", "maxClients", 16, 256],
+    ["Proxy request header limit", "maxHeaderBytes", 1024, 16384],
+    ["Proxy header timeout", "headerTimeoutSeconds", 1, 120],
+    ["HTTP idle timeout", "httpIdleTimeoutSeconds", 5, 120],
+    ["DNS lookup timeout", "dnsTimeoutSeconds", 1, 60],
+    ["DNS cache lifetime", "dnsCacheTtlSeconds", 0, 3600],
+    ["DNS cache entries per session", "dnsCacheMaxEntries", 16, 4096],
   ] as const)(
     "enforces %s bounds including zero where supported",
     (label, key, min, max) => {
       const config = normalizeInternalProxySettings(undefined);
+      config[key] = min;
       config.connectTimeoutSeconds = 1;
       const { update } = setup("internal", { internalProxy: config });
       for (const value of ["", "1.5", String(min - 1), String(max + 1)]) {
@@ -1350,7 +1358,9 @@ describe("Internal Proxy settings", () => {
         "Proxy sessions and request diagnostics are available in Session Manager.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Saved transport changes/)).toHaveTextContent(
+    expect(
+      screen.getByText(/Saved transport and DNS changes/),
+    ).toHaveTextContent(
       "reloading an active page keeps its existing transport",
     );
     expect(

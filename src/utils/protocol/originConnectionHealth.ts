@@ -272,7 +272,7 @@ export function deriveOriginConnectionHealth(options: {
       status = "disconnected";
       label = "Disconnected";
       summary =
-        "The browser attempt or its private proxy is unavailable. Individual tunnel failures may not be identified.";
+        "The browser attempt or its internal proxy is unavailable. Individual tunnel failures may not be identified.";
     } else if (snapshot?.loadFailure || state.operationFailure) {
       status = "degraded";
       label = "Connection problem";
@@ -299,7 +299,7 @@ export function deriveOriginConnectionHealth(options: {
       status = "healthy";
       label = "Last load succeeded";
       summary =
-        "The last page load completed and the private proxy is listening. Tunnel reachability is not continuously probed.";
+        "The last page load completed and the internal proxy is listening. Tunnel reachability is not continuously probed.";
     }
   }
   const relayStatus: OriginConnectionHealthStatus = !proxy
@@ -316,7 +316,7 @@ export function deriveOriginConnectionHealth(options: {
       ].includes(name),
     ),
     ["Browser", enabled ? state.phase : "Not observed"],
-    ["Private proxy", proxy?.state ?? "Not observed"],
+    ["Internal proxy", proxy?.state ?? "Not observed"],
     [
       "Last page load",
       enabled && snapshot?.documentLoaded === true
@@ -364,7 +364,7 @@ export function deriveOriginConnectionHealth(options: {
         ? [
             {
               key: "private-proxy",
-              label: "Private proxy",
+              label: "Internal proxy",
               kind: "Runtime observation",
               status: relayStatus,
               detail: proxy

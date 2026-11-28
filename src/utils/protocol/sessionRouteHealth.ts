@@ -8,7 +8,7 @@ const names = {
   vpn: "VPN",
   "local-forward": "Local forward",
   rdp: "RDP transport",
-  "private-relay": "Private proxy",
+  "private-relay": "Internal proxy",
 };
 const stages = {
   dns: "DNS lookup",

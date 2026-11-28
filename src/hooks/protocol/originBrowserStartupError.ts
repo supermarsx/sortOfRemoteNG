@@ -301,7 +301,7 @@ const proxyRules = {
   "all-requests-type": [
     "allowAllRequests must be a boolean when present",
     "allowAllRequests",
-    "Use the Allow all website requests checkbox so the saved value is true or false. Enabled requests still use this connection's private proxy.",
+    "Use the Allow all website requests checkbox so the saved value is true or false. Enabled requests still use this connection's internal proxy.",
   ],
   "all-scripts-type": [
     "allowAllScripts must be a boolean when present",
@@ -903,8 +903,13 @@ const runtimeFailures = new Map<string, OriginBrowserStartupFailureCode>([
     "The packaged real-origin browser is unavailable. No website was opened and no direct-network fallback was used.",
     "runtime-unavailable",
   ],
+  // Older native hosts emit this fixed wire text; display uses the mapped label.
   [
     "Native browser private proxy could not start. Reopen the tab and check the native startup diagnostics; no direct-network fallback was used.",
+    "private-proxy",
+  ],
+  [
+    "Native browser internal proxy could not start. Reopen the tab and check the native startup diagnostics; no direct-network fallback was used.",
     "private-proxy",
   ],
   [

@@ -1289,8 +1289,11 @@ async fn authorize_create_inner<R: Runtime>(
             .unwrap_or_else(|| snapshot_health.snapshot(session_id))
     });
     let grant = policy.destination_grant();
+    let transport = preferences.proxy_transport;
+    let resolver = Arc::new(sorng_protocols::browser_dns::BrowserDnsResolver::new(transport).map_err(|_| NativeAuthorityError::PolicyInvalid { scope: "settings.internalProxy", rule: "invalid proxy transport or DNS settings" })?);
     let route: Arc<dyn RouteDialer> = Arc::new(move |target: Authority| -> DialFuture {
         let hops = hops.clone();
+        let resolver = resolver.clone();
         let lease = route_lease.clone();
         let ssh_route = ssh_route.clone();
         let health = health.clone();
@@ -1299,11 +1302,11 @@ async fn authorize_create_inner<R: Runtime>(
             if !granted || !lease.is_current() {
                 return Err(route_error());
             }
-            let stream = tokio::time::timeout(Duration::from_secs(30), async {
+            let stream = tokio::time::timeout(transport.connect_timeout(), async {
                 if let Some(route) = ssh_route {
                     route.dial(&target).await
                 } else {
-                    dial_route_observed(&hops, &target, &health).await
+                    dial_route_configured(&hops, &target, &health, transport, resolver).await
                 }
             })
             .await
@@ -2229,10 +2232,19 @@ async fn dial_route(hops: &[ProxyHop], target: &Authority) -> io::Result<BoxedSt
     dial_route_observed(hops, target, &Default::default()).await
 }
 
+#[cfg(test)]
 async fn dial_route_observed(
     hops: &[ProxyHop],
     target: &Authority,
     health: &sorng_core::route_health::RouteHealth,
+) -> io::Result<BoxedStream> {
+    dial_route_configured(hops, target, health, Default::default(), Arc::new(sorng_protocols::browser_dns::BrowserDnsResolver::new(Default::default()).map_err(|_| route_error())?)).await
+}
+
+async fn dial_route_configured(
+    hops: &[ProxyHop], target: &Authority, health: &sorng_core::route_health::RouteHealth,
+    transport: sorng_protocols::http::ProxyTransportSettings,
+    resolver: Arc<sorng_protocols::browser_dns::BrowserDnsResolver>,
 ) -> io::Result<BoxedStream> {
     use sorng_core::route_health::{HopKind, HopStage};
     if let Some(hop) = hops
@@ -2254,14 +2266,10 @@ async fn dial_route_observed(
                 .set_password(Some(&hop.password))
                 .map_err(|_| route_error())?;
         }
-        let route =
-            sorng_protocols::private_forward_route::NativeForwardRoute::http_connect(proxy.into())
-                .map_err(|_| route_error())?;
         let observation = health.begin(0, HopKind::Proxy, HopStage::ProxyNegotiation);
-        let result = route
-            .dial(destination.clone())
-            .await
-            .map_err(|_| route_error());
+        let result = sorng_protocols::http::connect_browser_transport_configured(
+            destination.host(), destination.port(), Some(proxy.as_str()), transport, resolver,
+        ).await.map_err(|_| route_error());
         observation.finish(result.is_ok());
         let mut stream = result?;
         for (index, hop) in hops.iter().enumerate().skip(1) {
@@ -2294,14 +2302,21 @@ async fn dial_route_observed(
     if hops.is_empty() {
         observation.set_endpoint(sorng_core::route_health::HopEndpoint::new(first.host(), first.port(), sorng_core::route_health::HopProtocol::Tcp));
     }
-    let result = SocketConnector::new()
-        .connect_tcp(
-            &SocketTarget::new(host, first.port()),
-            Route::Direct,
-            TcpOptions::default(),
-        )
-        .await
-        .map_err(|_| route_error());
+    let result = async {
+        let deadline = tokio::time::Instant::now() + transport.connect_timeout();
+        let addresses = resolver.lookup(host, first.port()).await.map_err(|_| route_error())?;
+        let mut last = route_error();
+        for (index, address) in addresses.iter().enumerate() {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() { break; }
+            let options = TcpOptions { no_delay: transport.tcp_no_delay, keepalive: transport.tcp_keepalive(),
+                timeouts: sorng_socket_transport::IoTimeouts { connect: (remaining / ((addresses.len() - index) as u32)).max(Duration::from_millis(250)).min(remaining), ..Default::default() }, ..Default::default() };
+            match SocketConnector::new().connect_tcp(&SocketTarget::new(address.ip().to_string(), address.port()), Route::Direct, options).await {
+                Ok(stream) => return Ok(stream), Err(_) => last = route_error(),
+            }
+        }
+        Err(last)
+    }.await;
     observation.finish(result.is_ok());
     let mut stream = result?.into_stream();
     for (index, hop) in hops.iter().enumerate() {

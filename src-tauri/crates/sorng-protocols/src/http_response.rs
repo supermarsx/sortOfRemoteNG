@@ -610,7 +610,7 @@ emit('proxy_document_start');
 function ready(){{emit('proxy_dom_ready');}}
 if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded',ready,{{once:true}});}}else{{ready();}}
 }})();</script>"#,
-        automation_client = include_str!("web_automation_client.js"),
+        automation_client = crate::web_automation_asset::web_automation_client_source(),
         dark_mode_client = include_str!("web_dark_mode_client.js"),
         synology_progress_client = include_str!("synology_login_progress_client.js"),
         network_client = super::network::bootstrap(

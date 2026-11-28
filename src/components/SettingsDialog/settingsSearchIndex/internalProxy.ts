@@ -1,6 +1,42 @@
 import type { SettingSearchEntry } from "./types";
 
 export const INTERNAL_PROXY_SEARCH_ENTRIES: SettingSearchEntry[] = [
+  ...(
+    [
+      [
+        "maxConnectionsPerHost",
+        "HTTP/1 connections per host",
+        "Bound parallel HTTP/1 upstream connections in intercepted native sessions.",
+      ],
+      [
+        "dnsConcurrency",
+        "Parallel DNS lookups",
+        "Limit name resolution workers per session; the process cap remains 16.",
+      ],
+      [
+        "httpErrorConversion",
+        "Convert website HTTP errors",
+        "Choose website error pages or application pages for HTTP 5xx or all 4xx/5xx errors.",
+      ],
+      [
+        "includeErrorTrace",
+        "Include native error traces",
+        "Include or omit native stacks from diagnostic reports.",
+      ],
+      [
+        "expandErrorDetails",
+        "Expand error details",
+        "Open technical details on application error pages by default.",
+      ],
+    ] as const
+  ).map(([key, label, description]) => ({
+    key: `internalProxy.${key}`,
+    label,
+    description,
+    tags: ["proxy", "errors", "diagnostics", "concurrency", "threading"],
+    section: "internalProxy",
+    sectionLabel: "Internal Proxy",
+  })),
   {
     key: "internalProxy.connectTimeoutSeconds",
     label: "Connect timeout",
@@ -45,6 +81,83 @@ export const INTERNAL_PROXY_SEARCH_ENTRIES: SettingSearchEntry[] = [
     section: "internalProxy",
     sectionLabel: "Internal Proxy",
   },
+  ...(
+    [
+      [
+        "tcpNoDelay",
+        "Send TCP data immediately",
+        "Reduce interactive latency by disabling Nagle’s algorithm on upstream sockets.",
+        ["tcp", "latency", "nodelay"],
+      ],
+      [
+        "maxClients",
+        "Concurrent relay clients",
+        "Bound native relay sockets, connecting requests and active tunnels per browser attempt.",
+        ["concurrency", "clients", "limits", "native"],
+      ],
+      [
+        "maxHeaderBytes",
+        "Proxy request header limit",
+        "Bound native CONNECT and HTTP header sizes in bytes.",
+        ["headers", "size", "limits", "native"],
+      ],
+      [
+        "headerTimeoutSeconds",
+        "Proxy header timeout",
+        "Maximum wait for a complete local request header.",
+        ["headers", "timeout", "native"],
+      ],
+      [
+        "responseTimeoutSeconds",
+        "Proxy response write timeout",
+        "Maximum wait to write the relay response header.",
+        ["response", "timeout", "native"],
+      ],
+      [
+        "httpResponseTimeoutSeconds",
+        "HTTP response header timeout",
+        "Maximum wait for plain HTTP response headers.",
+        ["http", "headers", "timeout"],
+      ],
+      [
+        "httpIdleTimeoutSeconds",
+        "HTTP idle timeout",
+        "No-progress deadline for plain HTTP bodies; upgraded remote-control streams keep their stream lifetime.",
+        ["idle", "http", "timeout"],
+      ],
+      [
+        "addressFamily",
+        "Address selection",
+        "System DNS order, prefer IPv4 or IPv6, or require one address family.",
+        ["dns", "ipv4", "ipv6", "resolution"],
+      ],
+      [
+        "dnsTimeoutSeconds",
+        "DNS lookup timeout",
+        "Bound local name-resolution waits for the configured first hop.",
+        ["dns", "timeout", "resolver"],
+      ],
+      [
+        "dnsCacheTtlSeconds",
+        "DNS cache lifetime",
+        "Choose a reuse period for the private per-attempt DNS cache; zero disables it.",
+        ["dns", "cache", "ttl", "resolution"],
+      ],
+      [
+        "dnsCacheMaxEntries",
+        "DNS cache entries per session",
+        "Bound successful DNS results kept in memory for each attempt.",
+        ["dns", "cache", "entries", "limit"],
+      ],
+    ] as const
+  ).map(([key, label, description, tags]) => ({
+    key: `internalProxy.${key}`,
+    label,
+    description,
+    tags: [...tags],
+    section: "internalProxy" as const,
+    sectionLabel: "Internal Proxy",
+  })),
   // ─── Internal Proxy Keepalive ───────────────────────────────────
   {
     key: "proxyKeepaliveEnabled",

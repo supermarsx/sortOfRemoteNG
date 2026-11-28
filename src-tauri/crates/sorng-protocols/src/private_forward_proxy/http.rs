@@ -206,8 +206,10 @@ fn failure(
     error: Option<&(dyn std::error::Error + 'static)>,
     accept: Option<&HeaderValue>,
     head: bool,
+    settings: crate::http::ProxyTransportSettings,
 ) -> Response<Body> {
-    let response = error_response::response(status, kind, error, true);
+    let mut response = error_response::response(status, kind, error, settings.include_error_trace);
+    error_response::apply_options(&mut response, settings);
     let mut response = error_response::negotiate(response, accept, head).map(Body::new);
     response
         .headers_mut()
@@ -349,12 +351,13 @@ pub(super) async fn relay(
                 Ok(Err(error)) => Some(error as &(dyn std::error::Error + 'static)),
                 _ => None,
             };
-            let response = error_response::response(
+            let mut response = error_response::response(
                 StatusCode::BAD_GATEWAY,
                 error_response::Failure::HttpTransport,
                 source,
-                true,
+                limits.transport.unwrap_or_default().include_error_trace,
             );
+            error_response::apply_options(&mut response, limits.transport.unwrap_or_default());
             let response =
                 error_response::negotiate(response, forward.error_accept(), forward.head);
             error_response::write_response(&mut client, response, limits.response_timeout).await;
@@ -371,7 +374,7 @@ pub(super) async fn relay(
             let head = request.method() == hyper::Method::HEAD;
             let accept = request.headers().get("accept").cloned();
             let fail = |status, kind, error: Option<&(dyn std::error::Error + 'static)>| {
-                failure(status, kind, error, accept.as_ref(), head)
+                failure(status, kind, error, accept.as_ref(), head, limits.transport.unwrap_or_default())
             };
             let Some((forward, upgrades)) = once.lock().await.take() else {
                 return Ok::<_, Infallible>(fail(
@@ -464,6 +467,9 @@ pub(super) async fn relay(
                 response
                     .headers_mut()
                     .insert("connection", HeaderValue::from_static("close"));
+            }
+            if let Some(converted) = error_response::convert_upstream(response.status(), response.headers(), limits.transport.unwrap_or_default()) {
+                return Ok(error_response::negotiate(converted, accept.as_ref(), head).map(Body::new));
             }
             Ok(response.map(|incoming| Body::from_stream(Body::new(incoming).into_data_stream())))
         }

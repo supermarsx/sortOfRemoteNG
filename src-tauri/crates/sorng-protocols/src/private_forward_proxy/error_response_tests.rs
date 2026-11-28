@@ -22,6 +22,42 @@ async fn body(response: Response<ProxyBody>) -> String {
     .unwrap()
 }
 
+#[tokio::test]
+async fn configured_http_error_conversion_preserves_status_and_protocol_headers() {
+    let mut settings = crate::http::ProxyTransportSettings::default();
+    let mut headers = hyper::http::HeaderMap::new();
+    headers.insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Basic realm=fixture"));
+    headers.insert(header::RETRY_AFTER, HeaderValue::from_static("30"));
+    headers.insert(header::SET_COOKIE, HeaderValue::from_static("session=PRIVATE_FIXTURE; HttpOnly"));
+    assert!(convert_upstream(StatusCode::SERVICE_UNAVAILABLE, &headers, settings).is_none());
+    settings.http_error_conversion = crate::http::ProxyHttpErrorConversion::ServerErrors;
+    assert!(convert_upstream(StatusCode::UNAUTHORIZED, &headers, settings).is_none());
+    let response = convert_upstream(StatusCode::SERVICE_UNAVAILABLE, &headers, settings).unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.headers()[header::RETRY_AFTER], "30");
+    settings.http_error_conversion = crate::http::ProxyHttpErrorConversion::AllErrors;
+    let response = convert_upstream(StatusCode::UNAUTHORIZED, &headers, settings).unwrap();
+    assert_eq!(response.headers()[header::WWW_AUTHENTICATE], "Basic realm=fixture");
+    assert!(response.headers().contains_key(header::SET_COOKIE));
+    let text = body(negotiate(response, None, false)).await;
+    assert!(text.contains("upstream-http-401"));
+    assert!(!text.contains("PRIVATE_FIXTURE"));
+    assert!(!text.contains("private proxy"));
+}
+
+#[tokio::test]
+async fn diagnostic_policy_controls_details_and_full_report_trace() {
+    let mut response = response(StatusCode::BAD_GATEWAY, Failure::Tls(crate::private_forward_proxy::intercept::tls_policy::TlsFailure::PeerAlert(112)), None, true);
+    let settings = crate::http::ProxyTransportSettings { include_error_trace: false, expand_error_details: true, ..Default::default() };
+    apply_options(&mut response, settings);
+    let html = body(negotiate(response, Some(&HeaderValue::from_static("text/html")), false)).await;
+    assert!(html.contains("The server rejected the TLS hostname"));
+    assert!(html.contains("tls-server-name-rejected"));
+    assert!(html.contains("<details class=\"technical\" open>"));
+    assert!(html.contains("Native stack details are disabled"));
+    assert!(html.contains("Application internal proxy"));
+}
+
 #[test]
 fn native_frames_keep_functions_and_drop_source_paths_addresses_and_untrusted_text() {
     let input = "stack backtrace:\n   0: sorng_protocols::private_forward_proxy::error_response::stack\n             at F:\\Users\\private-user\\source.rs:12:3\n   1: tokio::runtime::task::run\n   2: 0x1234567890\n   3: https://user:PRIVATE@example.test/?token=SECRET\n   4: password=SECRET\n   5: <alloc::boxed::Box<T> as core::ops::drop::Drop>::drop\n";
@@ -357,8 +393,9 @@ async fn typed_handshake_failures_have_specific_codes_and_honest_causes() {
             "tls-peer-handshake-failure",
             "did not specify",
         ),
+        (T::PeerAlert(112), "tls-server-name-rejected", "The server rejected the TLS hostname"),
         (T::Reset, "tls-connection-reset", "reset"),
-        (T::Timeout, "tls-handshake-timeout", "30 seconds"),
+        (T::Timeout, "tls-handshake-timeout", "configured connection timeout"),
         (T::HelperUnavailable, "tls-legacy-unavailable", "helper"),
     ] {
         let response = forward::upstream_failure(UpstreamFailure::Tls(cause));

@@ -62,4 +62,21 @@ export interface InternalProxySettings {
   maxIdleConnectionsPerHost: number;
   /** Zero disables TCP keepalive, not the application's proxy health checks. */
   tcpKeepaliveSeconds: number;
+  tcpNoDelay: boolean;
+  maxClients: number;
+  maxConnectionsPerHost: number;
+  dnsConcurrency: number;
+  includeErrorTrace: boolean;
+  expandErrorDetails: boolean;
+  httpErrorConversion: "off" | "server-errors" | "all-errors";
+  maxHeaderBytes: number;
+  headerTimeoutSeconds: number;
+  responseTimeoutSeconds: number;
+  httpResponseTimeoutSeconds: number;
+  httpIdleTimeoutSeconds: number;
+  dnsTimeoutSeconds: number;
+  dnsCacheTtlSeconds: number;
+  dnsCacheMaxEntries: number;
+  addressFamily:
+    "system" | "ipv4-first" | "ipv6-first" | "ipv4-only" | "ipv6-only";
 }

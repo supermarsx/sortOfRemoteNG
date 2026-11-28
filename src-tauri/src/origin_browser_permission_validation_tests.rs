@@ -901,3 +901,15 @@ fn inherited_delay_budget_identifies_cross_layer_failure_without_saved_values() 
         assert!(NativeBrowserPreferences::from_saved(&own, &settings).is_ok());
     }
 }
+
+#[test]
+fn internal_proxy_settings_are_resolved_natively_and_rejected_with_their_scope() {
+    let settings = json!({"internalProxy":{"maxClients":128,"dnsTimeoutSeconds":3,"addressFamily":"ipv4-only"}});
+    let preferences = NativeBrowserPreferences::from_saved(&json!({}), &settings).unwrap();
+    assert_eq!(preferences.proxy_transport.max_clients, 128);
+    assert_eq!(preferences.proxy_transport.dns_timeout_seconds, 3);
+    for settings in [json!({"internalProxy":{"maxClients":0}}), json!({"internalProxy":{"addressFamily":"bad"}}), json!({"internalProxy":null})] {
+        assert!(NativeBrowserPreferences::from_saved(&json!({}), &settings).is_err());
+        assert!(matches!(preference_error(&json!({}), &settings), NativeAuthorityError::PolicyInvalid {scope:"settings.internalProxy", ..}));
+    }
+}

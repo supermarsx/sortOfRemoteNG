@@ -26,7 +26,7 @@ const health = (
     },
     {
       key: "relay",
-      label: "Private proxy",
+      label: "Internal proxy",
       kind: "App proxy",
       status: "healthy",
       detail: "Observed during the last load.",
@@ -85,7 +85,7 @@ describe("native browser connection health control", () => {
           "SSH connectionunknownSSH tunnelNo current per-hop observation",
         ),
         expect.stringContaining(
-          "Private proxyhealthyApp proxyObserved during the last load",
+          "Internal proxyhealthyApp proxyObserved during the last load",
         ),
       ],
     );

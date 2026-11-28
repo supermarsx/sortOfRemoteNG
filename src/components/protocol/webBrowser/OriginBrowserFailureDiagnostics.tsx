@@ -197,7 +197,7 @@ const probeUnavailable =
 const probeOutcomes: Record<OriginBrowserDiagnosticOutcome, string> = {
   response: "Anonymous HTTP response received",
   timeout: "The anonymous request timed out",
-  "route-unavailable": "The saved private proxy route is unavailable",
+  "route-unavailable": "The saved internal proxy route is unavailable",
   "tls-failed": "Strict PKI verification or the TLS handshake failed",
   "request-failed": "The anonymous HTTP request failed",
   "owner-unavailable":
@@ -391,7 +391,7 @@ export function OriginBrowserFailureDiagnostics({
     assertOwner,
   });
   const facts: [string, string][] = [
-    ["Private proxy health", relayHealth],
+    ["Internal proxy health", relayHealth],
     ["Browser engine", "Native CEF"],
     ["Loaded CEF patch", engineProof.patch],
     ["Proxy configuration ACK", engineProof.ack],
@@ -437,7 +437,7 @@ export function OriginBrowserFailureDiagnostics({
     ["HTTP response status", "Not exposed by the native snapshot"],
     [
       "Network route",
-      "Native private proxy with saved route and destination permissions",
+      "Native internal proxy with saved route and destination permissions",
     ],
     [
       "Separate network probe",
@@ -480,8 +480,8 @@ export function OriginBrowserFailureDiagnostics({
     ]),
     ...facts.map(([label, value]) => `${label}: ${value}`),
     ...probeFacts.map(([label, value]) => `${label}: ${value}`),
-    "Separate anonymous GET to the origin root, using the native private proxy and owner/destination checks. No redirects followed; no browser login state or response body read.",
-    "Probe DNS/TCP: delegated to the private proxy; no separate stage timings.",
+    "Separate anonymous GET to the origin root, using the native internal proxy and owner/destination checks. No redirects followed; no browser login state or response body read.",
+    "Probe DNS/TCP: delegated to the internal proxy; no separate stage timings.",
     "An HTTP status may come from the relay or destination; it does not establish browser or login readiness.",
     probeTrust,
     "No saved credentials, cookies, URL paths, query values, fragments, page titles, response bodies or raw native errors are included.",
@@ -763,7 +763,7 @@ export function OriginBrowserFailureDiagnostics({
         </h3>
         <p className="mt-2 text-sm leading-relaxed text-[var(--color-textSecondary)]">
           Runs a separate anonymous GET of the website origin root through this
-          attempt's private proxy, saved route, destination permissions and
+          attempt's internal proxy, saved route, destination permissions and
           database-lock protections. Saved website credentials, browser cookies,
           URL paths, query values and fragments are omitted. Redirects are
           reported but never followed; response bodies are not read. Proxy
@@ -790,7 +790,7 @@ export function OriginBrowserFailureDiagnostics({
                     : !probe.report
                       ? "Probe not run"
                       : stage === "DNS" || stage === "TCP"
-                        ? "Delegated to the private proxy; no separate timing"
+                        ? "Delegated to the internal proxy; no separate timing"
                         : stage === "TLS"
                           ? target.startsWith("https:")
                             ? "Strict PKI within HTTPS request; no separate timing"
@@ -810,13 +810,13 @@ export function OriginBrowserFailureDiagnostics({
             className="mt-1 shrink-0 text-info"
           />
           {probe.available
-            ? "The probe sends only the canonical origin to native code. Native code must approve this destination and use the existing private proxy; it cannot fall back to a direct connection."
+            ? "The probe sends only the canonical origin to native code. Native code must approve this destination and use the existing internal proxy; it cannot fall back to a direct connection."
             : probeUnavailable}
         </p>
         <div aria-live="polite" aria-atomic="true">
           {probe.running && (
             <p className="mt-3 text-sm text-[var(--color-textSecondary)]">
-              Running anonymous diagnostics through the native private proxy…
+              Running anonymous diagnostics through the native internal proxy…
             </p>
           )}
           {probe.error && (

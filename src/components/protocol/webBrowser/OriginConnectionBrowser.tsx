@@ -165,17 +165,17 @@ const RESTART_NOTICES: Record<
   },
   "relay-ended": {
     running:
-      "The app's private proxy for this tab stopped. Reconnecting this tab with a new one…",
-    done: "The app's private proxy for this tab stopped, so this tab reconnected with a new one.",
+      "The app's internal proxy for this tab stopped. Reconnecting this tab with a new one…",
+    done: "The app's internal proxy for this tab stopped, so this tab reconnected with a new one.",
     failed:
-      "The app's private proxy for this tab stopped, so this tab tried to reconnect. It could not; the error below explains why.",
+      "The app's internal proxy for this tab stopped, so this tab tried to reconnect. It could not; the error below explains why.",
   },
   "proxy-unreachable": {
     running:
-      "The browser could not reach its private proxy. Reconnecting with a fresh proxy…",
-    done: "This tab reconnected with a fresh private proxy.",
+      "The browser could not reach its internal proxy. Reconnecting with a fresh proxy…",
+    done: "This tab reconnected with a fresh internal proxy.",
     failed:
-      "The fresh private proxy could not load the website. Review the diagnostics and retry.",
+      "The fresh internal proxy could not load the website. Review the diagnostics and retry.",
   },
   requested: {
     running: "Reconnecting this tab…",
@@ -2086,7 +2086,7 @@ export default function OriginConnectionBrowser({
             <p className="min-w-0 flex-1">
               {t(
                 "originBrowser.proxyStuckRestartApp",
-                "The browser engine still could not reach a fresh private proxy, so its network connection is stuck. Restart the app to restore browsing in this tab.",
+                "The browser engine still could not reach a fresh internal proxy, so its network connection is stuck. Restart the app to restore browsing in this tab.",
               )}
             </p>
           </div>

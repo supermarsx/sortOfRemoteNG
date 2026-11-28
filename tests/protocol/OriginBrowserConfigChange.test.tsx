@@ -1264,7 +1264,7 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     );
     await waitFor(() => expect(calls("origin_browser_create")).toHaveLength(2));
     await settle();
-    const message = "This tab reconnected with a fresh private proxy.";
+    const message = "This tab reconnected with a fresh internal proxy.";
     expect(screen.queryByText(message)).toBeNull();
     await emit(
       snapshot("attempt-2", { sequence: 5, displayUrl: "about:blank" }),
@@ -1316,7 +1316,7 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     );
     await waitFor(() => expect(calls("origin_browser_create")).toHaveLength(2));
     expect(
-      screen.queryByText(/fresh private proxy could not load the website/),
+      screen.queryByText(/fresh internal proxy could not load the website/),
     ).toBeNull();
     expect(
       screen.queryByRole("alert", { name: "Browser proxy stuck" }),
@@ -1324,7 +1324,7 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     await emit(snapshot("attempt-2", { sequence: 5, loadFailure: failure }));
     await settle();
     expect(
-      screen.queryByText("This tab reconnected with a fresh private proxy."),
+      screen.queryByText("This tab reconnected with a fresh internal proxy."),
     ).toBeNull();
     expect(notice()).toBeNull();
   };
@@ -1332,7 +1332,7 @@ describe("a saved connection edited while its tab is open (K2)", () => {
   it("does not toast success when the fresh proxy still fails, and retains failure diagnostics", async () => {
     // The fresh relay was reached (another failure): retrying can still help.
     await freshProxyFails({ code: -102, category: "connection" });
-    const message = /fresh private proxy could not load the website/;
+    const message = /fresh internal proxy could not load the website/;
     expect(screen.getAllByText(message)).toHaveLength(1);
     expect(screen.getByText(message).closest('[role="status"]')).not.toBeNull();
     expect(
@@ -1355,10 +1355,10 @@ describe("a saved connection edited while its tab is open (K2)", () => {
       name: "Browser proxy stuck",
     });
     expect(alert).toHaveTextContent(
-      "The browser engine still could not reach a fresh private proxy, so its network connection is stuck. Restart the app to restore browsing in this tab.",
+      "The browser engine still could not reach a fresh internal proxy, so its network connection is stuck. Restart the app to restore browsing in this tab.",
     );
     expect(
-      screen.queryByText(/fresh private proxy could not load the website/),
+      screen.queryByText(/fresh internal proxy could not load the website/),
     ).toBeNull();
     // No automatic third attempt, and the alert stays a single line.
     expect(calls("origin_browser_create")).toHaveLength(2);
@@ -1375,7 +1375,7 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     expect(calls("origin_browser_create")).toHaveLength(2);
   });
 
-  it("says so in plain words when the tab reconnects because its private proxy stopped", async () => {
+  it("says so in plain words when the tab reconnects because its internal proxy stopped", async () => {
     const mounted = await openTab();
     // What native publishes when the private relay of an attached tab ends.
     await emit(
@@ -1397,7 +1397,7 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     ]);
     const line = notice()!;
     expect(line).toHaveTextContent(
-      "The app's private proxy for this tab stopped, so this tab reconnected with a new one.",
+      "The app's internal proxy for this tab stopped, so this tab reconnected with a new one.",
     );
     expect(line.className).not.toMatch(/sor-alert/);
   });
@@ -1405,7 +1405,7 @@ describe("a saved connection edited while its tab is open (K2)", () => {
   it("still restarts for a written edit after the tab reconnected by itself for another reason", async () => {
     await openTab();
     await edit({ password: "second-secret" });
-    // The tab's private proxy ends before the edit is written: the tab
+    // The tab's internal proxy ends before the edit is written: the tab
     // reconnects by itself, and its replacement reads the row still on disk.
     await emit(
       snapshot("attempt-1", {

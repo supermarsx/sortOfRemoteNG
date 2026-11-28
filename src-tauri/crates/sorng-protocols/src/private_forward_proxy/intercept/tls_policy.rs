@@ -73,6 +73,7 @@ impl TlsFailure {
             Self::Decryption => "tls-decryption-failed",
             Self::PeerHandshakeAlert => "tls-peer-handshake-failure",
             Self::PeerSecurityAlert => "tls-peer-insufficient-security",
+            Self::PeerAlert(112) => "tls-server-name-rejected",
             Self::PeerAlert(_) => "tls-peer-alert",
             Self::Reset => "tls-connection-reset",
             Self::Eof => "tls-unexpected-eof",
@@ -80,6 +81,29 @@ impl TlsFailure {
             Self::HelperUnavailable => "tls-legacy-unavailable",
             Self::HelperProtocol => "tls-legacy-helper-protocol",
             Self::HelperEngine(_) => "tls-legacy-engine",
+        }
+    }
+
+    pub(crate) fn title(self) -> &'static str {
+        match self {
+            Self::Version => "The device does not support the selected TLS versions",
+            Self::Cipher => "No compatible TLS cipher is available",
+            Self::SignatureAlgorithm => "No compatible TLS signature algorithm is available",
+            Self::KeyExchange => "TLS key exchange is incompatible",
+            Self::Alpn => "TLS application protocol negotiation failed",
+            Self::InvalidHandshake => "The service returned invalid TLS handshake data",
+            Self::Decryption => "TLS integrity verification failed",
+            Self::PeerHandshakeAlert => "The server refused the TLS handshake",
+            Self::PeerSecurityAlert => "The server rejected the offered TLS security",
+            Self::PeerAlert(112) => "The server rejected the TLS hostname",
+            Self::PeerAlert(_) => "The server stopped TLS negotiation",
+            Self::Reset => "The TLS connection was reset",
+            Self::Eof => "The server closed the connection during TLS negotiation",
+            Self::Timeout => "TLS negotiation timed out",
+            Self::HelperUnavailable => "The legacy TLS engine is unavailable",
+            Self::HelperProtocol | Self::HelperEngine(_) => "The legacy TLS engine could not connect",
+            Self::Parameters => "TLS handshake parameters are incompatible",
+            Self::Engine => "The TLS engine could not complete negotiation",
         }
     }
 
@@ -96,10 +120,11 @@ impl TlsFailure {
             Self::Decryption => "TLS record decryption or handshake integrity verification failed.",
             Self::PeerHandshakeAlert => "The server sent handshake_failure (alert 40). It did not specify whether the cause was ciphers, signatures, client authentication, or another handshake requirement.",
             Self::PeerSecurityAlert => "The server sent insufficient_security (alert 71), rejecting the offered security parameters.",
+            Self::PeerAlert(112) => "The server sent unrecognized_name (alert 112): it did not recognize or accept the server name requested during TLS negotiation (SNI).",
             Self::PeerAlert(_) => "The server terminated negotiation with a TLS alert. The alert number is included in the cause chain.",
             Self::Reset => "The connection was reset during the SSL/TLS handshake. The peer did not report a protocol or certificate cause.",
             Self::Eof => "The peer closed the connection during the SSL/TLS handshake without a complete TLS error alert.",
-            Self::Timeout => "The SSL/TLS handshake did not complete within 30 seconds.",
+            Self::Timeout => "The SSL/TLS handshake did not complete within the configured connection timeout.",
             Self::HelperUnavailable => "The selected legacy SSL/TLS profile requires the sorng-legacy-tls helper, which is missing or could not be started.",
             Self::HelperProtocol => "The legacy SSL/TLS helper exited or returned an invalid or oversized protocol message.",
             Self::HelperEngine(_) => "The legacy SSL/TLS engine rejected the handshake. Its numeric OpenSSL error code is included in the cause chain.",

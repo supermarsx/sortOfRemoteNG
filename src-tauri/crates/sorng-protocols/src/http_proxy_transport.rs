@@ -814,18 +814,89 @@ pub(crate) async fn connect_browser_transport(
     connect_browser_transport_with(host, port, proxy_url, &SystemNet).await
 }
 
+struct ConfiguredNet {
+    resolver: std::sync::Arc<crate::browser_dns::BrowserDnsResolver>,
+    settings: super::ProxyTransportSettings,
+}
+impl InspectionNet for ConfiguredNet {
+    fn resolve(&self, authority: &str) -> NetFuture<Vec<SocketAddr>> {
+        let parsed = url::Url::parse(&format!("http://{authority}/"));
+        let resolver = self.resolver.clone();
+        Box::pin(async move {
+            let parsed = parsed.map_err(|_| io::Error::other("Invalid DNS authority"))?;
+            resolver
+                .lookup(
+                    parsed
+                        .host_str()
+                        .ok_or_else(|| io::Error::other("Missing DNS host"))?,
+                    parsed
+                        .port_or_known_default()
+                        .ok_or_else(|| io::Error::other("Missing DNS port"))?,
+                )
+                .await
+        })
+    }
+    fn dial(&self, address: SocketAddr) -> NetFuture<TcpStream> {
+        let settings = self.settings;
+        Box::pin(async move {
+            let stream = TcpStream::connect(address).await?;
+            stream.set_nodelay(settings.tcp_no_delay)?;
+            let socket = socket2::SockRef::from(&stream);
+            socket.set_keepalive(settings.tcp_keepalive_seconds > 0)?;
+            if let Some(interval) = settings.tcp_keepalive() {
+                socket.set_tcp_keepalive(
+                    &socket2::TcpKeepalive::new()
+                        .with_time(interval)
+                        .with_interval(interval),
+                )?;
+            }
+            Ok(stream)
+        })
+    }
+}
+/// Configured native relay transport. Destination DNS behind a selected proxy
+/// stays remote; this resolver is used only for the locally dialled first hop.
+pub async fn connect_browser_transport_configured(
+    host: &str,
+    port: u16,
+    proxy_url: Option<&str>,
+    settings: super::ProxyTransportSettings,
+    resolver: std::sync::Arc<crate::browser_dns::BrowserDnsResolver>,
+) -> Result<crate::private_forward_proxy::BoxedStream, CertificateInspectionError> {
+    let net = ConfiguredNet { settings, resolver };
+    let mut limits = InspectionTimeouts::DEFAULT;
+    limits.resolve = Duration::from_secs(settings.dns_timeout_seconds);
+    limits.connect = settings.connect_timeout();
+    limits.proxy_tunnel = settings.connect_timeout();
+    limits.tls_handshake = settings.connect_timeout();
+    limits.overall = settings.connect_timeout();
+    connect_browser_transport_with_limits(host, port, proxy_url, &net, limits)
+        .await
+        .map(|stream| Box::new(stream) as crate::private_forward_proxy::BoxedStream)
+}
+
 async fn connect_browser_transport_with(
     host: &str,
     port: u16,
     proxy_url: Option<&str>,
     net: &dyn InspectionNet,
 ) -> Result<Socket, CertificateInspectionError> {
+    connect_browser_transport_with_limits(host, port, proxy_url, net, InspectionTimeouts::DEFAULT)
+        .await
+}
+async fn connect_browser_transport_with_limits(
+    host: &str,
+    port: u16,
+    proxy_url: Option<&str>,
+    net: &dyn InspectionNet,
+    limits: InspectionTimeouts,
+) -> Result<Socket, CertificateInspectionError> {
     let route = if proxy_url.is_some() {
         InspectionRoute::Proxy
     } else {
         InspectionRoute::Direct
     };
-    let mut attempt = Attempt::new(route, InspectionTimeouts::DEFAULT);
+    let mut attempt = Attempt::new(route, limits);
     attempt.target = authority(host, port).map_err(|_| {
         CertificateInspectionError::from(attempt.fail(InspectionFailureKind::InvalidTarget))
     })?;

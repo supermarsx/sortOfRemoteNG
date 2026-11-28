@@ -119,11 +119,19 @@ pub(crate) fn client_config(
 #[derive(Debug)]
 struct RecordingClientAuth(Arc<RecordingVerifier>);
 impl rustls::client::ResolvesClientCert for RecordingClientAuth {
-    fn resolve(&self, _: &[&[u8]], _: &[rustls::SignatureScheme]) -> Option<Arc<rustls::sign::CertifiedKey>> {
-        self.0.client_auth_requested.store(true, std::sync::atomic::Ordering::Relaxed);
+    fn resolve(
+        &self,
+        _: &[&[u8]],
+        _: &[rustls::SignatureScheme],
+    ) -> Option<Arc<rustls::sign::CertifiedKey>> {
+        self.0
+            .client_auth_requested
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         None
     }
-    fn has_certs(&self) -> bool { false }
+    fn has_certs(&self) -> bool {
+        false
+    }
 }
 
 /// The upstream TLS name for an authority (DNS or IP; IPs send no SNI).
@@ -231,9 +239,15 @@ pub(crate) struct ConnectRequest<'a> {
 /// Dials, handshakes and asks the app. Every path that is not an explicit
 /// `Admit` returns an error and drops the stream unwritten.
 pub(crate) async fn establish(request: ConnectRequest<'_>) -> Result<Established, UpstreamFailure> {
+    establish_with_timeout(request, CONNECT_TIMEOUT).await
+}
+pub(crate) async fn establish_with_timeout(
+    request: ConnectRequest<'_>,
+    connect_timeout: Duration,
+) -> Result<Established, UpstreamFailure> {
     let authority = request.authority;
     let dial = request.dialer.dial(authority.clone());
-    let stream = match tokio::time::timeout(CONNECT_TIMEOUT, dial).await {
+    let stream = match tokio::time::timeout(connect_timeout, dial).await {
         Ok(Ok(stream)) => stream,
         _ => return Err(UpstreamFailure::RouteFailed),
     };
@@ -250,38 +264,74 @@ pub(crate) async fn establish(request: ConnectRequest<'_>) -> Result<Established
         });
     }
     let name = server_name(authority).ok_or(UpstreamFailure::RouteFailed)?;
-    use super::tls_attempt::{TlsAttempt, Trace, TracedIo, snapshot};
-    let profile=request.verifier.tls_profile;
-    let mut attempt=TlsAttempt::new(profile,request.verifier.allow_weak_certificates,
-        authority.host().parse::<std::net::IpAddr>().is_err(),request.offer==Offer::H2AndHttp11);
+    use super::tls_attempt::{snapshot, TlsAttempt, Trace, TracedIo};
+    let profile = request.verifier.tls_profile;
+    let mut attempt = TlsAttempt::new(
+        profile,
+        request.verifier.allow_weak_certificates,
+        authority.host().parse::<std::net::IpAddr>().is_err(),
+        request.offer == Offer::H2AndHttp11,
+    );
     if !profile.requires_helper() {
-        let provider=request.verifier.provider();
-        let suites=provider.cipher_suites.iter().filter(|suite| match profile {
-            UpstreamTlsProfile::Tls12 => suite.version().version==rustls::ProtocolVersion::TLSv1_2,
-            UpstreamTlsProfile::Tls13 => suite.version().version==rustls::ProtocolVersion::TLSv1_3, _=>true,
+        let provider = request.verifier.provider();
+        let suites = provider.cipher_suites.iter().filter(|suite| match profile {
+            UpstreamTlsProfile::Tls12 => {
+                suite.version().version == rustls::ProtocolVersion::TLSv1_2
+            }
+            UpstreamTlsProfile::Tls13 => {
+                suite.version().version == rustls::ProtocolVersion::TLSv1_3
+            }
+            _ => true,
         });
-        for (slot,suite) in attempt.cipher_ids.iter_mut().zip(suites) { *slot=u16::from(suite.suite());attempt.cipher_count+=1; }
-        for (slot,scheme) in attempt.signature_ids.iter_mut().zip(provider.signature_verification_algorithms.supported_schemes()) { *slot=u16::from(scheme);attempt.signature_count+=1; }
-        for (slot,group) in attempt.group_ids.iter_mut().zip(&provider.kx_groups) { *slot=u16::from(group.name());attempt.group_count+=1; }
+        for (slot, suite) in attempt.cipher_ids.iter_mut().zip(suites) {
+            *slot = u16::from(suite.suite());
+            attempt.cipher_count += 1;
+        }
+        for (slot, scheme) in attempt.signature_ids.iter_mut().zip(
+            provider
+                .signature_verification_algorithms
+                .supported_schemes(),
+        ) {
+            *slot = u16::from(scheme);
+            attempt.signature_count += 1;
+        }
+        for (slot, group) in attempt.group_ids.iter_mut().zip(&provider.kx_groups) {
+            *slot = u16::from(group.name());
+            attempt.group_count += 1;
+        }
     }
-    let trace=Arc::new(std::sync::Mutex::new(Trace::new(attempt)));
-    let stream:BoxedStream=Box::new(TracedIo{inner:stream,trace:trace.clone()});
-    let enrich=|failure| match failure {UpstreamFailure::Tls(cause)=>UpstreamFailure::TlsAttempt(cause,snapshot(&trace)),other=>other};
+    let trace = Arc::new(std::sync::Mutex::new(Trace::new(attempt)));
+    let stream: BoxedStream = Box::new(TracedIo {
+        inner: stream,
+        trace: trace.clone(),
+    });
+    let enrich = |failure| match failure {
+        UpstreamFailure::Tls(cause) => UpstreamFailure::TlsAttempt(cause, snapshot(&trace)),
+        other => other,
+    };
     if request.verifier.tls_profile.requires_helper() {
-        return super::legacy_tls::establish(request, stream, name).await.map_err(enrich);
+        return super::legacy_tls::establish(request, stream, name)
+            .await
+            .map_err(enrich);
     }
     let verifier = RecordingVerifier::new(request.verifier);
     let config = client_config(request.verifier, verifier.clone(), request.offer)
         .map_err(|_| UpstreamFailure::Fatal(UpstreamFatal::Protocol))?;
     let connector = tokio_rustls::TlsConnector::from(config);
-    let tls = match tokio::time::timeout(CONNECT_TIMEOUT, connector.connect(name.clone(), stream))
+    let tls = match tokio::time::timeout(connect_timeout, connector.connect(name.clone(), stream))
         .await
     {
         Err(_) => return Err(enrich(UpstreamFailure::Tls(TlsFailure::Timeout))),
         Ok(Err(error)) => {
-            { let mut trace=trace.lock().unwrap_or_else(|e|e.into_inner());
-              trace.attempt.client_auth_requested |= verifier.client_auth_requested.load(std::sync::atomic::Ordering::Relaxed);
-              trace.attempt.certificate_seen |= verifier.certificate_seen.load(std::sync::atomic::Ordering::Relaxed); }
+            {
+                let mut trace = trace.lock().unwrap_or_else(|e| e.into_inner());
+                trace.attempt.client_auth_requested |= verifier
+                    .client_auth_requested
+                    .load(std::sync::atomic::Ordering::Relaxed);
+                trace.attempt.certificate_seen |= verifier
+                    .certificate_seen
+                    .load(std::sync::atomic::Ordering::Relaxed);
+            }
             return Err(enrich(handshake_failure(&error, verifier.record().fatal)));
         }
         Ok(Ok(tls)) => tls,

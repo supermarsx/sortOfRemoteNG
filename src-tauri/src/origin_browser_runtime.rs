@@ -26,7 +26,7 @@ use sorng_commands_core::origin_browser_authority::{self, NativeOwnerLease};
 use sorng_encryption::EncryptionState;
 use sorng_protocols::{
     origin_browser::{BrowserIdentity, BrowserSessionFailure, BrowserSessionFailureState, NativeHostReadiness, OriginBrowserSession},
-    private_forward_proxy::{intercept::InterceptConfig, ProxyLimits},
+    private_forward_proxy::intercept::InterceptConfig,
 };
 use std::{
     cell::RefCell,
@@ -1860,7 +1860,7 @@ async fn create_document(
             OriginBrowserSession::start_intercepting(
                 authorized.policy,
                 authorized.route,
-                ProxyLimits::default(),
+                authorized.preferences.proxy_transport.relay_limits()?,
                 InterceptConfig {
                     upstream_tls: authorized.preferences.upstream_tls,
                     allow_weak_certificates: authorized.preferences.allow_weak_certificates,
@@ -1881,7 +1881,7 @@ async fn create_document(
             .await
         }
         None => {
-            OriginBrowserSession::start(authorized.policy, authorized.route, ProxyLimits::default())
+            OriginBrowserSession::start(authorized.policy, authorized.route, authorized.preferences.proxy_transport.relay_limits()?)
                 .await
         }
     };

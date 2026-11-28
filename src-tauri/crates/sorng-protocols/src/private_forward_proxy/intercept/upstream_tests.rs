@@ -1325,3 +1325,21 @@ fn only_document_destinations_are_main_frames() {
         assert_eq!(is_main_frame(&headers), main, "{value}");
     }
 }
+
+#[tokio::test]
+async fn configured_native_pool_honors_disabled_idle_reuse_and_retains_active_capacity() {
+    for (max_idle, lifetime, expected_accepts) in [(0, 20, 3), (4, 0, 3), (4, 20, 1)] {
+        let server = start_server(None).await;
+        let trust = TestTrust::new(UpstreamVerdict::Deny);
+        let settings = crate::http::ProxyTransportSettings { max_idle_connections_per_host: max_idle, pool_idle_timeout_seconds: lifetime, ..Default::default() };
+        let pool = UpstreamPool::configured(dialer(server.addr, Arc::new(AtomicUsize::new(0))), trust.clone(), UpstreamVerifierConfig::for_tests(&[], &[]), settings);
+        let target = authority("configured.test:80");
+        for path in ["/a", "/b", "/c"] {
+            let (response, _) = pool.send(&target, false, get(path)).await.unwrap();
+            assert_eq!(text(response).await, format!("{path} HTTP/1.1 configured.test"));
+        }
+        assert_eq!(server.stats.accepts.load(Ordering::SeqCst), expected_accepts, "idle limit {max_idle}, lifetime {lifetime}");
+        assert_eq!(trust.calls(), 0);
+        pool.close_all();
+    }
+}

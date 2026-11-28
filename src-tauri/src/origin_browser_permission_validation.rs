@@ -17,6 +17,10 @@ use std::collections::HashSet;
 /// normalize or repair a rejected saved configuration.
 pub(super) fn preference_error(connection: &Value, settings: &Value) -> NativeAuthorityError {
     let invalid = |scope, rule| NativeAuthorityError::PolicyInvalid { scope, rule };
+    let transport = serde_json::from_value::<sorng_protocols::http::ProxyTransportSettings>(settings.get("internalProxy").cloned().unwrap_or_else(|| serde_json::json!({})));
+    if transport.map_or(true, |settings| settings.validate().is_err()) {
+        return invalid("settings.internalProxy", "invalid transport, relay or DNS settings; repair or reset Internal Proxy settings");
+    }
     for (value, scope, require_version) in [
         (settings.get("webBrowser"), "settings.webBrowser", false),
         (

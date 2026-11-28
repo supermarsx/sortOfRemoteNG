@@ -51,6 +51,7 @@ pub(crate) struct Exchange {
     hooks: Vec<Arc<dyn ExchangeHook>>,
     pub(crate) theme: crate::theme_tokens::ThemeTokens,
     response_head_timeout: Duration,
+    pub(crate) transport: crate::http::ProxyTransportSettings,
     pub(crate) counters: ExchangeCounters,
 }
 
@@ -106,7 +107,9 @@ pub(crate) fn upstream_failure(failure: UpstreamFailure) -> Response<ProxyBody> 
         ),
         UpstreamFailure::RouteFailed => ("route-failed", Failure::Route),
         UpstreamFailure::Tls(cause) => ("fatal", Failure::Tls(cause)),
-        UpstreamFailure::TlsAttempt(cause, attempt) => ("fatal", Failure::TlsAttempt(cause, attempt)),
+        UpstreamFailure::TlsAttempt(cause, attempt) => {
+            ("fatal", Failure::TlsAttempt(cause, attempt))
+        }
     };
     let mut response = synthetic(StatusCode::BAD_GATEWAY, kind, Some(tag));
     if let UpstreamFailure::Tls(cause) | UpstreamFailure::TlsAttempt(cause, _) = failure {
@@ -245,12 +248,26 @@ impl Exchange {
             hooks,
             theme: crate::theme_tokens::ThemeTokens::dark_default(),
             response_head_timeout: RESPONSE_HEAD_TIMEOUT,
+            transport: Default::default(),
             counters: ExchangeCounters::default(),
         }
     }
 
+    pub(crate) fn with_transport(
+        mut self,
+        settings: Option<crate::http::ProxyTransportSettings>,
+    ) -> Self {
+        if let Some(settings) = settings {
+            self.response_head_timeout = settings.request_timeout();
+            self.transport = settings;
+        }
+        self
+    }
+
     pub(crate) fn with_theme(mut self, theme: Option<crate::theme_tokens::ThemeTokens>) -> Self {
-        if let Some(theme) = theme { self.theme = theme.sanitized(); }
+        if let Some(theme) = theme {
+            self.theme = theme.sanitized();
+        }
         self
     }
 

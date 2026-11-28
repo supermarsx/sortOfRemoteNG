@@ -641,6 +641,12 @@ pub fn clear_proxy_request_log(
 
 /// Stop all active proxy sessions.
 #[tauri::command]
+pub fn get_proxy_dns_stats() -> crate::http::BrowserDnsStats { crate::http::proxy_dns_stats() }
+
+#[tauri::command]
+pub fn clear_proxy_dns_caches() { crate::http::clear_proxy_dns_caches(); }
+
+#[tauri::command]
 pub fn stop_all_proxy_sessions(
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<u32, String> {

@@ -21,6 +21,22 @@ export const DEFAULT_INTERNAL_PROXY_SETTINGS: Readonly<InternalProxySettings> =
     poolIdleTimeoutSeconds: 20,
     maxIdleConnectionsPerHost: 4,
     tcpKeepaliveSeconds: 30,
+    tcpNoDelay: true,
+    maxClients: 256,
+    maxConnectionsPerHost: 6,
+    dnsConcurrency: 16,
+    includeErrorTrace: true,
+    expandErrorDetails: false,
+    httpErrorConversion: "off",
+    maxHeaderBytes: 8192,
+    headerTimeoutSeconds: 10,
+    responseTimeoutSeconds: 5,
+    httpResponseTimeoutSeconds: 60,
+    httpIdleTimeoutSeconds: 60,
+    dnsTimeoutSeconds: 10,
+    dnsCacheTtlSeconds: 0,
+    dnsCacheMaxEntries: 256,
+    addressFamily: "system",
   });
 
 const invalid = (section: string): never => {
@@ -56,10 +72,26 @@ function integer(
   return value;
 }
 
-function boolean(value: unknown, fallback: boolean): boolean {
+function boolean(
+  value: unknown,
+  fallback: boolean,
+  section = "web browser",
+): boolean {
   if (value === undefined) return fallback;
-  if (typeof value !== "boolean") return invalid("web browser");
+  if (typeof value !== "boolean") return invalid(section);
   return value;
+}
+
+function choice<T extends string>(
+  value: unknown,
+  fallback: T,
+  choices: readonly T[],
+  section: string,
+): T {
+  if (value === undefined) return fallback;
+  if (typeof value !== "string" || !choices.includes(value as T))
+    return invalid(section);
+  return value as T;
 }
 
 /** Fill missing legacy keys; never silently widen a malformed website policy. */
@@ -235,12 +267,112 @@ export function normalizeInternalProxySettings(
           "poolIdleTimeoutSeconds",
           "maxIdleConnectionsPerHost",
           "tcpKeepaliveSeconds",
+          "tcpNoDelay",
+          "maxClients",
+          "maxConnectionsPerHost",
+          "dnsConcurrency",
+          "includeErrorTrace",
+          "expandErrorDetails",
+          "httpErrorConversion",
+          "maxHeaderBytes",
+          "headerTimeoutSeconds",
+          "responseTimeoutSeconds",
+          "httpResponseTimeoutSeconds",
+          "httpIdleTimeoutSeconds",
+          "dnsTimeoutSeconds",
+          "dnsCacheTtlSeconds",
+          "dnsCacheMaxEntries",
+          "addressFamily",
         ].includes(key),
     )
   )
     return invalid("internal proxy");
   const settings: InternalProxySettings = {
     version: 1,
+    tcpNoDelay: boolean(row.tcpNoDelay, true, "internal proxy"),
+    maxClients: integer(row.maxClients, 256, 16, 256, "internal proxy"),
+    maxConnectionsPerHost: integer(
+      row.maxConnectionsPerHost,
+      6,
+      1,
+      64,
+      "internal proxy",
+    ),
+    dnsConcurrency: integer(row.dnsConcurrency, 16, 1, 16, "internal proxy"),
+    includeErrorTrace: boolean(row.includeErrorTrace, true, "internal proxy"),
+    expandErrorDetails: boolean(
+      row.expandErrorDetails,
+      false,
+      "internal proxy",
+    ),
+    httpErrorConversion: (() => {
+      const mode = row.httpErrorConversion ?? "off";
+      if (mode !== "off" && mode !== "server-errors" && mode !== "all-errors")
+        return invalid("internal proxy error conversion");
+      return mode;
+    })(),
+    maxHeaderBytes: integer(
+      row.maxHeaderBytes,
+      8192,
+      1024,
+      16384,
+      "internal proxy",
+    ),
+    headerTimeoutSeconds: integer(
+      row.headerTimeoutSeconds,
+      10,
+      1,
+      120,
+      "internal proxy",
+    ),
+    responseTimeoutSeconds: integer(
+      row.responseTimeoutSeconds,
+      5,
+      1,
+      120,
+      "internal proxy",
+    ),
+    httpResponseTimeoutSeconds: integer(
+      row.httpResponseTimeoutSeconds,
+      60,
+      5,
+      120,
+      "internal proxy",
+    ),
+    httpIdleTimeoutSeconds: integer(
+      row.httpIdleTimeoutSeconds,
+      60,
+      5,
+      120,
+      "internal proxy",
+    ),
+    dnsTimeoutSeconds: integer(
+      row.dnsTimeoutSeconds,
+      10,
+      1,
+      60,
+      "internal proxy",
+    ),
+    dnsCacheTtlSeconds: integer(
+      row.dnsCacheTtlSeconds,
+      0,
+      0,
+      3600,
+      "internal proxy",
+    ),
+    dnsCacheMaxEntries: integer(
+      row.dnsCacheMaxEntries,
+      256,
+      16,
+      4096,
+      "internal proxy",
+    ),
+    addressFamily: choice(
+      row.addressFamily,
+      "system",
+      ["system", "ipv4-first", "ipv6-first", "ipv4-only", "ipv6-only"] as const,
+      "internal proxy",
+    ),
     connectTimeoutSeconds: integer(
       row.connectTimeoutSeconds,
       15,

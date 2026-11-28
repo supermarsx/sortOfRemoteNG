@@ -466,7 +466,7 @@ export default function OriginMoreMenu({
               <>
                 <p className="text-sm text-[var(--color-textSecondary)]">
                   This opens a separate system browser outside this app's
-                  private proxy route. It uses its own network, proxy, cookies
+                  internal proxy route. It uses its own network, proxy, cookies
                   and sign-in state. Native browser cookies and saved
                   credentials are not transferred.
                 </p>
