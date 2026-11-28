@@ -141,6 +141,23 @@ afterEach(() => {
 });
 
 describe("idle native engine prewarm", () => {
+  it("requests idle time after 250ms and prewarms without the old two-second delay", async () => {
+    renderHook(useOriginBrowserPrewarm, { initialProps: options() });
+    act(() => vi.advanceTimersByTime(249));
+    expect(callbacks.size).toBe(0);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(callbacks.size).toBe(1);
+    await act(async () => {
+      const ready = [...callbacks.values()][0];
+      callbacks.clear();
+      ready({ didTimeout: false, timeRemaining: () => 20 });
+      await Promise.resolve();
+    });
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke.mock.calls[0][0]).toBe("origin_browser_prewarm");
+  });
+
   it("waits for ready settings, app readiness and idle without creating a connection/session", async () => {
     const initial = options({ appReady: false, settingsReady: false });
     const { rerender } = renderHook(useOriginBrowserPrewarm, {

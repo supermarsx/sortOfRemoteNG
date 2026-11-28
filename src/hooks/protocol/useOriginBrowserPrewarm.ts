@@ -164,7 +164,10 @@ export function useOriginBrowserPrewarm({
             });
           }
         };
-        timer = setTimeout(scheduleIdle, 2_000);
+        // Look for idle time promptly instead of leaving an idle application
+        // cold for two seconds. Expired/busy idle callbacks still cannot start
+        // native work, and all captured-owner checks remain in start().
+        timer = setTimeout(scheduleIdle, 250);
         cancelScheduled = () => {
           cancelled = true;
           clearTimeout(timer);

@@ -1773,6 +1773,25 @@ pub mod native_browser_owner {
             }
         }
 
+        #[tokio::test]
+        async fn seeded_initial_snapshot_does_not_hide_an_edit_before_first_recheck() {
+            let mut f = Fixture::new(32).await;
+            let lease = f.lease().await;
+            {
+                let cache = lease.0.snapshot_cache.lock().await;
+                assert!(!cache.is_empty());
+                assert_eq!(cache.hits(), 0);
+            }
+            f.data["connections"][0]["hostname"] = "https://sourcf.example/".into();
+            f.write_data(true);
+            assert!(matches!(
+                lease.recheck_detailed(&f.window, &f.state).await,
+                Err(RecheckFailure::SourceChanged)
+            ));
+            assert!(!lease.is_current());
+            assert!(lease.0.snapshot_cache.lock().await.is_empty());
+        }
+
         #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
         async fn outer_snapshot_cache_coalesces_concurrent_reads_and_revocation_clears_it() {
             let f = Fixture::new(1024).await;
@@ -1796,8 +1815,8 @@ pub mod native_browser_owner {
             }
             assert_eq!(
                 lease.0.snapshot_cache.lock().await.hits(),
-                14,
-                "one decoded snapshot then seven exact-content hits for both documents"
+                16,
+                "the authenticated initial read seeds both documents for all eight exact-content rechecks"
             );
             lease.revoke();
             assert!(lease.0.snapshot_cache.lock().await.is_empty());
@@ -1978,6 +1997,29 @@ pub mod native_browser_owner {
                         cold_us,
                         start.elapsed().as_micros()
                     );
+                }
+            }
+        }
+
+        #[tokio::test]
+        #[ignore = "isolated first-owner-recheck benchmark; run alone with --ignored --nocapture --test-threads=1"]
+        async fn isolated_first_owner_recheck_latency() {
+            for padding in [0, 1024 * 1024] {
+                let f = Fixture::new(padding).await;
+                let lease = f.lease().await;
+                let start = Instant::now();
+                assert!(reused(&f, &lease).await);
+                println!("fixture_bytes={} seeded_first_recheck_us={}", f.plaintext_bytes, start.elapsed().as_micros());
+                for iteration in 0..5 {
+                    // Reproduce the discarded initial outer cache without
+                    // changing the authenticated row/dependency proof.
+                    *lease.0.snapshot_cache.lock().await = ManagedSnapshotCache::default();
+                    let start = Instant::now();
+                    assert!(reused(&f, &lease).await);
+                    let unseeded_us = start.elapsed().as_micros();
+                    let start = Instant::now();
+                    assert!(reused(&f, &lease).await);
+                    println!("fixture_bytes={} iteration={} unseeded_outer_us={} reused_outer_us={}", f.plaintext_bytes, iteration, unseeded_us, start.elapsed().as_micros());
                 }
             }
         }
@@ -3504,7 +3546,11 @@ pub mod native_browser_owner {
             if native_root(window, state)? != root {
                 return Err(UNAVAILABLE.into());
             }
-            let snapshot = managed_snapshot(&root, state, database).await?;
+            // Keep the bounded outer decode cache populated by this authenticated
+            // initial read. The next recheck still rereads and fingerprints both
+            // files; unchanged bytes need no second outer decrypt/JSON decode.
+            let mut snapshot_cache = ManagedSnapshotCache::default();
+            let snapshot = managed_snapshot_cached(&root, state, database, &mut snapshot_cache).await?;
             if !is_managed(&snapshot) || revision(&snapshot) != expected_revision {
                 return Err(UNAVAILABLE.into());
             }
@@ -3538,7 +3584,7 @@ pub mod native_browser_owner {
                 source_dependencies: std::sync::OnceLock::new(),
                 // The initial read just authenticated this exact snapshot and
                 // selected row; no dependency has been registered yet.
-                snapshot_cache: tokio::sync::Mutex::new(ManagedSnapshotCache::default()),
+                snapshot_cache: tokio::sync::Mutex::new(snapshot_cache),
                 recheck_proof: std::sync::Mutex::new(Some(RecheckProof {
                     content: recheck_content(&snapshot)?,
                     dependencies: Dependencies::new(),
