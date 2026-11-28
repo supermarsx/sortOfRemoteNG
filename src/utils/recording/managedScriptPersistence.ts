@@ -2,6 +2,7 @@ import type { ManagedScript } from "../../components/recording/ScriptManager";
 import type { AutomationProvenance } from "../../types/recording/automationLibrary";
 import type { RecordLedger } from "../storage/recordLedger";
 import { normalizeAutomationProvenanceMap } from "./automationProvenance";
+import { normalizeScriptFolders } from "./scriptFolders";
 import {
   normalizeTerminalLibraryMigrationReceipt,
   type TerminalLibraryMigrationReceipt,
@@ -13,6 +14,7 @@ import {
 } from "../storage/appDataJsonStore";
 
 export interface PersistedManagedScripts {
+  folders?: string[];
   customScripts: ManagedScript[];
   modifiedDefaults: ManagedScript[];
   deletedDefaultIds: string[];
@@ -107,6 +109,9 @@ const sanitizeManagedScripts = (
       customScripts: customScripts.value,
       modifiedDefaults: modifiedDefaults.value,
       deletedDefaultIds: [...deletedDefaultIds],
+      ...(record.folders === undefined
+        ? {}
+        : { folders: normalizeScriptFolders(record.folders) }),
       ...(record.databaseMigration === undefined
         ? {}
         : {

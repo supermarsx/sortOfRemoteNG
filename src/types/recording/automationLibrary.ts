@@ -45,6 +45,8 @@ export interface AutomationLibrarySnapshot<
   /** Opaque, bounded-lifetime review receipt; callers cannot manufacture one. */
   receipt: string;
   entries: AutomationEntry<F>[];
+  /** Terminal-script display folders, including empty ones. */
+  folders?: string[];
 }
 export type AutomationLibraryChange<
   F extends AutomationFamily = AutomationFamily,
@@ -63,6 +65,7 @@ export interface AutomationLibraryApi {
   apply<F extends AutomationFamily>(
     snapshot: AutomationLibrarySnapshot<F>,
     changes: readonly AutomationLibraryChange<F>[],
+    folders?: readonly string[],
   ): Promise<AutomationLibrarySnapshot<F>>;
 }
 export interface DatabaseAutomationLibrary {

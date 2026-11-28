@@ -1403,6 +1403,7 @@ const RETENTION_NEUTRAL_EDITS: &[&[&str]] = &[
     &["httpBookmarks"],
     &["httpAutomation", "items"],
     &["updatedAt"],
+    &["httpAutomation", "folders"],
     &["lastConnected"],
     &["connectionCount"],
     &["name"],

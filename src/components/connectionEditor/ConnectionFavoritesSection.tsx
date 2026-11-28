@@ -220,6 +220,32 @@ export function ConnectionFavoritesSection({
                   Folder contents ({item.children.length})
                 </summary>
                 <div className="mt-2 border-l border-[var(--color-border)] pl-2">
+                  {parents.length < 7 && (
+                    <div className="mb-2 flex gap-2">
+                      <button
+                        type="button"
+                        className="sor-btn sor-btn-secondary text-xs"
+                        onClick={() =>
+                          startEdit(address, null, { name: "", path: "/" })
+                        }
+                      >
+                        Add bookmark here
+                      </button>
+                      <button
+                        type="button"
+                        className="sor-btn sor-btn-secondary text-xs"
+                        onClick={() =>
+                          startEdit(address, null, {
+                            name: "",
+                            isFolder: true,
+                            children: [],
+                          })
+                        }
+                      >
+                        Add folder here
+                      </button>
+                    </div>
+                  )}
                   {parents.length < 16 ? (
                     item.children.length ? (
                       renderItems(item.children, address)
@@ -256,13 +282,28 @@ export function ConnectionFavoritesSection({
             <h4 className="text-sm font-medium">
               Bookmarks ({bookmarks.length})
             </h4>
-            <button
-              type="button"
-              className="sor-btn sor-btn-secondary px-2 py-1 text-xs"
-              onClick={() => startEdit([], null, { name: "", path: "/" })}
-            >
-              Add bookmark
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="sor-btn sor-btn-secondary px-2 py-1 text-xs"
+                onClick={() =>
+                  startEdit([], null, {
+                    name: "",
+                    isFolder: true,
+                    children: [],
+                  })
+                }
+              >
+                Add folder
+              </button>
+              <button
+                type="button"
+                className="sor-btn sor-btn-secondary px-2 py-1 text-xs"
+                onClick={() => startEdit([], null, { name: "", path: "/" })}
+              >
+                Add bookmark
+              </button>
+            </div>
           </div>
           {currentEdit && (
             <div
@@ -280,7 +321,7 @@ export function ConnectionFavoritesSection({
               }}
             >
               <label className="block text-sm">
-                Bookmark name
+                {currentEdit.item.isFolder ? "Folder name" : "Bookmark name"}
                 <input
                   className="sor-form-input mt-1 w-full"
                   maxLength={1024}

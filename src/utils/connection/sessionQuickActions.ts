@@ -1,7 +1,9 @@
+import { hasAutomationControlCharacters } from "../recording/automationProvenance";
 import {
   DEFAULT_SESSION_QUICK_ACTIONS,
   type HttpAutomationConfig,
   type QuickActionReference,
+  type QuickActionFolder,
   type SessionQuickActionsSettings,
   type SshQuickActionsConfig,
 } from "../../types/connection/sessionQuickActions";
@@ -75,7 +77,10 @@ export function normalizeQuickActionReferences(
       Array.from(ref.id).some(
         (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
       ) ||
-      Object.keys(ref).some((key) => !["kind", "id", "scope"].includes(key))
+      (ref.folderId !== undefined && !validFolderText(ref.folderId, 128)) ||
+      Object.keys(ref).some(
+        (key) => !["kind", "id", "scope", "folderId"].includes(key),
+      )
     )
       throw new Error(
         "Invalid quick-action reference; store a script or macro ID only.",
@@ -87,12 +92,59 @@ export function normalizeQuickActionReferences(
       kind: ref.kind,
       id: ref.id,
       ...(scope.kind === "database" ? { scope } : {}),
+      ...(ref.folderId !== undefined
+        ? { folderId: ref.folderId as string }
+        : {}),
     };
     const key = quickActionReferenceKey(normalized);
     if (!seen.has(key)) result.push(normalized);
     seen.add(key);
   }
   return result;
+}
+
+function validFolderText(value: unknown, max: number): value is string {
+  return (
+    typeof value === "string" &&
+    !!value.trim() &&
+    value.length <= max &&
+    !hasAutomationControlCharacters(value, false)
+  );
+}
+
+function normalizeFavoriteFolders(
+  value: unknown,
+): QuickActionFolder[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > 64)
+    throw new Error("Use at most 64 favorite folders.");
+  const ids = new Set<string>();
+  return value.map((entry) => {
+    const folder = record(entry);
+    if (
+      !validFolderText(folder.id, 128) ||
+      !validFolderText(folder.name, 128) ||
+      Object.keys(folder).some((key) => !["id", "name"].includes(key)) ||
+      ids.has(folder.id)
+    )
+      throw new Error("Invalid favorite folder.");
+    ids.add(folder.id);
+    return { id: folder.id, name: folder.name };
+  });
+}
+
+function favoriteOrganization(config: Record<string, unknown>) {
+  const items = normalizeQuickActionReferences(config.items);
+  const folders = normalizeFavoriteFolders(config.folders);
+  if (
+    items.some(
+      (item) =>
+        item.folderId &&
+        !folders?.some((folder) => folder.id === item.folderId),
+    )
+  )
+    throw new Error("Favorite folder is missing.");
+  return { items, ...(folders !== undefined ? { folders } : {}) };
 }
 
 export function normalizeSshQuickActions(
@@ -102,10 +154,12 @@ export function normalizeSshQuickActions(
   const config = record(value);
   if (
     config.version !== 1 ||
-    Object.keys(config).some((key) => !["version", "items"].includes(key))
+    Object.keys(config).some(
+      (key) => !["version", "items", "folders"].includes(key),
+    )
   )
     throw new Error("Unsupported SSH quick-action configuration.");
-  return { version: 1, items: normalizeQuickActionReferences(config.items) };
+  return { version: 1, ...favoriteOrganization(config) };
 }
 
 export function normalizeHttpAutomation(value: unknown): HttpAutomationConfig {
@@ -127,7 +181,8 @@ export function normalizeHttpAutomation(value: unknown): HttpAutomationConfig {
     config.version !== 1 ||
     booleans.some((key) => typeof config[key] !== "boolean") ||
     Object.keys(config).some(
-      (key) => !["version", "items", "darkMode", ...booleans].includes(key),
+      (key) =>
+        !["version", "items", "folders", "darkMode", ...booleans].includes(key),
     )
   )
     throw new Error(
@@ -135,7 +190,7 @@ export function normalizeHttpAutomation(value: unknown): HttpAutomationConfig {
     );
   return {
     version: 1,
-    items: normalizeQuickActionReferences(config.items),
+    ...favoriteOrganization(config),
     interactionMacrosEnabled: config.interactionMacrosEnabled === true,
     scriptInjectionEnabled: config.scriptInjectionEnabled === true,
     forceDark: config.forceDark === true,

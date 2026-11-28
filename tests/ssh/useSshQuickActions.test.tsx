@@ -508,7 +508,7 @@ describe("SSH connection favorites", () => {
           complete = resolve;
         }),
     );
-    let saving!: Promise<void>;
+    let saving!: Promise<unknown>;
     act(() => {
       saving = view.result.current.add({ kind: "macro", id: "macro-a" });
     });

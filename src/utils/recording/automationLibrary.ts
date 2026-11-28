@@ -11,6 +11,7 @@ import type {
   AutomationProvenance,
 } from "../../types/recording/automationLibrary";
 import { defaultScripts } from "../../data/defaultScripts";
+import { normalizeScriptFolders } from "./scriptFolders";
 import { getInvoke } from "../tauri/invoke";
 import {
   nativeManagedScriptsStore as managedScriptsStore,
@@ -191,7 +192,7 @@ export function createAutomationLibraryApi(
   const readApp = async (
     family: AutomationFamily,
     captured: number,
-  ): Promise<AutomationEntry[]> => {
+  ): Promise<{ entries: AutomationEntry[]; folders?: string[] }> => {
     assertApp(captured);
     if (!(await getInvoke()))
       fail(
@@ -200,8 +201,10 @@ export function createAutomationLibraryApi(
       );
     assertApp(captured);
     let result: AutomationEntry[];
+    let folders: string[] | undefined;
     if (family === "terminal-script") {
       const current = (await managedScriptsStore.load()).value;
+      folders = normalizeScriptFolders(current?.folders);
       result = entries(
         family,
         resolveManagedScripts(defaultScripts, current),
@@ -225,7 +228,7 @@ export function createAutomationLibraryApi(
       );
     }
     assertApp(captured);
-    return result;
+    return { entries: result, ...(folders ? { folders } : {}) };
   };
   const read = async <F extends AutomationFamily>(
     requested: AutomationScope,
@@ -246,8 +249,12 @@ export function createAutomationLibraryApi(
     let library: DatabaseAutomationLibrary | undefined,
       databaseScope: DatabaseAutomationScope | undefined;
     let value: AutomationEntry[];
-    if (scope.kind === "app") value = await readApp(family, captured);
-    else {
+    let folders: string[] | undefined;
+    if (scope.kind === "app") {
+      const app = await readApp(family, captured);
+      value = app.entries;
+      folders = app.folders;
+    } else {
       const api = dbFor(scope);
       databaseScope = { ...api.scope! };
       library = normalizeDatabaseAutomationLibrary(
@@ -256,12 +263,15 @@ export function createAutomationLibraryApi(
       assertApp(captured);
       dbFor(scope, databaseScope);
       value = databaseEntries(library, family);
+      if (family === "terminal-script")
+        folders = normalizeScriptFolders(library.terminalScripts.folders);
     }
     const snapshot = {
       scope,
       family,
       receipt: crypto.randomUUID(),
       entries: value,
+      ...(folders ? { folders } : {}),
     } as AutomationLibrarySnapshot<F>;
     const now = performance.now();
     for (const [key, review] of reviews)
@@ -295,6 +305,7 @@ export function createAutomationLibraryApi(
   const apply = async <F extends AutomationFamily>(
     snapshot: AutomationLibrarySnapshot<F>,
     changes: readonly AutomationLibraryChange<F>[],
+    folders?: readonly string[],
   ): Promise<AutomationLibrarySnapshot<F>> => {
     const review = reviews.get(snapshot?.receipt);
     if (
@@ -308,6 +319,12 @@ export function createAutomationLibraryApi(
       );
     reviews.delete(snapshot.receipt); // One use, including refused/ambiguous writes.
     assertApp(review!.epoch);
+    if (folders !== undefined && snapshot.family !== "terminal-script")
+      throw new Error("Folders are only supported for terminal scripts.");
+    const nextFolders =
+      folders === undefined
+        ? snapshot.folders
+        : normalizeScriptFolders(folders);
     const replacement = applyChanges(
       snapshot.family,
       review!.snapshot.entries,
@@ -334,6 +351,8 @@ export function createAutomationLibraryApi(
       const payloads = replacement.map((entry) => entry.payload);
       if (snapshot.family === "terminal-script")
         next.terminalScripts = {
+          ...next.terminalScripts,
+          ...(nextFolders !== undefined ? { folders: nextFolders } : {}),
           customScripts:
             payloads as DatabaseAutomationLibrary["terminalScripts"]["customScripts"],
           modifiedDefaults: [],
@@ -365,6 +384,16 @@ export function createAutomationLibraryApi(
       assertApp(review!.epoch);
       if (snapshot.family === "terminal-script") {
         await managedScriptsStore.update((current) => {
+          if (
+            !equal(
+              normalizeScriptFolders(current?.folders),
+              normalizeScriptFolders(snapshot.folders),
+            )
+          )
+            fail(
+              "conflict",
+              "Script folders changed. Reload before applying edits.",
+            );
           checkCurrent(
             entries(
               snapshot.family,
@@ -374,6 +403,7 @@ export function createAutomationLibraryApi(
           );
           return {
             ...current,
+            ...(nextFolders !== undefined ? { folders: nextFolders } : {}),
             ...buildManagedScriptsSnapshot(
               replacement.map(
                 (entry) => entry.payload,

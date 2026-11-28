@@ -205,7 +205,12 @@ export default function OriginBookmarkBar({
     setPending(true);
     setError(false);
     try {
-      await review.commit(change);
+      await review.commit(change, () => {
+        if (alive.current && opening.current === epoch) {
+          setUi(null);
+          onOverlayChange(false);
+        }
+      });
       if (alive.current && opening.current === epoch) {
         setUi(null);
         onOverlayChange(false);
@@ -359,6 +364,7 @@ export default function OriginBookmarkBar({
     <div
       role="group"
       aria-label="Saved website bookmarks"
+      aria-busy={pending}
       tabIndex={0}
       aria-haspopup="menu"
       className="flex shrink-0 min-w-0 flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 min-h-7"
@@ -401,7 +407,6 @@ export default function OriginBookmarkBar({
             aria-haspopup={item.isFolder ? "menu" : undefined}
             disabled={
               !eligible ||
-              pending ||
               (!item.isFolder &&
                 (!canNavigate ||
                   !resolveHttpBookmarkUrl(item.path, initialUrl, currentUrl)))
@@ -727,6 +732,14 @@ export default function OriginBookmarkBar({
                   {action(
                     "Manage scripts & macros",
                     () => openLibrary(),
+                    !canManageAutomation,
+                  )}
+                  {action(
+                    "New script folder…",
+                    () => {
+                      close();
+                      automation.openFolderDialog({ kind: "create" });
+                    },
                     !canManageAutomation,
                   )}
                 </>

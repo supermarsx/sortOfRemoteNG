@@ -78,10 +78,11 @@ export interface WebAutomationOptions {
 }
 type Options = WebAutomationOptions;
 export type ScopedWebAutomationItem = WebAutomationItem & {
+  folderId?: string;
   scope?: AutomationScope;
 };
 function payloadOf(item: ScopedWebAutomationItem): WebAutomationItem {
-  const { scope: _scope, ...payload } = item;
+  const { scope: _scope, folderId: _folder, ...payload } = item;
   return normalizeWebAutomationItem(payload);
 }
 const message = (error: unknown) =>
@@ -278,6 +279,10 @@ export function useWebAutomation(options: Options) {
     }
   }, [bridge]);
   const accessKey = `${options.ownerDatabaseId ?? ""}:${options.scopeKey}:${options.settingsReady}:${databaseScopeKey}`;
+  const [folderDialog, setFolderDialog] = useState<{
+    scope: string;
+    action: import("../../components/recording/FavoriteFolderDialog").FavoriteFolderAction;
+  } | null>(null);
   const previousAccess = useRef(accessKey);
   if (previousAccess.current !== accessKey) {
     previousAccess.current = accessKey;
@@ -1240,6 +1245,58 @@ export function useWebAutomation(options: Options) {
       if (mounted.current) setBusy(false);
     }
   };
+  const organizeFavorites = async (
+    organization: import("../../types/connection/sessionQuickActions").SshQuickActionsConfig,
+    reviewed: import("../../types/connection/sessionQuickActions").SshQuickActionsConfig,
+  ) => {
+    if (busyRef.current || recordingRef.current || recordingTransition.current)
+      return false;
+    const captured = epoch.current;
+    const current = latest.current.connection;
+    if (!current) return false;
+    busyRef.current = true;
+    savingRef.current = true;
+    setBusy(true);
+    try {
+      assertAccess(captured);
+      const checkOwner = captureWebAutomationAccess(
+        latest.current.ownerDatabaseId,
+      );
+      const config = normalizeHttpAutomation(current.httpAutomation);
+      if (JSON.stringify(config) !== JSON.stringify(reviewed))
+        throw new Error("Favorite folders changed. Reopen the organizer.");
+      if (
+        organization.items.length !== config.items.length ||
+        organization.items.some(
+          (item, index) =>
+            quickActionReferenceKey(item) !==
+            quickActionReferenceKey(config.items[index]),
+        )
+      )
+        throw new Error("Favorites changed. Reopen the folder organizer.");
+      const next = normalizeHttpAutomation({
+        ...config,
+        items: organization.items,
+        folders: organization.folders,
+      });
+      checkOwner();
+      await latest.current.updateConnection({
+        ...current,
+        httpAutomation: next,
+      });
+      assertAccess(captured);
+      checkOwner();
+      return true;
+    } catch (failure) {
+      if (mounted.current && epoch.current === captured)
+        setError(message(failure));
+      return false;
+    } finally {
+      busyRef.current = false;
+      savingRef.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  };
   const visibleLibrary =
     libraryScope === accessKey && libraryReady
       ? library
@@ -1262,7 +1319,9 @@ export function useWebAutomation(options: Options) {
           (candidate) =>
             quickActionReferenceKey(candidate) === quickActionReferenceKey(ref),
         );
-        return item ? [item] : [];
+        return item
+          ? [{ ...item, ...(ref.folderId ? { folderId: ref.folderId } : {}) }]
+          : [];
       });
     } catch {
       return [];
@@ -1332,6 +1391,14 @@ export function useWebAutomation(options: Options) {
     library: visibleLibrary,
     allItems,
     favorites,
+    favoriteFolders: (() => {
+      try {
+        return normalizeHttpAutomation(options.connection?.httpAutomation)
+          .folders;
+      } catch {
+        return undefined;
+      }
+    })(),
     open,
     setOpen,
     openLibrary,
@@ -1363,6 +1430,20 @@ export function useWebAutomation(options: Options) {
     save,
     remove,
     favorite,
+    organizeFavorites,
+    folderDialog:
+      folderDialog?.scope === accessKey ? folderDialog.action : null,
+    openFolderDialog: (
+      action: import("../../components/recording/FavoriteFolderDialog").FavoriteFolderAction,
+    ) => setFolderDialog({ scope: accessKey, action }),
+    closeFolderDialog: () => setFolderDialog(null),
+    favoriteConfiguration: (() => {
+      try {
+        return normalizeHttpAutomation(options.connection?.httpAutomation);
+      } catch {
+        return undefined;
+      }
+    })(),
     recordedMacro,
     clearSteps: () => setRecordedSteps([]),
     valuePrompt,

@@ -115,7 +115,8 @@ export function useScriptManager(onClose: () => void, enabled = true) {
     if (!current() || busyRef.current) return false;
     const key = accessKey,
       generation = ++readSequence.current;
-    setLoading(true);
+    // Keep the current list visible while reconciling an ordinary content save.
+    setLoading(!snapshot);
     try {
       const value = await bridge.api.read(scope, "terminal-script");
       if (!current(key) || generation !== readSequence.current) return false;
@@ -246,7 +247,7 @@ export function useScriptManager(onClose: () => void, enabled = true) {
       setEditDescription(script?.description ?? "");
       setEditScript(script?.script ?? "");
       setEditLanguage(script?.language ?? "auto");
-      setEditCategory(script?.category ?? "Custom");
+      setEditCategory(script?.category ?? (categoryFilter || "Custom"));
       setEditOsTags(script?.osTags ?? ["agnostic"]);
     });
   }
@@ -452,11 +453,74 @@ export function useScriptManager(onClose: () => void, enabled = true) {
       [
         ...new Set([
           ...SCRIPT_CATEGORY_SUGGESTIONS,
+          ...(snapshot?.folders ?? []),
           ...scripts.map((script) => script.category),
         ]),
       ].sort(),
-    [scripts],
+    [scripts, snapshot?.folders],
   );
+  async function saveFolder(name: string, script?: ManagedScript) {
+    if (!current() || busyRef.current || !snapshot || visibleDraft)
+      return false;
+    const key = accessKey;
+    const expected = snapshot;
+    busyRef.current = true;
+    setBusy(true);
+    setStorageError(null);
+    readSequence.current++;
+    try {
+      const reviewed = await bridge.api.read(scope, "terminal-script");
+      if (!current(key)) return false;
+      if (
+        !same(reviewed.entries, expected.entries) ||
+        !same(reviewed.folders ?? [], expected.folders ?? [])
+      )
+        throw new Error(
+          "The script library changed. Reload before moving scripts or creating folders.",
+        );
+      const folders = [...new Set([...(reviewed.folders ?? []), name.trim()])];
+      const entry = script
+        ? reviewed.entries.find((entry) => entry.payload.id === script.id)
+        : undefined;
+      if (script && (!entry || !same(entry.payload, script)))
+        throw new Error("The reviewed script changed.");
+      const committed = await bridge.api.apply(
+        reviewed,
+        entry
+          ? [
+              {
+                operation: "put",
+                expected: entry,
+                entry: {
+                  ...entry,
+                  payload: {
+                    ...entry.payload,
+                    category: name.trim(),
+                    updatedAt: new Date().toISOString(),
+                  },
+                },
+              },
+            ]
+          : [],
+        folders,
+      );
+      if (!current(key)) return false;
+      setLoaded({ key, value: committed });
+      if (!script) setCategoryFilter(name.trim());
+      return true;
+    } catch (error) {
+      if (current(key))
+        setStorageError(
+          error instanceof Error
+            ? error.message
+            : automationLibraryDiagnostic(error).message,
+        );
+      return false;
+    } finally {
+      busyRef.current = false;
+      if (live.current) setBusy(false);
+    }
+  }
   const filteredScripts = useMemo(
     () =>
       scripts.filter(
@@ -504,6 +568,15 @@ export function useScriptManager(onClose: () => void, enabled = true) {
     editCategory,
     editOsTags: visibleDraft ? editOsTags : [],
     categories,
+    folders: [
+      ...new Set([
+        ...(snapshot?.folders ?? []),
+        ...scripts.map((script) => script.category),
+      ]),
+    ].sort(),
+    createFolder: (name: string) => saveFolder(name),
+    moveToFolder: (script: ManagedScript, name: string) =>
+      saveFolder(name, script),
     filteredScripts,
     setSearchFilter,
     setCategoryFilter,

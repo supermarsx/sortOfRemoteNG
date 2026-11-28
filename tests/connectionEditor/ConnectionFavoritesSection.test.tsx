@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { ConnectionFavoritesSection } from "../../src/components/connectionEditor/ConnectionFavoritesSection";
 import { SessionQuickActionsSection } from "../../src/components/connectionEditor/SessionQuickActionsSection";
 import { getProtocolSubtabs } from "../../src/components/connection/editor/protocolSubtabs";
@@ -29,6 +29,67 @@ function Harness({ initial }: { initial: Partial<Connection> }) {
 const draft = () => JSON.parse(screen.getByTestId("draft").textContent!);
 
 describe("connection draft Favorites", () => {
+  it("creates a folder and nested bookmark in the connection draft", () => {
+    render(<Harness initial={{ id: "web", protocol: "https" }} />);
+    fireEvent.click(
+      within(screen.getByRole("region", { name: "HTTP bookmarks" })).getByRole(
+        "button",
+        { name: "Add folder" },
+      ),
+    );
+    fireEvent.change(screen.getByLabelText("Folder name"), {
+      target: { value: "Tools" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save bookmark draft" }),
+    );
+    fireEvent.click(screen.getByText("Folder contents (0)"));
+    fireEvent.click(screen.getByRole("button", { name: "Add bookmark here" }));
+    fireEvent.change(screen.getByLabelText("Bookmark name"), {
+      target: { value: "Status" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save bookmark draft" }),
+    );
+    expect(draft().httpBookmarks).toEqual([
+      {
+        name: "Tools",
+        isFolder: true,
+        children: [{ name: "Status", path: "/" }],
+      },
+    ]);
+  });
+  it("organizes script references without changing their identities and returns them to root when a folder is removed", () => {
+    render(
+      <Harness
+        initial={{
+          id: "ssh",
+          protocol: "ssh",
+          sshQuickActions: {
+            version: 1,
+            items: [{ kind: "script", id: "saved" }],
+          },
+        }}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("New script / macro folder"), {
+      target: { value: "Maintenance" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
+    const folder = draft().sshQuickActions.folders[0];
+    fireEvent.change(screen.getByLabelText("Folder for script saved"), {
+      target: { value: folder.id },
+    });
+    expect(draft().sshQuickActions.items).toEqual([
+      { kind: "script", id: "saved", folderId: folder.id },
+    ]);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove folder Maintenance" }),
+    );
+    expect(draft().sshQuickActions.items).toEqual([
+      { kind: "script", id: "saved" },
+    ]);
+  });
   it.each([
     [
       "https://Other.example:443/status?view=all#top",
@@ -194,7 +255,7 @@ describe("connection draft Favorites", () => {
     expect(
       screen.queryByLabelText("Bookmark URL or path"),
     ).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Bookmark name"), {
+    fireEvent.change(screen.getByLabelText("Folder name"), {
       target: { value: "Team" },
     });
     fireEvent.click(

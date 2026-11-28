@@ -137,7 +137,7 @@ export function changeOriginBookmarks(
 export interface OriginBookmarkReview {
   tree: HttpBookmarkItem[];
   assertCurrent: () => void;
-  commit: (change: BookmarkChange) => Promise<void>;
+  commit: (change: BookmarkChange, onApplied?: () => void) => Promise<void>;
 }
 
 /** Capture at review opening, not at the delayed Save click. No database adoption. */
@@ -225,7 +225,7 @@ export function useOriginBookmarks(
     return {
       tree,
       assertCurrent,
-      commit: async (change) => {
+      commit: async (change, onApplied) => {
         if (saving.current) throw new Error("Bookmark save pending");
         assertCurrent();
         const next = changeOriginBookmarks(tree, change);
@@ -234,10 +234,13 @@ export function useOriginBookmarks(
         consumed = true;
         saving.current = true;
         try {
-          await live.current.context.dispatchAndFlush({
-            type: "UPDATE_CONNECTION",
-            payload: { ...current, httpBookmarks: next },
-          });
+          await live.current.context.dispatchAndFlush(
+            {
+              type: "UPDATE_CONNECTION",
+              payload: { ...current, httpBookmarks: next },
+            },
+            { onApplied },
+          );
           // A save may publish a new connection object; check current authority,
           // not the pre-save React object, after persistence completes.
           assertScope();

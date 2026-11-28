@@ -24,6 +24,12 @@ import Modal, {
   ModalFooter,
   ModalHeader,
 } from "../../ui/overlays/Modal";
+import { FavoriteFolders } from "../../recording/FavoriteFolders";
+import { FavoriteOrganizer } from "../../recording/FavoriteOrganizer";
+import {
+  FavoriteFolderDialog,
+  type FavoriteFolderAction,
+} from "../../recording/FavoriteFolderDialog";
 import MenuSurface from "../../ui/overlays/MenuSurface";
 import type { useSshQuickActions } from "../../../hooks/ssh/useSshQuickActions";
 import {
@@ -45,6 +51,7 @@ import type { ScriptManagerInitialEdit } from "../../recording/ScriptManager";
 type Actions = ReturnType<typeof useSshQuickActions>;
 type ActionKind = "script" | "macro";
 interface ContextMenu {
+  folderId?: string;
   x: number;
   y: number;
   favoriteKey?: string;
@@ -67,6 +74,11 @@ export default function SshQuickActionsBar({
     null,
   );
   const [open, setOpen] = useState(false);
+  const [organizer, setOrganizer] = useState<string | null>(null);
+  const [folderAction, setFolderAction] = useState<{
+    scope: string;
+    action: FavoriteFolderAction;
+  } | null>(null);
   const [manager, setManager] = useState<ActionKind | null>(null);
   const [assignmentKind, setAssignmentKind] = useState<ActionKind | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -147,12 +159,18 @@ export default function SshQuickActionsBar({
     actions.setQuery("");
     void actions.refresh();
   };
-  const openContext = (x: number, y: number, favoriteKey?: string) => {
+  const openContext = (
+    x: number,
+    y: number,
+    favoriteKey?: string,
+    folderId?: string,
+  ) => {
     if (!managementReady) return;
     setContextMenu({
       x,
       y,
       favoriteKey,
+      folderId,
       favorites: actions.favorites,
       remove: actions.remove,
       run: actions.run,
@@ -174,6 +192,45 @@ export default function SshQuickActionsBar({
   const message = actions.unavailable ?? actions.error;
   return (
     <>
+      {folderAction?.scope === actions.sessionAccessKey &&
+        !actions.unavailable && (
+          <FavoriteFolderDialog
+            action={folderAction.action}
+            config={{
+              version: 1,
+              folders: actions.folders,
+              items: actions.favorites.map(({ kind, id, scope, folderId }) => ({
+                kind,
+                id,
+                scope,
+                folderId,
+              })),
+            }}
+            busy={actions.busy}
+            onSave={actions.organize}
+            onClose={() => setFolderAction(null)}
+          />
+        )}
+      {organizer === actions.sessionAccessKey &&
+        organizer !== null &&
+        !actions.unavailable && (
+          <FavoriteOrganizer
+            config={{
+              version: 1,
+              folders: actions.folders,
+              items: actions.favorites.map(({ kind, id, scope, folderId }) => ({
+                kind,
+                id,
+                scope,
+                folderId,
+              })),
+            }}
+            items={actions.favorites}
+            busy={actions.busy}
+            onSave={actions.organize}
+            onClose={() => setOrganizer(null)}
+          />
+        )}
       <div
         className="flex min-w-0 flex-col gap-1 border-t border-[var(--color-border)] px-3 py-1"
         data-testid="ssh-quick-actions"
@@ -233,81 +290,91 @@ export default function SshQuickActionsBar({
                 Add scripts or macros for this connection
               </span>
             )}
-            {actions.visibleFavorites.map((favorite) => {
-              const reorderProps = reorderUi.getItemProps(
-                quickActionReferenceKey(favorite),
-              );
-              return (
-                <span
-                  key={quickActionReferenceKey(favorite)}
-                  className={`shrink-0 ${FAVORITE_DROP_CLASS}`}
-                  data-testid="ssh-favorite-item"
-                  aria-description={t(
-                    "scriptFavorites.reorderHint",
-                    "Drag to reorder, or press Alt+Arrow keys",
-                  )}
-                  draggable={reorderProps.draggable && !actions.query.trim()}
-                  data-dragging={reorderProps["data-dragging"]}
-                  data-drop-position={reorderProps["data-drop-position"]}
-                  onDragStart={reorderProps.onDragStart}
-                  onDragOver={reorderProps.onDragOver}
-                  onDrop={reorderProps.onDrop}
-                  onDragEnd={reorderProps.onDragEnd}
-                  data-tooltip={`${favorite.name} · ${quickActionScopeLabel(favorite)} · ${favorite.kind}${favorite.missing ? " · unavailable" : ""}`}
-                  role="group"
-                  aria-label={`${favorite.kind} ${favorite.name} favorite`}
-                  tabIndex={
-                    !actions.canRun || favorite.missing || replaying ? 0 : -1
-                  }
-                  aria-haspopup="menu"
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const rect = event.currentTarget.getBoundingClientRect();
-                    openContext(
-                      event.clientX || rect.left,
-                      event.clientY || rect.bottom,
-                      quickActionReferenceKey(favorite),
-                    );
-                  }}
-                  onKeyDown={(event) => {
-                    if (!actions.query.trim()) reorderProps.onKeyDown(event);
-                    if (event.defaultPrevented) return;
-                    if (!(
-                      event.key === "ContextMenu" ||
-                      (event.shiftKey && event.key === "F10")
-                    ))
-                      return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const rect = event.currentTarget.getBoundingClientRect();
-                    openContext(
-                      rect.left,
-                      rect.bottom,
-                      quickActionReferenceKey(favorite),
-                    );
-                  }}
-                >
-                  <button
-                    type="button"
-                    className="app-bar-button flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs"
-                    aria-label={`Run ${favorite.kind} ${favorite.name}`}
-                    disabled={!actions.canRun || favorite.missing || replaying}
-                    onClick={() => {
-                      if (actions.canRun && !favorite.missing && !replaying)
-                        void actions.run(favorite);
+            <FavoriteFolders
+              folders={actions.folders}
+              items={actions.visibleFavorites}
+              scope={actions.sessionAccessKey ?? "ssh"}
+              onFolderContextMenu={(id, x, y) =>
+                openContext(x, y, undefined, id)
+              }
+              renderItem={(favorite) => {
+                const reorderProps = reorderUi.getItemProps(
+                  quickActionReferenceKey(favorite),
+                );
+                return (
+                  <span
+                    key={quickActionReferenceKey(favorite)}
+                    className={`shrink-0 ${FAVORITE_DROP_CLASS}`}
+                    data-testid="ssh-favorite-item"
+                    aria-description={t(
+                      "scriptFavorites.reorderHint",
+                      "Drag to reorder, or press Alt+Arrow keys",
+                    )}
+                    draggable={reorderProps.draggable && !actions.query.trim()}
+                    data-dragging={reorderProps["data-dragging"]}
+                    data-drop-position={reorderProps["data-drop-position"]}
+                    onDragStart={reorderProps.onDragStart}
+                    onDragOver={reorderProps.onDragOver}
+                    onDrop={reorderProps.onDrop}
+                    onDragEnd={reorderProps.onDragEnd}
+                    data-tooltip={`${favorite.name} · ${quickActionScopeLabel(favorite)} · ${favorite.kind}${favorite.missing ? " · unavailable" : ""}`}
+                    role="group"
+                    aria-label={`${favorite.kind} ${favorite.name} favorite`}
+                    tabIndex={
+                      !actions.canRun || favorite.missing || replaying ? 0 : -1
+                    }
+                    aria-haspopup="menu"
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      openContext(
+                        event.clientX || rect.left,
+                        event.clientY || rect.bottom,
+                        quickActionReferenceKey(favorite),
+                      );
+                    }}
+                    onKeyDown={(event) => {
+                      if (!actions.query.trim()) reorderProps.onKeyDown(event);
+                      if (event.defaultPrevented) return;
+                      if (!(
+                        event.key === "ContextMenu" ||
+                        (event.shiftKey && event.key === "F10")
+                      ))
+                        return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      openContext(
+                        rect.left,
+                        rect.bottom,
+                        quickActionReferenceKey(favorite),
+                      );
                     }}
                   >
-                    {favorite.kind === "script" ? (
-                      <FileCode size={12} />
-                    ) : (
-                      <ListVideo size={12} />
-                    )}
-                    <span className="max-w-40 truncate">{favorite.name}</span>
-                  </button>
-                </span>
-              );
-            })}
+                    <button
+                      type="button"
+                      className={`app-bar-button flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs ${actions.saving ? "disabled:opacity-100" : ""}`}
+                      aria-label={`Run ${favorite.kind} ${favorite.name}`}
+                      disabled={
+                        !actions.canRun || favorite.missing || replaying
+                      }
+                      onClick={() => {
+                        if (actions.canRun && !favorite.missing && !replaying)
+                          void actions.run(favorite);
+                      }}
+                    >
+                      {favorite.kind === "script" ? (
+                        <FileCode size={12} />
+                      ) : (
+                        <ListVideo size={12} />
+                      )}
+                      <span className="max-w-40 truncate">{favorite.name}</span>
+                    </button>
+                  </span>
+                );
+              }}
+            />
           </div>
           {replaying && (
             <button
@@ -486,6 +553,65 @@ export default function SshQuickActionsBar({
         >
           <ListVideo size={12} /> Manage macros
         </button>
+        <button
+          type="button"
+          role="menuitem"
+          className="sor-menu-item text-xs py-1.5"
+          onClick={() =>
+            reviewedContextAction(() => setOrganizer(actions.sessionAccessKey))
+          }
+        >
+          <Settings2 size={12} /> Organize folders
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className="sor-menu-item text-xs py-1.5"
+          onClick={() =>
+            reviewedContextAction(() =>
+              setFolderAction({
+                scope: actions.sessionAccessKey,
+                action: { kind: "create" },
+              }),
+            )
+          }
+        >
+          New folder…
+        </button>
+        {contextMenu?.folderId && (
+          <>
+            <button
+              type="button"
+              role="menuitem"
+              className="sor-menu-item text-xs py-1.5"
+              onClick={() =>
+                reviewedContextAction(() =>
+                  setFolderAction({
+                    scope: actions.sessionAccessKey,
+                    action: { kind: "rename", folderId: contextMenu.folderId },
+                  }),
+                )
+              }
+            >
+              Rename folder…
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="sor-menu-item sor-menu-item-danger text-xs py-1.5"
+              onClick={() =>
+                reviewedContextAction(() =>
+                  setFolderAction({
+                    scope: actions.sessionAccessKey,
+                    action: { kind: "delete", folderId: contextMenu.folderId },
+                  }),
+                )
+              }
+            >
+              Delete folder…
+            </button>
+          </>
+        )}
       </MenuSurface>
       <Modal
         isOpen={

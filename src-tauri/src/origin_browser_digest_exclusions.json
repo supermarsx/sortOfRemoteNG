@@ -19,6 +19,11 @@
       "reason": "Rewritten by every save."
     },
     {
+      "path": ["httpAutomation", "folders"],
+      "kind": "presentation",
+      "reason": "Names and grouping of saved favorites. Execution still checks the scoped library reference and unchanged consent flags."
+    },
+    {
       "path": ["lastConnected"],
       "kind": "bookkeeping",
       "reason": "Written by the application when a session to this connection starts."

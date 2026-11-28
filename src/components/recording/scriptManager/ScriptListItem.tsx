@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pencil } from "lucide-react";
+import { Pencil, Folder } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import MenuSurface from "../../ui/overlays/MenuSurface";
 import { ManagedScript, languageLabels, OS_TAG_LABELS } from "./shared";
@@ -19,6 +19,14 @@ function ScriptListItem({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   return (
     <div
+      draggable={!mgr.busy && !mgr.isEditing}
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData(
+          "application/x-sorng-library-script",
+          JSON.stringify({ id: script.id, access: mgr.accessKey }),
+        );
+      }}
       onClick={() => mgr.handleSelectScript(script)}
       onContextMenu={(event) => {
         event.preventDefault();
@@ -99,6 +107,25 @@ function ScriptListItem({
         >
           <Pencil size={12} /> {t("scriptFavorites.edit", "Edit")}
         </button>
+        {mgr.folders
+          .filter((folder) => folder !== script.category)
+          .map((folder) => (
+            <button
+              key={folder}
+              type="button"
+              role="menuitem"
+              className="sor-menu-item text-xs py-1.5"
+              disabled={mgr.busy || mgr.isEditing}
+              onClick={(event) => {
+                event.stopPropagation();
+                setMenu(null);
+                void mgr.moveToFolder(script, folder);
+              }}
+            >
+              <Folder size={12} />
+              <span className="truncate">Move to {folder}</span>
+            </button>
+          ))}
       </MenuSurface>
     </div>
   );

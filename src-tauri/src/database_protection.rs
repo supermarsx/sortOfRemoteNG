@@ -3159,6 +3159,7 @@ pub mod native_browser_owner {
             &["httpBookmarks"],
             &["httpAutomation", "items"],
             &["updatedAt"],
+            &["httpAutomation", "folders"],
             &["lastConnected"],
             &["connectionCount"],
             &["name"],

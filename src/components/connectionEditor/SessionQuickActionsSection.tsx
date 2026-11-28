@@ -9,6 +9,7 @@ import {
   quickActionScopeLabel,
 } from "../../utils/connection/sessionQuickActions";
 import { Checkbox } from "../ui/forms";
+import { FavoriteFolderEditor } from "./FavoriteFolderEditor";
 import { WebsiteDarkModeFields } from "../websites/WebsiteDarkModeFields";
 import {
   BUILTIN_WEBSITE_DARK_PRESETS,
@@ -91,6 +92,29 @@ export function SessionQuickActionsSection({
     );
   }
   const items = config.items;
+  const folders = config.folders ?? [];
+  const updateFolders = (next: typeof folders) =>
+    setFormData((previous) => {
+      const field = protocol === "ssh" ? "sshQuickActions" : "httpAutomation";
+      if (previous.id !== formData.id || previous[field] !== formData[field])
+        return previous;
+      return {
+        ...previous,
+        [field]: {
+          ...config,
+          folders: next,
+          items: items.map((item) => {
+            if (
+              !item.folderId ||
+              next.some((folder) => folder.id === item.folderId)
+            )
+              return item;
+            const { folderId: _removed, ...reference } = item;
+            return reference;
+          }),
+        },
+      };
+    });
   const updateItems = (next: QuickActionReference[]) =>
     setFormData((previous) =>
       previous.id !== formData.id ||
@@ -203,6 +227,7 @@ export function SessionQuickActionsSection({
       )}
       {view !== "permissions" && (
         <>
+          <FavoriteFolderEditor folders={folders} onChange={updateFolders} />
           <p className="text-xs text-[var(--color-textSecondary)]">
             Add favorites from the session action bar. Only library IDs and
             their order are saved here; script bodies and credentials are not
@@ -232,6 +257,29 @@ export function SessionQuickActionsSection({
                       session library.
                     </span>
                   </span>
+                  <select
+                    className="sor-form-select-sm max-w-40"
+                    aria-label={`Folder for ${item.kind} ${item.id}`}
+                    value={item.folderId ?? ""}
+                    onChange={(event) =>
+                      updateItems(
+                        items.map((reference, row) => {
+                          if (row !== index) return reference;
+                          const { folderId: _removed, ...rest } = reference;
+                          return event.target.value
+                            ? { ...rest, folderId: event.target.value }
+                            : rest;
+                        }),
+                      )
+                    }
+                  >
+                    <option value="">No folder</option>
+                    {folders.map((folder) => (
+                      <option key={folder.id} value={folder.id}>
+                        {folder.name}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     type="button"
                     aria-label={`Move ${item.kind} ${item.id} up`}

@@ -14,6 +14,34 @@ import { normalizeAdvancedProtocolConnection } from "../../src/utils/connection/
 import { DEFAULT_SESSION_QUICK_ACTIONS } from "../../src/types/connection/sessionQuickActions";
 
 describe("session quick-action references and consent", () => {
+  it("preserves folder grouping independently of scoped identity and validates folder references", () => {
+    const reference = {
+      kind: "script" as const,
+      id: "a",
+      scope: { kind: "database" as const, databaseId: "owner" },
+    };
+    const config = normalizeSshQuickActions({
+      version: 1,
+      folders: [{ id: "ops", name: "Operations" }],
+      items: [{ ...reference, folderId: "ops" }],
+    });
+    expect(config.items[0].folderId).toBe("ops");
+    expect(quickActionReferenceKey(config.items[0])).toBe(
+      quickActionReferenceKey(reference),
+    );
+    expect(() => normalizeSshQuickActions({ ...config, folders: [] })).toThrow(
+      "folder is missing",
+    );
+    expect(() =>
+      normalizeSshQuickActions({
+        ...config,
+        folders: [
+          { id: "ops", name: "A" },
+          { id: "ops", name: "B" },
+        ],
+      }),
+    ).toThrow("Invalid favorite folder");
+  });
   it("qualifies IDs by exact scope while legacy and explicit app are identical", () => {
     const refs = normalizeQuickActionReferences([
       { kind: "script", id: "same" },

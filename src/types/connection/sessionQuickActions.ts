@@ -5,11 +5,19 @@ export interface QuickActionReference {
   id: string;
   /** Omitted legacy references always mean app-wide, never a database fallback. */
   scope?: AutomationScope;
+  /** Display grouping only; never part of the library identity. */
+  folderId?: string;
+}
+
+export interface QuickActionFolder {
+  id: string;
+  name: string;
 }
 
 export interface SshQuickActionsConfig {
   version: 1;
   items: QuickActionReference[];
+  folders?: QuickActionFolder[];
 }
 
 export interface HttpAutomationConfig extends SshQuickActionsConfig {

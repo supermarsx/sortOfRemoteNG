@@ -137,6 +137,42 @@ async function hook() {
   return view;
 }
 describe("explicit script library scopes", () => {
+  it("creates and selects an empty folder without replacing the script list", async () => {
+    const view = await hook();
+    h.apply.mockImplementationOnce(async (reviewed, _changes, folders) => ({
+      ...reviewed,
+      folders,
+      receipt: "folder-saved",
+    }));
+    await act(async () => {
+      await view.result.current.createFolder("Operations");
+    });
+    expect(h.apply).toHaveBeenCalledWith(
+      expect.objectContaining({ family: "terminal-script" }),
+      [],
+      ["Operations"],
+    );
+    expect(view.result.current.scripts).toHaveLength(1);
+    expect(view.result.current.folders).toContain("Operations");
+    expect(view.result.current.categoryFilter).toBe("Operations");
+    expect(view.result.current.filteredScripts).toEqual([]);
+    expect(view.result.current.loading).toBe(false);
+  });
+  it("keeps a loaded script list visible during background refresh", async () => {
+    const view = await hook();
+    const pending = deferred<AutomationLibrarySnapshot<"terminal-script">>();
+    h.read.mockReturnValueOnce(pending.promise);
+    let refresh!: Promise<boolean>;
+    act(() => {
+      refresh = view.result.current.refresh();
+    });
+    expect(view.result.current.loading).toBe(false);
+    expect(view.result.current.scripts).toHaveLength(1);
+    await act(async () => {
+      pending.resolve(snapshot({ kind: "app" }));
+      await refresh;
+    });
+  });
   it("loads an empty database without copying app defaults or creating a fallback", async () => {
     const { result } = await hook();
     expect(result.current.scripts[0].name).toBe("App fixture");

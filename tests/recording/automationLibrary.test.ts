@@ -106,6 +106,51 @@ beforeEach(async () => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("scoped reviewed automation libraries", () => {
+  it.each(["app", "database"] as const)(
+    "persists empty script folders and retains them through script edits in %s scope",
+    async (kind) => {
+      const fixture = databaseFixture();
+      const api = createAutomationLibraryApi(() => fixture.database);
+      const scope = kind === "app" ? { kind } : { kind, databaseId: "db-a" };
+      const empty = await api.read(scope, "terminal-script");
+      const created = await api.apply(empty, [], ["Operations"]);
+      expect(created.folders).toEqual(["Operations"]);
+      expect(created.entries).toEqual([]);
+      const saved = await api.apply(created, [
+        {
+          operation: "put",
+          entry: {
+            family: "terminal-script",
+            payload: {
+              ...defaultScripts[0],
+              id: "folder-script",
+              category: "Operations",
+            },
+          },
+        },
+      ]);
+      expect(saved.folders).toEqual(["Operations"]);
+      const removed = await api.apply(saved, [
+        { operation: "delete", expected: saved.entries[0] },
+      ]);
+      expect(removed.folders).toEqual(["Operations"]);
+      expect((await api.read(scope, "terminal-script")).entries).toEqual([]);
+    },
+  );
+
+  it("refuses stale app folder reviews and rejects folders on other families", async () => {
+    const api = createAutomationLibraryApi();
+    const stale = await api.read({ kind: "app" }, "terminal-script");
+    const current = await api.read({ kind: "app" }, "terminal-script");
+    await api.apply(current, [], ["New folder"]);
+    await expect(api.apply(stale, [], ["Stale folder"])).rejects.toThrow(
+      "folders changed",
+    );
+    const website = await api.read({ kind: "app" }, "website-script");
+    await expect(api.apply(website, [], ["Unsupported"])).rejects.toThrow(
+      "only supported for terminal scripts",
+    );
+  });
   it("bounds aggregate review memory independently of the receipt count cap", async () => {
     const fixture = databaseFixture();
     const large = emptyDatabaseAutomationLibrary();

@@ -9,6 +9,7 @@ import type {
 } from "../../types/recording/automationLibrary";
 import { containsLikelySecretText } from "../storage/appDataJsonStore";
 import { validateTerminalMacros } from "./terminalMacroPersistence";
+import { normalizeScriptFolders } from "./scriptFolders";
 import { normalizeTerminalLibraryMigrationReceipt } from "./terminalLibraryMigrationReceipt";
 import {
   normalizeWebAutomationItem,
@@ -176,6 +177,7 @@ export function normalizeDatabaseAutomationLibrary(
   )
     throw invalid();
   const scripts = object(raw.terminalScripts, [
+    "folders",
     "customScripts",
     "modifiedDefaults",
     "deletedDefaultIds",
@@ -207,7 +209,14 @@ export function normalizeDatabaseAutomationLibrary(
   return {
     version: 1,
     revision: raw.revision as number,
-    terminalScripts: { customScripts, modifiedDefaults, deletedDefaultIds },
+    terminalScripts: {
+      customScripts,
+      modifiedDefaults,
+      deletedDefaultIds,
+      ...(scripts.folders === undefined
+        ? {}
+        : { folders: normalizeScriptFolders(scripts.folders) }),
+    },
     terminalMacros,
     website: normalizeWebAutomationLibrary(raw.website),
     provenance: normalizeAutomationProvenanceMap(raw.provenance),

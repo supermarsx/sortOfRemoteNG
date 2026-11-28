@@ -29,6 +29,11 @@ import {
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 import { MenuSurface } from "../../ui/overlays/MenuSurface";
 
+import { FavoriteFolders } from "../../recording/FavoriteFolders";
+import { FolderPlus } from "lucide-react";
+import { FavoriteOrganizer } from "../../recording/FavoriteOrganizer";
+import { FavoriteFolderDialog } from "../../recording/FavoriteFolderDialog";
+
 type Automation = ReturnType<typeof useWebAutomation>;
 function newScript(): BrowserScript {
   const date = new Date().toISOString();
@@ -568,6 +573,13 @@ export function WebAutomationFavoriteChips({
   onContextMenuOpen?: () => void;
   otherMenuOpen?: boolean;
 }) {
+  const [organizer, setOrganizer] = useState<string | null>(null);
+  const [folderMenu, setFolderMenu] = useState<{
+    id: string;
+    scope: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [menu, setMenu] = useState<{
     key: string;
     scope: string;
@@ -611,47 +623,123 @@ export function WebAutomationFavoriteChips({
   if (!automation.permissions?.showActionBar) return null;
   return (
     <>
-      {automation.favorites.map((item) => (
-        <span
-          key={quickActionReferenceKey(item)}
-          className="inline-flex shrink-0"
-          data-tooltip={`${item.kind === "script" ? "Run JavaScript" : "Replay macro"}: ${item.name} · ${quickActionScopeLabel(item)}`}
-          tabIndex={canManage && !canRun(item) ? 0 : undefined}
-          aria-label={
-            !canRun(item) ? `Manage favorite ${item.name}` : undefined
-          }
-          onContextMenu={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            openMenu(item, event.clientX, event.clientY);
-          }}
-          onKeyDown={(event) => {
-            if (
-              event.key === "ContextMenu" ||
-              (event.shiftKey && event.key === "F10")
-            ) {
+      {automation.folderDialog && automation.favoriteConfiguration && (
+        <FavoriteFolderDialog
+          action={automation.folderDialog}
+          config={automation.favoriteConfiguration}
+          busy={automation.busy}
+          onSave={automation.organizeFavorites}
+          onClose={automation.closeFolderDialog}
+        />
+      )}
+      {folderMenu &&
+        folderMenu.scope === automation.recordingScopeKey &&
+        canManage && (
+          <MenuSurface
+            isOpen
+            position={folderMenu}
+            onClose={() => setFolderMenu(null)}
+            className="min-w-48 rounded-lg py-1"
+            ariaLabel="Script folder actions"
+          >
+            {(["create", "rename", "delete"] as const).map((kind) => (
+              <button
+                key={kind}
+                role="menuitem"
+                className="sor-menu-item text-xs"
+                onClick={() => {
+                  automation.openFolderDialog({
+                    kind,
+                    folderId: kind === "create" ? undefined : folderMenu.id,
+                  });
+                  setFolderMenu(null);
+                }}
+              >
+                {kind === "create"
+                  ? "New folder…"
+                  : kind === "rename"
+                    ? "Rename folder…"
+                    : "Delete folder…"}
+              </button>
+            ))}
+          </MenuSurface>
+        )}
+      {organizer !== null &&
+        organizer === automation.recordingScopeKey &&
+        automation.favoriteConfiguration && (
+          <FavoriteOrganizer
+            config={automation.favoriteConfiguration}
+            items={automation.favorites}
+            busy={automation.busy}
+            onSave={automation.organizeFavorites}
+            onClose={() => setOrganizer(null)}
+          />
+        )}
+      <button
+        type="button"
+        className="sor-icon-btn-sm"
+        aria-label="Organize website favorite folders"
+        disabled={!canManage}
+        onClick={() => {
+          onContextMenuOpen?.();
+          setOrganizer(automation.recordingScopeKey);
+        }}
+      >
+        <FolderPlus size={13} />
+      </button>
+      <FavoriteFolders
+        folders={automation.favoriteFolders}
+        items={automation.favorites}
+        scope={automation.recordingScopeKey ?? ""}
+        onOpen={onContextMenuOpen}
+        closeMenus={otherMenuOpen || !canManage}
+        onFolderContextMenu={(id, x, y) => {
+          if (!canManage) return;
+          onContextMenuOpen?.();
+          setFolderMenu({ id, scope: automation.recordingScopeKey, x, y });
+        }}
+        renderItem={(item) => (
+          <span
+            key={quickActionReferenceKey(item)}
+            className="inline-flex shrink-0"
+            data-tooltip={`${item.kind === "script" ? "Run JavaScript" : "Replay macro"}: ${item.name} · ${quickActionScopeLabel(item)}`}
+            tabIndex={canManage && !canRun(item) ? 0 : undefined}
+            aria-label={
+              !canRun(item) ? `Manage favorite ${item.name}` : undefined
+            }
+            onContextMenu={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              const rect = event.currentTarget.getBoundingClientRect();
-              openMenu(item, rect.left, rect.bottom);
-            }
-          }}
-        >
-          <button
-            className="sor-option-chip shrink-0 text-xs max-w-40"
-            disabled={!canRun(item)}
-            style={!canRun(item) ? { pointerEvents: "none" } : undefined}
-            onClick={() => automation.requestRun(item)}
+              openMenu(item, event.clientX, event.clientY);
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.key === "ContextMenu" ||
+                (event.shiftKey && event.key === "F10")
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+                const rect = event.currentTarget.getBoundingClientRect();
+                openMenu(item, rect.left, rect.bottom);
+              }
+            }}
           >
-            {item.kind === "script" ? (
-              <Code2 size={12} className="shrink-0" />
-            ) : (
-              <Play size={12} className="shrink-0" />
-            )}
-            <span className="truncate">{item.name}</span>
-          </button>
-        </span>
-      ))}
+            <button
+              className="sor-option-chip shrink-0 text-xs max-w-40"
+              disabled={!canRun(item)}
+              style={!canRun(item) ? { pointerEvents: "none" } : undefined}
+              onClick={() => automation.requestRun(item)}
+            >
+              {item.kind === "script" ? (
+                <Code2 size={12} className="shrink-0" />
+              ) : (
+                <Play size={12} className="shrink-0" />
+              )}
+              <span className="truncate">{item.name}</span>
+            </button>
+          </span>
+        )}
+      />
       {menu && selected && canManage && (
         <MenuSurface
           isOpen
@@ -660,6 +748,15 @@ export function WebAutomationFavoriteChips({
           className="min-w-[190px] rounded-lg py-1"
           dataTestId="web-automation-favorite-menu"
         >
+          <button
+            role="menuitem"
+            className="sor-menu-item text-xs"
+            onClick={() =>
+              actOnMenu(() => setOrganizer(automation.recordingScopeKey))
+            }
+          >
+            <Library size={12} /> Organize folders
+          </button>
           <button
             role="menuitem"
             className="sor-menu-item text-xs"

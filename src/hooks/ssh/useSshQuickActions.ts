@@ -5,7 +5,10 @@ import { useSettings } from "../../contexts/SettingsContext";
 import type { ConnectionContextType } from "../../contexts/ConnectionContextTypes";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
 import type { ConnectionSession } from "../../types/connection/connection";
-import type { QuickActionReference } from "../../types/connection/sessionQuickActions";
+import type {
+  QuickActionReference,
+  SshQuickActionsConfig,
+} from "../../types/connection/sessionQuickActions";
 import {
   normalizeSessionQuickActions,
   normalizeSshQuickActions,
@@ -172,6 +175,7 @@ export function useSshQuickActions(options: Options) {
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const busyRef = useRef(false);
@@ -273,8 +277,10 @@ export function useSshQuickActions(options: Options) {
       if (ownerAccess.status === "conflict")
         return { references: [], unavailable: ownerAccess.message };
       const { connection } = assertOwner(sessionAccessKey);
+      const config = normalizeSshQuickActions(connection.sshQuickActions);
       return {
-        references: normalizeSshQuickActions(connection.sshQuickActions).items,
+        references: config.items,
+        folders: config.folders,
         unavailable: null,
       };
     } catch (failure) {
@@ -535,20 +541,37 @@ export function useSshQuickActions(options: Options) {
   const mutate = useCallback(
     async (
       transform: (references: QuickActionReference[]) => QuickActionReference[],
+      organization?: SshQuickActionsConfig,
+      reviewedOrganization?: SshQuickActionsConfig,
     ) => {
       if (busyRef.current) return;
       busyRef.current = true;
       setBusy(true);
+      setSaving(true);
       setError(null);
       const captured = generation.current;
       const capturedAccessKey = sessionAccessKeyRef.current;
       try {
         const { connection, target } = assertOwner(capturedAccessKey);
         const expected = normalizeSshQuickActions(connection.sshQuickActions);
+        if (
+          reviewedOrganization &&
+          JSON.stringify(expected) !==
+            JSON.stringify(normalizeSshQuickActions(reviewedOrganization))
+        )
+          throw new Error("Favorite folders changed. Reopen the organizer.");
         const next = normalizeSshQuickActions({
-          version: 1,
+          ...(organization ?? expected),
           items: transform(expected.items),
         });
+        if (
+          organization &&
+          (organization.items.length !== expected.items.length ||
+            organization.items.some(
+              (item, index) => key(item) !== key(expected.items[index]),
+            ))
+        )
+          throw new Error("Favorites changed. Reopen the folder organizer.");
         await current.current.context.flushPendingSave();
         target.assertAccessible?.();
         const latest = assertOwner(capturedAccessKey).connection;
@@ -571,15 +594,18 @@ export function useSshQuickActions(options: Options) {
         });
         target.assertAccessible?.();
         assertOwner(capturedAccessKey);
+        return true;
       } catch (failure) {
         setError(
           failure instanceof Error
             ? failure.message
             : "Favorites were not saved. Retry after unlocking the database.",
         );
+        return false;
       } finally {
         busyRef.current = false;
         setBusy(false);
+        setSaving(false);
       }
     },
     [assertOwner],
@@ -745,15 +771,16 @@ export function useSshQuickActions(options: Options) {
     const ordered = pendingOrder
       ? applyQuickActionOrder(configuration.references, pendingOrder)
       : configuration.references;
-    return ordered.map(
-      (reference) =>
-        byKey.get(key(reference)) ?? {
-          ...reference,
-          name: "Unavailable library entry",
-          description:
-            "The referenced script or macro was removed or is unavailable.",
-          missing: true,
-        },
+    return ordered.map((reference) =>
+      byKey.has(key(reference))
+        ? { ...byKey.get(key(reference))!, ...reference }
+        : {
+            ...reference,
+            name: "Unavailable library entry",
+            description:
+              "The referenced script or macro was removed or is unavailable.",
+            missing: true,
+          },
     );
   }, [configuration.references, library, pendingOrder]);
   const normalizedQuery = query.trim().toLowerCase();
@@ -764,6 +791,8 @@ export function useSshQuickActions(options: Options) {
     unavailable: configuration.unavailable,
     error: visibleError,
     busy,
+    saving,
+    sessionAccessKey,
     loading: effectiveLoading,
     query,
     setQuery,
@@ -789,6 +818,11 @@ export function useSshQuickActions(options: Options) {
     remove,
     move,
     reorder,
+    folders: configuration.folders,
+    organize: (
+      config: SshQuickActionsConfig,
+      expected: SshQuickActionsConfig,
+    ) => mutate(() => config.items, config, expected),
     run,
     refresh,
   };

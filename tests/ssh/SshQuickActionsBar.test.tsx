@@ -30,6 +30,10 @@ const actions = (): ReturnType<typeof useSshQuickActions> => ({
   unavailable: null,
   error: null,
   busy: false,
+  saving: false,
+  sessionAccessKey: "database-a:session-a",
+  folders: [],
+  organize: vi.fn().mockResolvedValue(true),
   loading: false,
   query: "",
   setQuery: vi.fn(),
@@ -45,6 +49,102 @@ const actions = (): ReturnType<typeof useSshQuickActions> => ({
   refresh: vi.fn(),
 });
 describe("SSH favorites bar", () => {
+  it("creates a folder from the bar context menu without running a favourite", async () => {
+    const model = actions();
+    render(
+      <SshQuickActionsBar
+        actions={model}
+        replaying={false}
+        onStopReplay={vi.fn()}
+      />,
+    );
+    fireEvent.contextMenu(
+      screen.getByRole("group", { name: "SSH favorites bar" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "New folder…" }));
+    const dialog = screen.getByRole("dialog", { name: "New script folder" });
+    fireEvent.change(within(dialog).getByLabelText("Folder name"), {
+      target: { value: "Operations" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save folder" }),
+    );
+    await waitFor(() => expect(model.organize).toHaveBeenCalledOnce());
+    expect(vi.mocked(model.organize).mock.calls[0][0].folders).toEqual([
+      { id: expect.any(String), name: "Operations" },
+    ]);
+    expect(model.run).not.toHaveBeenCalled();
+  });
+  it.each(["rename", "delete"] as const)(
+    "%ss a folder from its context menu and preserves the favourite",
+    async (kind) => {
+      const model = actions();
+      model.folders = [{ id: "ops", name: "Operations" }];
+      model.favorites = model.visibleFavorites = [{ ...item, folderId: "ops" }];
+      render(
+        <SshQuickActionsBar
+          actions={model}
+          replaying={false}
+          onStopReplay={vi.fn()}
+        />,
+      );
+      fireEvent.contextMenu(
+        screen.getByRole("button", { name: "Favorite folder Operations" }),
+      );
+      fireEvent.click(
+        screen.getByRole("menuitem", {
+          name: kind === "rename" ? "Rename folder…" : "Delete folder…",
+        }),
+      );
+      const dialog = screen.getByRole("dialog", {
+        name:
+          kind === "rename" ? "Rename script folder" : "Delete script folder",
+      });
+      if (kind === "rename")
+        fireEvent.change(within(dialog).getByLabelText("Folder name"), {
+          target: { value: "Tools" },
+        });
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: kind === "rename" ? "Save folder" : "Delete folder",
+        }),
+      );
+      await waitFor(() => expect(model.organize).toHaveBeenCalledOnce());
+      const next = vi.mocked(model.organize).mock.calls[0][0];
+      expect(next.items).toHaveLength(1);
+      expect(next.items[0].id).toBe(item.id);
+      expect(next.items[0].folderId).toBe(
+        kind === "rename" ? "ops" : undefined,
+      );
+      expect(model.run).not.toHaveBeenCalled();
+    },
+  );
+  it("opens a favorite folder without executing and runs its selected entry once", async () => {
+    const model = actions();
+    model.folders = [{ id: "operations", name: "Operations" }];
+    model.favorites = model.visibleFavorites = [
+      { ...item, folderId: "operations" },
+    ];
+    render(
+      <SshQuickActionsBar
+        actions={model}
+        replaying={false}
+        onStopReplay={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Run script Inspect" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Favorite folder Operations" }),
+    );
+    expect(model.run).not.toHaveBeenCalled();
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Run script Inspect" }),
+    );
+    expect(model.run).toHaveBeenCalledWith(model.favorites[0]);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
   it("replaces an unavailable library entry tooltip when its saved script finishes loading", async () => {
     const model = actions();
     model.canRun = false;
@@ -240,7 +340,9 @@ describe("SSH favorites bar", () => {
       expect(
         within(menu).getByRole("menuitem", { name: `Assign ${kind}` }),
       ).toHaveClass("sor-menu-item");
-      expect(within(menu).queryByText(/folder/i)).not.toBeInTheDocument();
+      expect(
+        within(menu).getByRole("menuitem", { name: "Organize folders" }),
+      ).toBeInTheDocument();
       fireEvent.click(
         within(menu).getByRole("menuitem", { name: `Assign ${kind}` }),
       );
