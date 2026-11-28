@@ -30,6 +30,10 @@ static SOURCE: LazyLock<Option<String>> = LazyLock::new(|| {
         include_str!("native_appearance_bootstrap.js.in")
             .replace("/* BUNDLED_DARKREADER */", &engine)
             .replace(
+                "/* NATIVE_APPEARANCE_CANVAS */",
+                include_str!("native_appearance_canvas.js"),
+            )
+            .replace(
                 "/* NATIVE_APPEARANCE_CLIENT */",
                 include_str!("native_appearance_client.js"),
             ),

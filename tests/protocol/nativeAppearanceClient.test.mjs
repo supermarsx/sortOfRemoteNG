@@ -22,11 +22,12 @@ function assembledSource(engine, adapt = true) {
   }
   assert.match(rendererSource, /include_str!\("native_appearance_bootstrap\.js\.in"\)/);
   const template = readFileSync("src-tauri/crates/sorng-browser-host/src/native_appearance_bootstrap.js.in", "utf8");
-  for (const marker of ["/* BUNDLED_DARKREADER */", "/* NATIVE_APPEARANCE_CLIENT */"]) {
+  for (const marker of ["/* BUNDLED_DARKREADER */", "/* NATIVE_APPEARANCE_CLIENT */", "/* NATIVE_APPEARANCE_CANVAS */"]) {
     assert.equal(template.split(marker).length, 2, "each static include is singular");
     assert.ok(rendererSource.includes(JSON.stringify(marker)), "Rust uses the identical include marker");
   }
   return template.replace("/* BUNDLED_DARKREADER */", () => engine)
+    .replace("/* NATIVE_APPEARANCE_CANVAS */", () => readFileSync("src-tauri/crates/sorng-browser-host/src/native_appearance_canvas.js", "utf8"))
     .replace("/* NATIVE_APPEARANCE_CLIENT */", () => source);
 }
 const theme = {
@@ -37,6 +38,7 @@ const theme = {
 const fakeVendor = `
   globalThis.__vendorCount = (globalThis.__vendorCount || 0) + 1;
   exports.enable = (theme, fixes) => {
+    if (typeof globalThis.__beforeEnable === 'function') globalThis.__beforeEnable();
     globalThis.__calls.push({kind:'enable', theme, fixes});
     document.documentElement.setAttribute('data-darkreader-mode','dynamic');
     if (globalThis.__throwEnable) throw Error('partial installation');
@@ -108,6 +110,40 @@ test("native appearance dynamic delegates conversion and preserves page globals"
   assert.equal(f.win.chrome, f.originalChrome);
   assert.equal(f.win.chrome.runtime.sendMessage, f.sendMessage);
   assert.equal(f.win.__sorngAppearance, undefined);
+});
+
+test("native appearance paints the configured canvas before starting dynamic conversion", t => {
+  const f = fixture(t);
+  let checked = false;
+  f.win.__beforeEnable = () => {
+    const canvas = f.doc.querySelector('.sorng-native-prepaint');
+    assert.ok(canvas);
+    assert.match(canvas.textContent, /html:root,body\{color-scheme:dark!important/);
+    assert.equal(f.win.getComputedStyle(f.doc.body).backgroundColor, 'rgb(24, 26, 27)');
+    checked = true;
+  };
+  assert.equal(f.apply(f.config()), true);
+  assert.equal(checked, true);
+  assert.equal(f.doc.querySelectorAll('.sorng-native-prepaint').length, 1);
+  f.win.__beforeEnable = null;
+  assert.equal(f.apply(f.config({ backgroundColor: '#102030' })), true);
+  assert.equal(f.doc.querySelectorAll('.sorng-native-prepaint').length, 1);
+  assert.equal(f.win.getComputedStyle(f.doc.body).backgroundColor, 'rgb(16, 32, 48)');
+  assert.equal(f.apply({ enabled: false }), true);
+  assert.equal(f.doc.querySelector('.sorng-native-prepaint'), null);
+});
+
+test("native appearance starts no DarkReader engine for off, filter or custom-CSS modes", t => {
+  const f = fixture(t);
+  assert.equal(f.win.__vendorCount || 0, 0);
+  assert.equal(f.apply({ enabled: false }), true);
+  assert.equal(f.apply(f.config({ mode: 'filter' })), true);
+  assert.equal(f.apply(f.config({ mode: 'customCss', customCss: 'body{color:#abc}' })), true);
+  assert.equal(f.win.__vendorCount || 0, 0);
+  assert.equal(f.apply(f.config()), true);
+  assert.equal(f.win.__vendorCount, 1);
+  assert.equal(f.apply(f.config({ backgroundColor: '#102030' })), true);
+  assert.equal(f.win.__vendorCount, 1);
 });
 
 test("native bundled hooks avoid inline and TrustedScript sinks on every origin", t => {
@@ -255,7 +291,7 @@ test("native appearance auxiliary fetch is same-origin ordinary page fetch only"
   assert.equal(requests[0][0], "https://fixture.invalid/app.css");
   assert.equal(requests[0][1].credentials, "same-origin");
   assert.equal(requests[0][1].redirect, "error");
-  assert.equal(requests[0][1].cache, "no-store");
+  assert.equal(requests[0][1].cache, "default");
   for (const blocked of ["https://other.invalid/app.css", "http://fixture.invalid/app.css",
     "https://user:password@fixture.invalid/app.css", "data:text/css,x", "file:///secret", "javascript:alert(1)"]) {
     await assert.rejects(f.win.__engineFetch(blocked), /Native appearance resource unavailable/);

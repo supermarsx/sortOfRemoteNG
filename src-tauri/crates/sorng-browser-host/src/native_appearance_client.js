@@ -3,7 +3,7 @@
  * including private CommonJS exports and private window/chrome shims. Retain the
  * returned controller in CEF only. Shadow discovery reads tree structure only,
  * never page content or another frame's document. No page bridge. */
-(function (reader, notify) {
+(function (readerFactory, notify, canvasCss) {
   "use strict";
   const nativeWindow = globalThis.window;
   const doc = nativeWindow.document;
@@ -22,8 +22,10 @@
   const themeKeys = ["followAppTheme", "mode", "brightness", "contrast", "sepia",
     "grayscale", "backgroundColor", "textColor", "preserveMedia", "customCss"];
   let readerReady = false;
+  let reader = null;
   let dynamicOwned = false;
   let style = null;
+  let canvasStyle = null;
   let activeKey = null;
   let enabled = false;
   let disposed = false;
@@ -114,6 +116,10 @@
       try { style.remove(); } catch { ok = false; }
       style = null;
     }
+    if (canvasStyle) {
+      try { canvasStyle.remove(); } catch { ok = false; }
+      canvasStyle = null;
+    }
     return ok;
   }
 
@@ -134,8 +140,10 @@
     try {
       // Ordinary page fetch only: native request admission, route, TLS and CSP
       // remain authoritative. No app fetch service or privileged native bridge.
+      // Reuse the page's normal HTTP cache, honoring server cache directives,
+      // instead of forcing another stylesheet download after the page loaded it.
       const response = await nativeFetch(url.href, {
-        credentials: "same-origin", redirect: "error", cache: "no-store", signal: controller.signal,
+        credentials: "same-origin", redirect: "error", cache: "default", signal: controller.signal,
       });
       if (!current()) throw unavailable();
       // Keep cancellation live through body consumption, not just headers.
@@ -294,7 +302,7 @@
     try { next = normalize(config); } catch { cleanup(); return false; }
     if (!next.enabled) return cleanup();
     const key = JSON.stringify(next);
-    if (key === activeKey && (!style || style.isConnected)) return true;
+    if (key === activeKey && (!style || style.isConnected) && (!canvasStyle || canvasStyle.isConnected)) return true;
     if (!cleanup()) return false;
     if (doc !== nativeWindow.document || nativeWindow.location.origin !== pageOrigin || !doc.documentElement) return false;
     // Do not take over or invert another DarkReader conversion. These are
@@ -304,8 +312,16 @@
     const theme = next.theme;
     try {
       enabled = true;
+      const prepaint = typeof canvasCss === "function" ? canvasCss(theme) : "";
+      if (prepaint) {
+        canvasStyle = doc.createElement("style");
+        canvasStyle.className = "sorng-native-prepaint darkreader";
+        canvasStyle.textContent = prepaint;
+        (doc.head || doc.documentElement).appendChild(canvasStyle);
+      }
       if (theme.mode === "dynamic" || theme.mode === "dynamicFilter") {
         if (!readerReady) {
+          reader = typeof readerFactory === "function" ? readerFactory() : readerFactory;
           if (!reader || typeof reader.enable !== "function" || typeof reader.disable !== "function"
             || typeof reader.setFetchMethod !== "function") throw Error();
           reader.setFetchMethod(fetchLocal);

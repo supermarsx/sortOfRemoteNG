@@ -15,9 +15,16 @@
   });
   // The bundle can log stylesheet/resource errors containing page data.
   const console = { log() {}, warn() {}, error() {}, info() {}, debug() {} };
-  const exports = {}, module = { exports };
-  /* BUNDLED_DARKREADER */
+  let reader = null;
+  function loadReader() {
+    if (reader) return reader;
+    const exports = {}, module = { exports };
+    /* BUNDLED_DARKREADER */
+    reader = module.exports;
+    return reader;
+  }
+  /* NATIVE_APPEARANCE_CANVAS */
   return function (notify) {
-    return (/* NATIVE_APPEARANCE_CLIENT */)(module.exports, notify);
+    return (/* NATIVE_APPEARANCE_CLIENT */)(loadReader, notify, nativeAppearanceCanvasCss);
   };
 })()
