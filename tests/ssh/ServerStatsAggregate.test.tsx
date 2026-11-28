@@ -132,8 +132,11 @@ describe("AggregateView", () => {
     );
     expect(screen.getAllByTestId("aggregate-row")).toHaveLength(1);
     expect(
-      screen.getByText(/Same server · 2 connections · 2 sessions/),
+      screen.getByRole("img", { name: "Same server" }),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText("2 connections")).toHaveTextContent("2");
+    expect(screen.getByLabelText("2 sessions")).toHaveTextContent("2");
+    expect(screen.queryByText(/connections ·/)).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole("searchbox"), {
       target: { value: "b.local" },
     });

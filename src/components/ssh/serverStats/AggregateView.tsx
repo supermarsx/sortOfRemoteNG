@@ -11,6 +11,9 @@ import {
   ArrowUp,
   ChevronsUpDown,
   Search,
+  Link2,
+  Plug,
+  PanelsTopLeft,
   Server,
 } from "lucide-react";
 import EmptyState from "../../ui/display/EmptyState";
@@ -160,26 +163,47 @@ const Row = React.memo(
             title={labels.open}
             aria-label={`${labels.open}: ${row.name}`}
           >
-            <span className="block text-sm font-medium text-[var(--color-text)] truncate">
-              {row.name}
+            <span className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+              <span className="min-w-0 truncate">{row.name}</span>
+              {(row.aliases?.length ?? 0) > 1 && (
+                <>
+                  <span
+                    className="shrink-0 text-primary"
+                    role="img"
+                    aria-label="Same server"
+                    title={`Same server measured through these connections:\n${row.aliases!.map((alias) => `${alias.name} (${alias.host})`).join("\n")}`}
+                  >
+                    <Link2 size={13} aria-hidden="true" />
+                  </span>
+                  <span className="shrink-0 text-xs font-normal text-[var(--color-textSecondary)]">
+                    <span
+                      className="inline-flex items-center gap-1"
+                      title="Connections"
+                      aria-label={`${new Set(row.aliases!.map((alias) => alias.connectionId)).size} connections`}
+                    >
+                      <Plug size={12} aria-hidden="true" />
+                      {
+                        new Set(row.aliases!.map((alias) => alias.connectionId))
+                          .size
+                      }
+                    </span>
+                    <span
+                      className="ml-2 inline-flex items-center gap-1"
+                      title="Sessions"
+                      aria-label={`${row.aliases!.length} sessions`}
+                    >
+                      <PanelsTopLeft size={12} aria-hidden="true" />
+                      {row.aliases!.length}
+                    </span>
+                  </span>
+                </>
+              )}
             </span>
             <span className="block text-xs text-[var(--color-textSecondary)] truncate">
               {e?.hostname && e.hostname !== row.name
                 ? e.hostname
                 : row.host || MISSING}
             </span>
-            {(row.aliases?.length ?? 0) > 1 && (
-              <span
-                className="block text-xs text-[var(--color-textSecondary)]"
-                title={row
-                  .aliases!.map((alias) => `${alias.name} (${alias.host})`)
-                  .join("\n")}
-              >
-                Same server ·{" "}
-                {new Set(row.aliases!.map((alias) => alias.connectionId)).size}{" "}
-                connections · {row.aliases!.length} sessions
-              </span>
-            )}
           </button>
         </th>
         <td
