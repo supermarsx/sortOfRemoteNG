@@ -1,3 +1,4 @@
+import { loadWebAutomationClient } from "../helpers/nativeLoginAsset.mjs";
 import { readFileSync } from "node:fs";
 import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,10 +16,7 @@ const helper = readFileSync(
   "utf8",
 );
 const client = loadAutologinClient();
-const automation = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/web_automation_client.js",
-  "utf8",
-);
+const automation = loadWebAutomationClient();
 const win = window as unknown as {
   __sorng_autologin: {
     fetchCredsAndRun(

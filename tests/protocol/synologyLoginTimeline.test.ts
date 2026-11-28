@@ -1,3 +1,4 @@
+import { loadWebAutomationClient } from "../helpers/nativeLoginAsset.mjs";
 import { readFileSync } from "node:fs";
 import { loadAutologinClient } from "../helpers/autologinAsset";
 import { createRequire } from "node:module";
@@ -26,7 +27,7 @@ import {
 // helper, with fake timers. Synthetic markup and accounts only.
 const helper = readFileSync(DSM_LOGIN_ASSET_PATHS.helper, "utf8");
 const client = loadAutologinClient();
-const automation = readFileSync(DSM_LOGIN_ASSET_PATHS.automation, "utf8");
+const automation = loadWebAutomationClient();
 
 interface Trace {
   steps: { t: number; phase: string; reason: string }[];

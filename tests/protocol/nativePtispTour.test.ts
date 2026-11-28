@@ -1,30 +1,12 @@
+import { loadNativeLoginClient } from "../helpers/nativeLoginAsset.mjs";
 // @ts-expect-error - jsdom has no bundled declarations
 import { JSDOM } from "jsdom";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { PTISP_LOGIN_SELECTORS } from "../../src/utils/connection/ptispProfile";
-const base = resolve("src-tauri/crates/sorng-browser-host/src");
-const manifest = readFileSync(
-  resolve(base, "native_login_profiles.rs"),
-  "utf8",
-);
-const modules = [
-  ...manifest.split(");")[0].matchAll(/include_str!\("([^"]+)"\)/g),
-]
-  .map(([, file]) => readFileSync(resolve(base, file), "utf8"))
-  .join("");
-const source = readFileSync(resolve(base, "native_login_client.js"), "utf8")
-  .replace("/* REVIEWED_FORM_MODULES */", () => modules)
-  .replace("/* REVIEWED_PTISP_TOUR */", () =>
-    readFileSync(
-      "src-tauri/crates/sorng-protocols/src/ptisp_tour_client.js",
-      "utf8",
-    ),
-  )
-  .replace("/* NATIVE_KEYBOARD_CLIENT */", () =>
-    readFileSync(resolve(base, "native_login_typing.js"), "utf8"),
-  );
+
+const source = loadNativeLoginClient();
 const pages: any[] = [];
 afterEach(async () => {
   for (const page of pages.splice(0)) {

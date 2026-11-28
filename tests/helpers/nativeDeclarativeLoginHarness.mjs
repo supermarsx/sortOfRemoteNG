@@ -1,3 +1,4 @@
+import { loadNativeLoginClient } from "./nativeLoginAsset.mjs";
 // Declarative login steps in the native page client (t102-e9).
 //
 // Runs the real bundled page client (shared form modules + native keyboard)
@@ -12,22 +13,7 @@ import { readFileSync } from "node:fs";
 import { webcrypto } from "node:crypto";
 import { JSDOM } from "jsdom";
 
-const base = new URL(
-  "../../src-tauri/crates/sorng-browser-host/src/",
-  import.meta.url,
-);
-const read = (name) => readFileSync(new URL(name, base), "utf8");
-const manifest = read("native_login_profiles.rs");
-const modules = [
-  ...manifest.split(");")[0].matchAll(/include_str!\("([^"]+)"\)/g),
-]
-  .map(([, path]) => read(path))
-  .join("");
-const source = read("native_login_client.js")
-  .replace("/* REVIEWED_FORM_MODULES */", () => modules)
-  .replace("/* NATIVE_KEYBOARD_CLIENT */", () =>
-    read("native_login_typing.js"),
-  );
+const source = loadNativeLoginClient();
 
 const USER = "alice@example.test";
 const SECRET = "s3cret-Pa55";

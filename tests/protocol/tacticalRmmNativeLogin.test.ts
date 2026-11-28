@@ -1,3 +1,4 @@
+import { loadNativeLoginClient } from "../helpers/nativeLoginAsset.mjs";
 // @ts-expect-error - no type declarations for jsdom
 import { JSDOM } from "jsdom";
 import { readFileSync } from "node:fs";
@@ -16,21 +17,7 @@ const PASSWORD = "pA55@word-16char";
 
 // Assembled as `native_login_profiles.rs::form_client_source` does it.
 function nativeClientSource(): string {
-  const base = resolve("src-tauri/crates/sorng-browser-host/src");
-  const manifest = readFileSync(
-    resolve(base, "native_login_profiles.rs"),
-    "utf8",
-  );
-  const modules = [
-    ...manifest.split(");")[0].matchAll(/include_str!\("([^"]+)"\)/g),
-  ]
-    .map(([, path]) => readFileSync(resolve(base, path), "utf8"))
-    .join("");
-  return readFileSync(resolve(base, "native_login_client.js"), "utf8")
-    .replace("/* REVIEWED_FORM_MODULES */", () => modules)
-    .replace("/* NATIVE_KEYBOARD_CLIENT */", () =>
-      readFileSync(resolve(base, "native_login_typing.js"), "utf8"),
-    );
+  return loadNativeLoginClient();
 }
 
 type Family = "2.0" | "2.19";

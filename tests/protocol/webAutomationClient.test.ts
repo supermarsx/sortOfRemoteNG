@@ -1,10 +1,8 @@
+import { loadWebAutomationClient } from "../helpers/nativeLoginAsset.mjs";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getHttpApplicationProfile } from "../../src/utils/connection/httpApplicationProfiles";
-const source = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/web_automation_client.js",
-  "utf8",
-);
+const source = loadWebAutomationClient();
 const darkSource = readFileSync(
   "src-tauri/crates/sorng-protocols/src/web_dark_mode_client.js",
   "utf8",

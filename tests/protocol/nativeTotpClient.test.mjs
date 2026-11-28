@@ -1,3 +1,7 @@
+import {
+  loadWebAutomationClient,
+  loadNativeLoginClient,
+} from "../helpers/nativeLoginAsset.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -5,19 +9,7 @@ import { JSDOM } from "jsdom";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 
-const guards = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/web_automation_client.js",
-  "utf8",
-);
-const source = readFileSync(
-  "src-tauri/crates/sorng-browser-host/src/native_login_client.js",
-  "utf8",
-).replace("/* REVIEWED_TOTP_GUARDS */", () =>
-  guards.slice(
-    guards.indexOf("  function synologyButtonReady("),
-    guards.indexOf("  function probeTotp("),
-  ),
-);
+const source = loadNativeLoginClient();
 const catalog = JSON.parse(
   readFileSync("src-tauri/src/origin_browser_totp_catalog.json", "utf8"),
 );
@@ -195,6 +187,29 @@ test("Tactical RMM Quasar dialog focus container yields to its reviewed OTP fiel
   assert.equal(f.typed.join(""), "123456");
   assert.equal(f.submits(), 1);
   assert.equal(f.doc.querySelector('input[type="password"]').value, "");
+});
+
+test("Tactical OTP retries two initial focus no-ops before requesting a single grant", async (t) => {
+  const setup = { ...catalog.tacticalrmm[0], fillDelayMs: 0 };
+  const f = fixture(t, {
+    html: tacticalOtpHtml,
+    url: "https://device.test/login",
+    setup,
+    inputSelector: setup.codeSelector,
+  });
+  const focus = f.input.focus.bind(f.input);
+  let attempts = 0;
+  f.input.focus = (...args) => {
+    if (++attempts > 2) focus(...args);
+  };
+  for (let count = 0; count < 60 && f.submits() === 0; count++) await delay(25);
+  assert.equal(attempts, 3);
+  assert.equal(f.input.value, "123456");
+  assert.equal(f.submits(), 1);
+  assert.equal(
+    f.signals.filter((signal) => signal.includes("|start|")).length,
+    1,
+  );
 });
 
 test("Tactical modal focus settles before requesting its single native OTP grant", async (t) => {

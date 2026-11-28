@@ -519,7 +519,7 @@ fn install(
     let mut factory = None;
     let mut exception = None;
     if context.eval(
-        Some(&CefString::from(script.as_str())),
+        Some(&CefString::from(script)),
         None,
         0,
         Some(&mut factory),

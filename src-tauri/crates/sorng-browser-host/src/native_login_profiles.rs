@@ -4,6 +4,8 @@
 //! fence every delivery by owner, attempt, document, origin, consent and expiry.
 //! Provider stages and deferred form actions use separate, one-shot native grants.
 
+use std::sync::OnceLock;
+
 const FORM_MODULES: &str = concat!(
     include_str!("../../sorng-protocols/src/autologin/common/dom.js"),
     include_str!("../../sorng-protocols/src/autologin/apps/freepbx.js"),
@@ -28,17 +30,68 @@ const FORM_MODULES: &str = concat!(
 /// Preparation and submit grants carry no credential or extra-field values.
 /// Configuration and credentials are V8 values, NEVER interpolated source.
 /// A true delivery result means accepted, not provider authentication success.
-pub fn form_client_source() -> String {
-    // Reuse ONLY the reviewed, read-only challenge validators, not the legacy
-    // code/value-assignment coordinator or its proxy transport.
-    let legacy = include_str!("../../sorng-protocols/src/web_automation_client.js");
-    let begin = legacy.find("  function synologyButtonReady(").expect("reviewed OTP guards");
-    let end = legacy.find("  function probeTotp(").expect("reviewed OTP guard boundary");
-    include_str!("native_login_client.js")
-        .replace("/* REVIEWED_FORM_MODULES */", FORM_MODULES)
-        .replace("/* REVIEWED_TOTP_GUARDS */", &legacy[begin..end])
-        .replace("/* NATIVE_KEYBOARD_CLIENT */", include_str!("native_login_typing.js"))
-        .replace("/* REVIEWED_PTISP_TOUR */", include_str!("../../sorng-protocols/src/ptisp_tour_client.js"))
+pub fn form_client_source() -> &'static str {
+    static SOURCE: OnceLock<String> = OnceLock::new();
+    SOURCE.get_or_init(assemble_source).as_str()
+}
+
+// Executable code only. The manifest is also consumed by the JavaScript test
+// harness, so renderer tests execute the exact production composition.
+const FACTORY_MODULES: &[(&str, &str)] = &[
+    (
+        "/* NATIVE_LOGIN_CHALLENGE */",
+        include_str!("native_login/challenge.js"),
+    ),
+    (
+        "/* NATIVE_LOGIN_DRONE_CONSENT */",
+        include_str!("native_login/drone_consent.js"),
+    ),
+    (
+        "/* NATIVE_LOGIN_OTP */",
+        include_str!("native_login/otp.js"),
+    ),
+    (
+        "/* NATIVE_LOGIN_PROVIDERS */",
+        include_str!("native_login/providers.js"),
+    ),
+    (
+        "/* NATIVE_LOGIN_DEFERRED_FORM */",
+        include_str!("native_login/deferred_form.js"),
+    ),
+    (
+        "/* NATIVE_LOGIN_DECLARATIVE */",
+        include_str!("native_login/declarative.js"),
+    ),
+    (
+        "/* TACTICAL_FOCUS_RETRY */",
+        include_str!("native_login/tactical_focus.js"),
+    ),
+    (
+        "/* REVIEWED_TOTP_GUARDS */",
+        include_str!("../../sorng-protocols/src/autologin/common/totp_guards.js"),
+    ),
+    (
+        "/* NATIVE_KEYBOARD_CLIENT */",
+        include_str!("native_login_typing.js"),
+    ),
+    (
+        "/* REVIEWED_PTISP_TOUR */",
+        include_str!("../../sorng-protocols/src/ptisp_tour_client.js"),
+    ),
+];
+
+fn assemble_source() -> String {
+    let mut source =
+        include_str!("native_login_client.js").replace("/* REVIEWED_FORM_MODULES */", FORM_MODULES);
+    for (marker, module) in FACTORY_MODULES {
+        assert_eq!(
+            source.matches(marker).count(),
+            1,
+            "native login module marker"
+        );
+        source = source.replace(marker, module);
+    }
+    source
 }
 
 #[cfg(test)]
@@ -53,5 +106,16 @@ mod tests {
         assert!(source.contains("function runLinkedinForm("));
         assert!(!source.contains("fetchCredsAndRun"));
         assert!(!source.contains("/__sortofremoteng_autologin"));
+    }
+
+    #[test]
+    fn repeated_documents_share_code_only_assembly() {
+        let first = form_client_source();
+        assert!(std::ptr::eq(first.as_ptr(), form_client_source().as_ptr()));
+        for (marker, _) in FACTORY_MODULES {
+            assert!(!first.contains(marker));
+        }
+        assert!(first.contains("function approvedOtpStage("));
+        assert!(first.contains("function declarativeClient("));
     }
 }

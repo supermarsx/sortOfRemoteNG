@@ -1,3 +1,4 @@
+import { loadNativeLoginClient } from "../../../../../tests/helpers/nativeLoginAsset.mjs";
 // DOM-only fixture contract checks. These are not native TLS/storage evidence.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -42,10 +43,7 @@ const modules = [...manifest.matchAll(/include_str!\("([^"]+)"\)/g)]
   .map(([, path]) => read(`../../src/${path}`))
   .join("");
 assert.ok(modules.length > 0);
-const currentClient = read("../../src/native_login_client.js").replace(
-  "/* REVIEWED_FORM_MODULES */",
-  () => modules,
-);
+const currentClient = loadNativeLoginClient();
 const origin = "https://accounts.google.com";
 
 function fixture(t, source, change = () => {}, password = asciiPassword) {

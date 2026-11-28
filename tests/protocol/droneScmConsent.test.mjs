@@ -1,3 +1,4 @@
+import { loadNativeLoginClient } from "../helpers/nativeLoginAsset.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -58,10 +59,7 @@ const page = (html, url = address()) =>
   new JSDOM(html, { url }).window.document;
 
 test("native consent asks for a fresh action grant, clicks once, and rejects missing consent", () => {
-  const client = readFileSync(
-    "src-tauri/crates/sorng-browser-host/src/native_login_client.js",
-    "utf8",
-  );
+  const client = loadNativeLoginClient();
   for (const allowed of [true, false]) {
     const dom = new JSDOM(grant(), {
       url: address(),
@@ -106,6 +104,12 @@ test("native consent asks for a fresh action grant, clicks once, and rejects mis
       window.HTMLElement.prototype.getClientRects = () => [
         { width: 100, height: 20 },
       ];
+      Object.defineProperty(window.HTMLElement.prototype, "offsetParent", {
+        configurable: true,
+        get() {
+          return this.ownerDocument.body;
+        },
+      });
       const signals = [],
         button = window.document.querySelector("#authorize-app");
       let clicks = 0;

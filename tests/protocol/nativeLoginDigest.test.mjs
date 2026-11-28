@@ -1,12 +1,10 @@
+import { loadNativeLoginClient } from "../helpers/nativeLoginAsset.mjs";
 import assert from "node:assert/strict";
 import { createHash, webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-const source = readFileSync(
-  "src-tauri/crates/sorng-browser-host/src/native_login_client.js",
-  "utf8",
-);
+const source = loadNativeLoginClient();
 // Exercise the exact private implementation without adding a production export.
 const helpers = source.slice(
   source.indexOf("  function sha256("),

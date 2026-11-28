@@ -1,3 +1,4 @@
+import { loadNativeLoginClient } from "../helpers/nativeLoginAsset.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -15,13 +16,8 @@ const manifest = readFileSync(
 const includes = [
   ...manifest.split(");")[0].matchAll(/include_str!\("([^"]+)"\)/g),
 ];
-const modules = includes
-  .map(([, path]) => readFileSync(resolve(base, path), "utf8"))
-  .join("");
-const source = readFileSync(
-  resolve(base, "native_login_client.js"),
-  "utf8",
-).replace("/* REVIEWED_FORM_MODULES */", () => modules);
+
+const source = loadNativeLoginClient();
 const selectors = {
   username: "#username",
   password: "#password",

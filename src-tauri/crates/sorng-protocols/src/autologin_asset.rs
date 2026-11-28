@@ -7,6 +7,7 @@
 //! required. See autologin/README.md for module ownership and lifecycle seams.
 
 use crate::http::UpstreamAuthMode;
+use std::sync::OnceLock;
 
 /// Coordinator template; use the assembled source when executing the client.
 pub const AUTOLOGIN_CLIENT_JS: &str = include_str!("autologin_client.js");
@@ -38,7 +39,16 @@ pub const CLAUDE_CLIENT_JS: &str = include_str!("claude_autologin_client.js");
 
 /// Assemble private modules without adding another global scope.
 pub fn assembled_autologin_client() -> String {
-    AUTOLOGIN_CLIENT_JS.replace("/*__SORNG_AUTOLOGIN_MODULES__*/", AUTOLOGIN_MODULES_JS)
+    assembled_autologin_client_source().to_owned()
+}
+
+fn assembled_autologin_client_source() -> &'static str {
+    static SOURCE: OnceLock<String> = OnceLock::new();
+    SOURCE
+        .get_or_init(|| {
+            AUTOLOGIN_CLIENT_JS.replace("/*__SORNG_AUTOLOGIN_MODULES__*/", AUTOLOGIN_MODULES_JS)
+        })
+        .as_str()
 }
 
 /// Legacy complete bundle for compatibility fixtures. Served pages use the
@@ -89,8 +99,46 @@ fn staged_autologin_clients(mode: UpstreamAuthMode) -> &'static [&'static str] {
 /// Dependencies precede the selected adapter, which precedes the unchanged
 /// generic modules/coordinator. No per-page state is cached in this asset.
 pub fn autologin_client_asset_script_for_mode(mode: UpstreamAuthMode) -> String {
+    cached_autologin_client_asset_script_for_mode(mode).to_owned()
+}
+
+/// Cache executable code only, never a nonce, owner, settings or credentials.
+fn cached_autologin_client_asset_script_for_mode(mode: UpstreamAuthMode) -> &'static str {
+    static SOURCES: [OnceLock<String>; 9] = [
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+    ];
+    let index = match mode {
+        UpstreamAuthMode::BitwardenForm => 1,
+        UpstreamAuthMode::SynologyForm => 2,
+        UpstreamAuthMode::GoogleForm => 3,
+        UpstreamAuthMode::CloudflareForm => 4,
+        UpstreamAuthMode::YealinkServlet => 5,
+        UpstreamAuthMode::AdobeForm => 6,
+        UpstreamAuthMode::ChatgptForm => 7,
+        UpstreamAuthMode::ClaudeForm => 8,
+        UpstreamAuthMode::Basic
+        | UpstreamAuthMode::Digest
+        | UpstreamAuthMode::Header
+        | UpstreamAuthMode::None
+        | UpstreamAuthMode::PfSenseV1
+        | UpstreamAuthMode::Unknown => 0,
+    };
+    SOURCES[index]
+        .get_or_init(|| assemble_asset_for_mode(mode))
+        .as_str()
+}
+
+fn assemble_asset_for_mode(mode: UpstreamAuthMode) -> String {
     let staged = staged_autologin_clients(mode);
-    let client = assembled_autologin_client();
+    let client = assembled_autologin_client_source();
     let capacity = "<script></script>".len()
         + client.len()
         + staged.iter().map(|source| source.len()).sum::<usize>();
@@ -111,6 +159,25 @@ mod scoped_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn code_cache_is_stable_and_does_not_mix_provider_assets() {
+        let google = cached_autologin_client_asset_script_for_mode(UpstreamAuthMode::GoogleForm);
+        assert!(std::ptr::eq(
+            google.as_ptr(),
+            cached_autologin_client_asset_script_for_mode(UpstreamAuthMode::GoogleForm).as_ptr()
+        ));
+        let plain = cached_autologin_client_asset_script_for_mode(UpstreamAuthMode::None);
+        assert!(!std::ptr::eq(plain.as_ptr(), google.as_ptr()));
+        assert_eq!(
+            plain,
+            autologin_client_asset_script_for_mode(UpstreamAuthMode::None)
+        );
+        assert_eq!(
+            google,
+            autologin_client_asset_script_for_mode(UpstreamAuthMode::GoogleForm)
+        );
+    }
 
     #[test]
     fn asset_defines_the_global_seam() {
