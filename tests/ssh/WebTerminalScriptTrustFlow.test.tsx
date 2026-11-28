@@ -291,7 +291,8 @@ const where = { name: session.name, hostname: session.hostname };
 /** Everything that reached the remote shell. */
 const sent = () =>
   h.invoke.mock.calls.filter(
-    ([command]) => command === "send_ssh_input" || command === "execute_script",
+    ([command]) =>
+      command === "send_ssh_input" || command === "execute_script_in_terminal",
   );
 
 const Tree = ({
@@ -416,7 +417,7 @@ beforeEach(() => {
       throw new Error("No native trust store in this legacy fixture");
     if (command === "connect_ssh") return "backend-flow-1";
     if (command === "start_shell") return "shell-flow-1";
-    if (command === "execute_script")
+    if (command === "execute_script_in_terminal")
       return { stdout: "", stderr: "", exitCode: 0 };
     return undefined;
   });

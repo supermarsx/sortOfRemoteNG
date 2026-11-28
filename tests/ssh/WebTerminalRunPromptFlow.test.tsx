@@ -256,7 +256,8 @@ const where = { name: session.name, hostname: session.hostname };
 /** Everything that reached the remote shell. */
 const sent = () =>
   h.invoke.mock.calls.filter(
-    ([command]) => command === "send_ssh_input" || command === "execute_script",
+    ([command]) =>
+      command === "send_ssh_input" || command === "execute_script_in_terminal",
   );
 const nativeConfirm = () => vi.mocked(window.confirm);
 
@@ -373,7 +374,7 @@ beforeEach(() => {
       throw new Error("No native trust store in this legacy fixture");
     if (command === "connect_ssh") return "backend-flow-1";
     if (command === "start_shell") return "shell-flow-1";
-    if (command === "execute_script")
+    if (command === "execute_script_in_terminal")
       return { stdout: "", stderr: "", exitCode: 0 };
     return undefined;
   });
@@ -401,10 +402,10 @@ describe("SSH terminal: run a script", () => {
     await mount();
     await pickScript("Disk usage");
 
-    // The shebang line is not sent, so it is not put up for review.
+    // The shebang is part of the reviewed and deployed script file.
     const expected = sshScriptRunPrompt({
       script: diskUsage,
-      command: "df -h\ndu -sh /var/log",
+      command: diskUsage.script,
       session: where,
       offerRemember: true,
     });
@@ -415,7 +416,7 @@ describe("SSH terminal: run a script", () => {
     expect(dialog).toHaveTextContent("web-01");
     expect(preview()).toHaveTextContent("df -h");
     expect(preview()).toHaveTextContent("du -sh /var/log");
-    expect(preview()).not.toHaveTextContent("#!/bin/bash");
+    expect(preview()).toHaveTextContent("#!/bin/bash");
     expect(screen.getByTestId("app-prompt-confirm")).toHaveTextContent(
       expected.confirmLabel,
     );
@@ -464,7 +465,7 @@ describe("SSH terminal: run a script", () => {
     let finish!: (result: unknown) => void;
     const base = h.invoke.getMockImplementation()!;
     h.invoke.mockImplementation((command: string, args?: unknown) =>
-      command === "execute_script"
+      command === "execute_script_in_terminal"
         ? new Promise((resolve) => {
             finish = resolve;
           })
@@ -474,15 +475,20 @@ describe("SSH terminal: run a script", () => {
     await pickScript("Disk usage");
     await screen.findByTestId("app-prompt");
     const reviewed = reviewedText();
-    expect(reviewed).toBe("df -h\ndu -sh /var/log");
+    expect(reviewed).toBe(diskUsage.script);
 
     await confirmPrompt();
     expect(prompt()).not.toBeInTheDocument();
     await waitFor(() => expect(sent()).toHaveLength(1));
     expect(sent()).toEqual([
       [
-        "execute_script",
-        { sessionId: "backend-flow-1", script: reviewed, interpreter: "bash" },
+        "execute_script_in_terminal",
+        {
+          sessionId: "backend-flow-1",
+          expectedShellId: "shell-flow-1",
+          script: reviewed,
+          interpreter: "bash",
+        },
       ],
     ]);
     // The remote script has not answered yet. The picker is already gone and

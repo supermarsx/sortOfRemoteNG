@@ -248,6 +248,15 @@ pub async fn execute_script(
     )
 }
 
+/// Deploy a script to its existing interactive terminal, retaining the PTY.
+#[tauri::command]
+pub async fn execute_script_in_terminal(
+    state: tauri::State<'_, SshServiceState>, session_id: String,
+    expected_shell_id: String, script: String, interpreter: Option<String>,
+) -> Result<(), String> {
+    redact_result(super::service::execute_script_in_terminal_on_state(state.inner(), &session_id, &expected_shell_id, &script, interpreter.as_deref()).await)
+}
+
 /// Streaming script execution: returns the execution id immediately; output
 /// arrives as `ssh-script-output` events followed by one
 /// `ssh-script-finished`. The service lock is held only for upload + exec.

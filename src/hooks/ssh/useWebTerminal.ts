@@ -3112,10 +3112,8 @@ export function useWebTerminal(
         const reviewed = structuredClone(script);
         const assertLibrary = assertReviewed ?? reviewScript(reviewed);
         // Built before the review: the text that is shown is the text sent.
-        const lines = reviewed.script
-          .split("\n")
-          .filter((line) => !line.startsWith("#!"));
-        const command = lines.join("\n");
+        const command = reviewed.script.replace(/\r\n/g, "\n");
+        const lines = command.split("\n");
         if (
           normalizeSessionQuickActions(settingsRef.current.sessionQuickActions)
             .confirmBeforeScriptRun &&
@@ -3213,14 +3211,58 @@ export function useWebTerminal(
             });
             console.error("Failed to run script:", dispatchError);
           }
+        } else if (
+          script.language === "sh" ||
+          script.language === "bash" ||
+          script.language === "auto"
+        ) {
+          try {
+            const shellId = currentSession.shellId;
+            if (!shellId)
+              throw new Error(
+                "Interactive SSH shell is unavailable; reconnect before running this script.",
+              );
+            writeLine(
+              `\x1b[90m── Script: ${script.name.replace(/\p{Cc}/gu, " ")} ──\x1b[0m`,
+            );
+            await invoke("execute_script_in_terminal", {
+              sessionId: targetSessionId,
+              expectedShellId: shellId,
+              script: command,
+              interpreter: script.language === "sh" ? "sh" : "bash",
+            });
+            activityResult("dispatched");
+            assertCurrent();
+            finishDeployment(
+              "info",
+              `${label} launched in the interactive terminal. Output and prompts appear there; completion is not yet confirmed.`,
+            );
+            recordExecution({
+              status: "pending",
+              evidence: "dispatch-accepted",
+              executedAt: new Date().toISOString(),
+            });
+          } catch (error) {
+            activityResult("failed");
+            assertCurrent();
+            writeLine(
+              `\x1b[31mScript launch not confirmed: ${sanitizeCurrentSshMessage(error).replace(/\p{Cc}/gu, " ")}\x1b[0m`,
+            );
+            finishDeployment(
+              "error",
+              `${label} launch could not be confirmed. Check the terminal before running it again.`,
+            );
+            recordExecution({
+              status: "cancelled",
+              evidence: "dispatch-failed",
+              errorMessage: formatErrorDetails(error).message,
+              executedAt: new Date().toISOString(),
+            });
+          }
         } else {
           // Multi-line: upload as temp file on the remote server, execute, capture output, clean up
           const interpreter =
-            script.language === "powershell"
-              ? "powershell"
-              : script.language === "sh"
-                ? "sh"
-                : "bash";
+            script.language === "powershell" ? "powershell" : "bash";
           const startedAt = Date.now();
           try {
             const result = await invoke<{
@@ -3309,6 +3351,8 @@ export function useWebTerminal(
       formatErrorDetails,
       isSsh,
       safeWrite,
+      writeLine,
+      sanitizeCurrentSshMessage,
       captureQuickActionSession,
       reviewScript,
       removeScriptDeploymentToast,

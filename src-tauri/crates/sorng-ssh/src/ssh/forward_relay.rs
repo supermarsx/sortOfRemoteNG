@@ -24,6 +24,17 @@ pub(super) struct SessionOperation {
 }
 
 impl SessionOperation {
+    /// SCP_PROTOCOL is a completed rejection. libssh2's scp_send_error frees
+    /// the channel and resets scpSend_state to idle before returning -28.
+    pub(super) fn native_scp_upload_open<T>(&self, open: impl FnOnce() -> Result<T, ssh2::Error>) -> Result<T, String> {
+        self.gate.ensure_healthy()?;
+        match open() {
+            Ok(value) => Ok(value),
+            Err(error) if error.code() == ssh2::ErrorCode::Session(-28) =>
+                Err("SCP upload rejected (SCP protocol error -28): check the remote SCP service, destination path and write permissions. No script was executed.".into()),
+            Err(error) => Err(self.open_error_message(&error, false)),
+        }
+    }
     /// Non-forwarding openers must not hand an unfinished native operation to
     /// the next caller, either. Conservatively quarantine every open error.
     pub(super) fn native_open<T>(
@@ -351,6 +362,17 @@ mod tests {
     use std::collections::VecDeque;
     use std::net::{Shutdown, TcpListener, TcpStream};
     use std::time::Instant;
+    #[test]
+    fn rejected_scp_script_upload_leaves_gate_usable_but_pending_open_errors_do_not() {
+        let gate = Arc::new(ChannelOpenGate::default());
+        let op = gate.try_acquire().unwrap().unwrap();
+        let error = op.native_scp_upload_open::<()>(|| Err(ssh2::Error::new(ssh2::ErrorCode::Session(-28), "failed to send file"))).unwrap_err();
+        assert!(error.contains("No script was executed"));
+        assert!(!error.contains("reconnect"));
+        assert!(gate.ensure_healthy().is_ok());
+        assert!(op.native_scp_upload_open::<()>(|| Err(ssh2::Error::new(ssh2::ErrorCode::Session(-37), "pending"))).is_err());
+        assert!(gate.ensure_healthy().is_err());
+    }
 
     #[test]
     fn channel_refusal_does_not_poison_but_other_open_errors_do() {

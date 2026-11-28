@@ -347,6 +347,7 @@ describe("WebTerminal", () => {
     scriptLibrary.value = null;
     vi.clearAllMocks();
     vaultAttempt.resolve.mockReset().mockResolvedValue(null);
+    Reflect.deleteProperty(mockConnection, "sshConnectionConfigOverride");
     Reflect.deleteProperty(mockConnection, "credentialSource");
     Reflect.deleteProperty(mockConnection, "totpConfigs");
     Reflect.deleteProperty(mockConnection, "authType");
@@ -371,6 +372,34 @@ describe("WebTerminal", () => {
       }
       return () => {};
     });
+  });
+
+  it("passes per-connection SSH protocol overrides to the actual connect request", async () => {
+    Object.assign(mockConnection, {
+      sshConnectionConfigOverride: {
+        connectTimeout: 75,
+        keepAliveInterval: 0,
+        preferredKeyExchanges: ["diffie-hellman-group14-sha256"],
+        preferredCiphers: ["aes128-ctr"],
+        preferredMACs: ["hmac-sha2-256"],
+        preferredHostKeyAlgorithms: ["rsa-sha2-256"],
+        ipProtocol: "ipv4",
+      },
+    });
+    renderWithProviders(mockSession);
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith("connect_ssh", {
+        config: expect.objectContaining({
+          connect_timeout: 75,
+          keep_alive_interval: null,
+          preferred_kex: ["diffie-hellman-group14-sha256"],
+          preferred_ciphers: ["aes128-ctr"],
+          preferred_macs: ["hmac-sha2-256"],
+          preferred_host_key_algorithms: ["rsa-sha2-256"],
+          ip_protocol: "ipv4",
+        }),
+      }),
+    );
   });
 
   describe("SSH Connection", () => {
@@ -601,8 +630,8 @@ describe("WebTerminal", () => {
             jump_hosts: [],
             proxy_config: null,
             openvpn_config: null,
-            // Optimized values for faster connections
-            connect_timeout: 15,
+            // Inherit protocol defaults; the terminal TCP timeout no longer shadows them.
+            connect_timeout: 30,
             keep_alive_interval: 30,
             strict_host_key_checking: true,
             known_hosts_path: null,

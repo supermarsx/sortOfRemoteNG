@@ -290,6 +290,7 @@ define_command_group!(
         ssh_commands::execute_command,
         ssh_commands::execute_command_interactive,
         ssh_commands::execute_script,
+        ssh_commands::execute_script_in_terminal,
         ssh_commands::execute_script_stream,
         rdp_commands::get_rdp_logs,
         route_health_commands::get_rdp_route_health,

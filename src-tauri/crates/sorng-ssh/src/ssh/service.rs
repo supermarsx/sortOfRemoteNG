@@ -1133,6 +1133,9 @@ fn prepare_uploaded_script(script: &str, interpreter: &str) -> String {
 }
 
 fn build_script_invocation(remote_path: &str, interpreter: &str) -> String {
+    if is_windows_script_path(remote_path) {
+        return powershell_encoded(&format!("{}; exit $LASTEXITCODE", windows_script_command(remote_path, interpreter)));
+    }
     let quoted_path = shell_escape::escape(remote_path.into()).to_string();
 
     match interpreter {
@@ -1164,6 +1167,9 @@ fn build_script_invocation(remote_path: &str, interpreter: &str) -> String {
 }
 
 fn wrap_script_invocation_with_exit_sentinel(invocation: &str) -> String {
+    if invocation.starts_with("powershell.exe -NoLogo -NoProfile -EncodedCommand ") {
+        return invocation.to_owned(); // Exit status comes from the native channel.
+    }
     format!(
         "{invocation}; __sorng_ec=$?; printf '\n__SORNG_EXIT:%s\n' \"$__sorng_ec\"; exit $__sorng_ec"
     )
@@ -2084,12 +2090,15 @@ impl Drop for ScriptSessionMode {
 struct ScriptRemoteCleanup<'a> {
     session: &'a Session,
     operation: &'a SessionOperation,
-    path: &'a str,
+    path: String,
+    armed: bool,
 }
 impl Drop for ScriptRemoteCleanup<'_> {
     fn drop(&mut self) {
-        self.session.set_blocking(true);
-        remove_remote_script(self.session, self.operation, self.path);
+        if self.armed {
+            self.session.set_blocking(true);
+            remove_remote_script(self.session, self.operation, &self.path);
+        }
     }
 }
 
@@ -2124,13 +2133,14 @@ impl ScriptExecutionJob {
             .map_err(|_| "SSH shell I/O is unavailable; reconnect this session".to_string())?;
         let _mode = ScriptSessionMode::enter(&session);
         set_script_io_deadline(&session, deadline)?;
-        let cleanup = ScriptRemoteCleanup {
+        let mut cleanup = ScriptRemoteCleanup {
             session: &session,
             operation: &operation,
-            path: &remote_path,
+            path: remote_path.clone(),
+            armed: true,
         };
         let result = (|| {
-            upload_script_via_scp(
+            let remote_path = upload_script_via_scp(
                 &session,
                 &operation,
                 &remote_path,
@@ -2138,6 +2148,7 @@ impl ScriptExecutionJob {
                 &interpreter,
                 deadline,
             )?;
+            cleanup.path = remote_path.clone();
             // ── 2. Execute the script file ──────────────────────────────
             //   Run it and capture exit code separately so we always get
             //   the real exit code even if the script outputs nothing.
@@ -2212,6 +2223,98 @@ impl ScriptExecutionJob {
     }
 }
 
+/// Upload under the original session lease, then queue one launch in its
+/// existing PTY. Output, input, Ctrl+C and resize stay on the live shell actor.
+/// Acknowledgement means queued, never confirmed completion.
+pub async fn execute_script_in_terminal_on_state(
+    state: &SshServiceState,
+    session_id: &str,
+    expected_shell_id: &str,
+    script: &str,
+    interpreter: Option<&str>,
+) -> Result<(), String> {
+    if script.len() > 256 * 1024 || script.contains('\0') {
+        return Err("Script must be at most 256 KiB and contain no NUL bytes".into());
+    }
+    let (job, sender) = {
+        let mut service = state.lock().await;
+        let shell = service
+            .shells
+            .get(session_id)
+            .ok_or("Interactive SSH shell is unavailable")?;
+        if expected_shell_id.is_empty() || shell.id != expected_shell_id || shell.is_finished() {
+            return Err("Interactive SSH shell changed; reopen the script picker".into());
+        }
+        let sender = shell.sender.clone();
+        let normalized = script.replace("\r\n", "\n");
+        (
+            service.prepare_script_execution(session_id, &normalized, interpreter)?,
+            sender,
+        )
+    };
+    tokio::task::spawn_blocking(move || job.dispatch_to_terminal(sender))
+        .await
+        .map_err(|_| {
+            "Script launch acknowledgement was lost; check the terminal before running it again"
+                .to_string()
+        })?
+}
+impl ScriptExecutionJob {
+    fn dispatch_to_terminal(self, sender: ShellMailboxSender) -> Result<(), String> {
+        let Self {
+            session,
+            operation,
+            shell_pause: _pause,
+            native_io,
+            script,
+            interpreter,
+            remote_path,
+            deadline,
+        } = self;
+        let _io = native_io
+            .lock()
+            .map_err(|_| "SSH shell I/O is unavailable".to_string())?;
+        let _mode = ScriptSessionMode::enter(&session);
+        let mut cleanup = ScriptRemoteCleanup {
+            session: &session,
+            operation: &operation,
+            path: remote_path.clone(),
+            armed: true,
+        };
+        let remote_path = upload_script_via_scp(
+            &session,
+            &operation,
+            &remote_path,
+            &script,
+            &interpreter,
+            deadline,
+        )?;
+        cleanup.path = remote_path.clone();
+        let command =
+            interactive_script_invocation(&remote_path, &interpreter, script.starts_with("#!"));
+        sender.send(SshShellCommand::Input(command)).map_err(|error| format!("Script was uploaded but could not be queued in its original SSH terminal: {error}; no automatic retry"))?;
+        cleanup.armed = false; // The queued subshell owns remote cleanup now.
+        Ok(())
+    }
+}
+fn interactive_script_invocation(path: &str, interpreter: &str, has_shebang: bool) -> String {
+    if is_windows_script_path(path) {
+        let quoted = path.replace('\'', "''");
+        let command = windows_script_command(path, interpreter);
+        return format!("{}\n", powershell_encoded(&format!("$sorngExit=1; try {{ {command}; $sorngExit=$LASTEXITCODE }} catch {{ Write-Error $_ }} finally {{ Remove-Item -LiteralPath '{quoted}' -Force -ErrorAction SilentlyContinue }}; Write-Host ('── Exit: {{0}} ──' -f $sorngExit); exit $sorngExit")));
+    }
+    let quoted = shell_escape::escape(path.into()).to_string();
+    let invoke = if has_shebang {
+        quoted.clone()
+    } else {
+        build_script_invocation(path, interpreter)
+    };
+    let cleanup = shell_escape::escape(format!("rm -f {quoted}").into()).to_string();
+    // A subshell protects the parent login shell from exit/set/traps in scripts.
+    // No pipe, redirected stdin or exec channel: the child inherits the PTY.
+    format!("( trap {cleanup} 0; {invoke}; __sorng_script_exit=$?; printf '\\n── Exit: %s ──\\n' \"$__sorng_script_exit\"; exit \"$__sorng_script_exit\" )\n")
+}
+
 /// No SSH I/O or worker await may retain the global service registry guard.
 pub async fn execute_script_on_state(
     state: &SshServiceState,
@@ -2259,20 +2362,26 @@ fn upload_script_via_scp(
     script: &str,
     interpreter: &str,
     deadline: Instant,
-) -> Result<(), String> {
+) -> Result<String, String> {
     set_script_io_deadline(session, deadline)?;
     let full_script = prepare_uploaded_script(script, interpreter);
     let script_bytes = full_script.as_bytes();
-    let mut channel = operation
-        .native_open(|| {
+    let opened = operation
+        .native_scp_upload_open(|| {
             session.scp_send(
                 Path::new(remote_path),
                 0o700,
                 script_bytes.len() as u64,
                 None,
             )
-        })
-        .map_err(|e| format!("Failed to open SCP channel for script upload: {}", e))?;
+        });
+    let mut channel = match opened {
+        Ok(channel) => channel,
+        Err(scp_error) if scp_error.starts_with("SCP upload rejected") =>
+            return upload_script_via_sftp(session, operation, remote_path, script_bytes, interpreter, deadline)
+                .map_err(|sftp_error| format!("Script upload failed before execution. {scp_error} SFTP fallback: {sftp_error}")),
+        Err(error) => return Err(format!("Failed to open SCP channel for script upload: {error}")),
+    };
     let mut remaining = script_bytes;
     while !remaining.is_empty() {
         set_script_io_deadline(session, deadline)?;
@@ -2297,12 +2406,77 @@ fn upload_script_via_scp(
     channel
         .wait_close()
         .map_err(|e| format!("SCP wait_close: {}", e))?;
-    Ok(())
+    Ok(remote_path.to_owned())
+}
+
+fn is_windows_script_path(path: &str) -> bool {
+    let path = path.strip_prefix('/').unwrap_or(path).as_bytes();
+    path.len() >= 3 && path[0].is_ascii_alphabetic() && path[1] == b':' && matches!(path[2], b'/' | b'\\')
+}
+fn powershell_encoded(command: &str) -> String {
+    use base64::Engine;
+    let bytes: Vec<u8> = command.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    format!("powershell.exe -NoLogo -NoProfile -EncodedCommand {}", base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+fn windows_script_command(path: &str, interpreter: &str) -> String {
+    let path = path.replace('\'', "''");
+    let program = match interpreter {
+        "powershell" | "pwsh" => "powershell.exe",
+        "sh" => "sh.exe",
+        "bash" => "bash.exe",
+        "python" | "python3" => "python.exe",
+        other => other,
+    }.replace('\'', "''");
+    if matches!(interpreter, "powershell" | "pwsh") {
+        format!("& '{program}' -NoLogo -NoProfile -File '{path}'")
+    } else {
+        format!("$sorngProgram = Get-Command -Name '{program}' -CommandType Application -ErrorAction Stop; & $sorngProgram.Source '{path}'")
+    }
+}
+fn upload_script_via_sftp(session: &Session, operation: &SessionOperation, original: &str, bytes: &[u8], interpreter: &str, deadline: Instant) -> Result<String, String> {
+    set_script_io_deadline(session, deadline)?;
+    let sftp = operation.native_open_tolerating_refusal(|| session.sftp()).map_err(|_| "The server's SFTP subsystem is unavailable; enable SFTP or repair SCP support.".to_owned())?;
+    set_script_io_deadline(session, deadline)?;
+    let home = sftp.realpath(Path::new(".")).map_err(|_| "SFTP could not resolve the remote home directory.")?;
+    let home = home.to_str().ok_or("SFTP returned a non-UTF-8 home directory")?.replace('\\', "/");
+    let home = if is_windows_script_path(&home) { home.trim_start_matches('/').to_owned() } else { home };
+    let file = Path::new(original).file_name().and_then(|name| name.to_str()).ok_or("Invalid script upload name")?;
+    let extension = if matches!(interpreter, "powershell" | "pwsh") { ".ps1" } else { ".sh" };
+    let path = format!("{}/{file}{extension}", home.trim_end_matches('/'));
+    if path.chars().any(char::is_control) { return Err("SFTP returned an invalid remote directory".into()); }
+    let mut created = false;
+    let result = (|| {
+        set_script_io_deadline(session, deadline)?;
+        let mut file = sftp.open_mode(Path::new(&path), ssh2::OpenFlags::WRITE | ssh2::OpenFlags::CREATE | ssh2::OpenFlags::EXCLUSIVE, 0o700, ssh2::OpenType::File).map_err(|_| "SFTP could not create a private script file in the remote home directory. Check write permissions.")?;
+        created = true;
+        let mut remaining = bytes;
+        while !remaining.is_empty() {
+            set_script_io_deadline(session, deadline)?;
+            let written = file.write(remaining).map_err(|_| "SFTP script upload failed; the script was not executed.")?;
+            if written == 0 { return Err("SFTP script upload stopped before completion.".to_owned()); }
+            remaining = &remaining[written..];
+        }
+        set_script_io_deadline(session, deadline)?;
+        file.close().map_err(|_| "SFTP did not acknowledge completion of the upload.".to_owned())?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        session.set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
+        if created { let _ = sftp.unlink(Path::new(&path)); }
+        return Err(error);
+    }
+    Ok(path)
 }
 
 /// Best-effort removal of the uploaded temp script. Expects blocking mode.
 fn remove_remote_script(session: &Session, operation: &SessionOperation, remote_path: &str) {
     session.set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
+    if is_windows_script_path(remote_path) {
+        if let Ok(sftp) = operation.native_open_tolerating_refusal(|| session.sftp()) {
+            let _ = sftp.unlink(Path::new(remote_path));
+        }
+        return;
+    }
     if let Ok(mut rm_ch) = operation.native_open(|| session.channel_session()) {
         let rm_cmd = format!(
             "rm -f {}",
@@ -8680,7 +8854,7 @@ impl SshService {
         let execution_id = validate_script_execution_id(execution_id)?;
         let interpreter = interpreter.unwrap_or("bash");
         let script_id = Uuid::new_v4().to_string().replace('-', "");
-        let remote_path = format!("/tmp/.sorng_script_{}", &script_id[..16]);
+        let mut remote_path = format!("/tmp/.sorng_script_{}", &script_id[..16]);
 
         if !self.sessions.contains_key(session_id) {
             return Err("Session not found".to_string());
@@ -8719,7 +8893,7 @@ impl SshService {
             session.set_blocking(true);
 
             let setup = (|| -> Result<ssh2::Channel, String> {
-                upload_script_via_scp(
+                remote_path = upload_script_via_scp(
                     &session,
                     &session_operation,
                     &remote_path,
@@ -14027,6 +14201,101 @@ mod tests {
         assert_eq!(result, script);
         // Should NOT double-shebang
         assert_eq!(result.matches("#!").count(), 1);
+    }
+
+    #[test]
+    #[ignore = "requires local POSIX sh, script(1) and timeout(1)"]
+    fn interactive_script_real_pty_preserves_input_progress_and_exit() {
+        use std::process::{Command, Stdio};
+        let (root, launcher) = if cfg!(windows) {
+            ("C:/cygwin64/tmp", "C:/cygwin64/bin/script.exe")
+        } else {
+            ("/tmp", "/usr/bin/script")
+        };
+        assert!(Path::new(launcher).is_file());
+        let name = format!(".sorng-pty-test-{}", Uuid::new_v4().simple());
+        let file = Path::new(root).join(&name);
+        let remote = format!("/tmp/{name}");
+        std::fs::write(&file, b"#!/bin/sh\n[ -t 0 ] && [ -t 1 ] || exit 2\nprintf 'progress-one\\n'\nIFS= read -r answer || exit 9\nprintf 'reply=%s\\nprogress-two\\n' \"$answer\"\nexit 7\n").unwrap();
+        let launch = format!(
+            "chmod 700 {}; {}",
+            shell_escape::escape(remote.clone().into()),
+            super::interactive_script_invocation(&remote, "bash", true)
+        );
+        // Pass the generated command through a file: Cygwin's Windows argv
+        // conversion otherwise adds a shell quoting layer absent from SSH input.
+        let wrapper_name = format!("{name}-launcher");
+        let wrapper = Path::new(root).join(&wrapper_name);
+        std::fs::write(&wrapper, format!("#!/bin/sh\n{launch}")).unwrap();
+        let bounded = format!("/usr/bin/timeout 10s /bin/sh /tmp/{wrapper_name}");
+        let mut child = Command::new(launcher)
+            .args(["-q", "-e", "-c", &bounded, "/dev/null"])
+            .env("SHELL", "/bin/sh")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"confirmed\n")
+            .unwrap();
+        let result = child.wait_with_output().unwrap();
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_file(&wrapper);
+        let output = String::from_utf8_lossy(&result.stdout);
+        assert_eq!(
+            result.status.code(),
+            Some(7),
+            "{} {}",
+            output,
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(output.contains("progress-one"));
+        assert!(output.contains("reply=confirmed"));
+        assert!(output.contains("progress-two"));
+        assert!(output.contains("── Exit: 7 ──"));
+        assert!(!file.exists());
+    }
+
+    #[test]
+    fn windows_script_launch_uses_encoded_powershell_and_quotes_the_remote_path() {
+        use base64::Engine;
+        let path = "C:/Users/O'Brien/.sorng_script_test.ps1";
+        let command = super::build_script_invocation(path, "powershell");
+        let encoded = command.strip_prefix("powershell.exe -NoLogo -NoProfile -EncodedCommand ").unwrap();
+        let bytes = base64::engine::general_purpose::STANDARD.decode(encoded).unwrap();
+        let wide: Vec<u16> = bytes.chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+        let decoded = String::from_utf16(&wide).unwrap();
+        assert!(decoded.contains("-File 'C:/Users/O''Brien/.sorng_script_test.ps1'"));
+        assert!(decoded.ends_with("exit $LASTEXITCODE"));
+        assert_eq!(super::wrap_script_invocation_with_exit_sentinel(&command), command);
+        assert!(!super::is_windows_script_path("/tmp/script"));
+        assert!(super::is_windows_script_path("/C:/Users/test/script.ps1"));
+        let interactive = super::interactive_script_invocation(path, "powershell", false);
+        assert!(interactive.starts_with("powershell.exe "));
+        assert!(interactive.ends_with('\n'));
+    }
+
+    #[test]
+    fn interactive_script_uses_its_shebang_and_keeps_the_existing_pty() {
+        let command = super::interactive_script_invocation("/tmp/script", "bash", true);
+        assert!(command.starts_with("( trap "));
+        assert!(command.contains("0; /tmp/script;"));
+        assert!(!command.contains("bash /tmp/script"));
+        assert!(!command.contains("|"));
+        assert!(!command.contains("<"));
+        assert!(command.contains("rm -f /tmp/script"));
+        assert!(command.ends_with(" )\n"));
+        assert!(command.contains("printf '\\n── Exit: %s ──\\n'"));
+    }
+    #[test]
+    fn interactive_script_without_shebang_uses_the_selected_interpreter() {
+        let command = super::interactive_script_invocation("/tmp/script", "sh", false);
+        assert!(command.contains("sh /tmp/script"));
+        assert!(!command.contains("bash /tmp/script"));
     }
 
     #[test]
