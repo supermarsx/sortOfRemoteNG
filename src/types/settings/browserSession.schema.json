@@ -157,9 +157,12 @@
         "totalMb": {
           "type": "integer",
           "minimum": 128,
-          "maximum": 8192,
-          "default": 1024
+          "maximum": 1048576,
+          "default": 10240
         },
+        "adaptive": { "type": "boolean", "default": false },
+        "minFreeSpaceMb": { "type": "integer", "minimum": 0, "maximum": 1048576, "default": 2048 },
+        "freeSpacePercent": { "type": "integer", "minimum": 0, "maximum": 80, "default": 5 },
         "clearOnDatabaseLock": { "type": "boolean", "default": false }
       },
       "$comment": "Global webBrowser.httpCache. Per-connection Chromium HTTP disk cache that follows site cache headers. Device-local only: never synced, backed up or exported, and only enabled when the browser data root is a local, non-synced directory. Missing values inherit these defaults. Unused per-connection caches are deleted after 30 days. clearOnDatabaseLock wipes that database's cache when it locks; by default the cache is kept."

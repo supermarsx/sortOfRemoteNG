@@ -1539,7 +1539,6 @@ async fn prepare_http_cache(
     identity: &BrowserIdentity,
     preferences: origin_browser_authority::NativeHttpCachePreferences,
 ) -> Result<http_cache::CacheLease, HttpCacheDiagnostic> {
-    const MIB: u64 = 1024 * 1024;
     if !preferences.enabled {
         return Err(HttpCacheDiagnostic::Disabled);
     }
@@ -1574,12 +1573,11 @@ async fn prepare_http_cache(
         return Err(HttpCacheDiagnostic::Unavailable);
     }
     tauri::async_runtime::spawn_blocking(move || {
-        http_cache::acquire(
+        http_cache::acquire_configured(
             &database,
             &connection,
             &binding,
-            preferences.per_connection_mb.saturating_mul(MIB),
-            preferences.total_mb.saturating_mul(MIB),
+            preferences,
         )
     })
     .await

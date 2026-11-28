@@ -34,6 +34,9 @@ export const DEFAULT_BROWSER_HTTP_CACHE: Readonly<BrowserHttpCacheSettings> =
     enabled: httpCacheRules.enabled.default,
     perConnectionMb: httpCacheRules.perConnectionMb.default,
     totalMb: httpCacheRules.totalMb.default,
+    adaptive: httpCacheRules.adaptive.default,
+    minFreeSpaceMb: httpCacheRules.minFreeSpaceMb.default,
+    freeSpacePercent: httpCacheRules.freeSpacePercent.default,
     clearOnDatabaseLock: httpCacheRules.clearOnDatabaseLock.default,
   });
 

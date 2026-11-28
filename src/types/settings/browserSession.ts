@@ -19,8 +19,11 @@ export interface BrowserHttpCacheSettings {
   enabled: boolean;
   /** Per-connection cache limit, 16–1024 MiB. */
   perConnectionMb: number;
-  /** All connection caches together, 128–8192 MiB. */
+  /** All connection caches together; defaults to 10 GiB. */
   totalMb: number;
+  adaptive: boolean;
+  minFreeSpaceMb: number;
+  freeSpacePercent: number;
   /** Wipe the locked database's page caches when it locks. Default keeps them. */
   clearOnDatabaseLock: boolean;
 }

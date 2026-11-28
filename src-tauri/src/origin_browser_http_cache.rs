@@ -52,7 +52,7 @@ pub(crate) const IDLE_LIMIT: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 /// Periodic housekeeping cadence; it also runs at start and after a release.
 pub(crate) const HOUSEKEEPING_INTERVAL: Duration = Duration::from_secs(60 * 60);
 const MIB: u64 = 1024 * 1024;
-const DEFAULT_TOTAL_BYTES: u64 = 1024 * MIB;
+const DEFAULT_TOTAL_BYTES: u64 = 10 * 1024 * MIB;
 const MAX_DEPTH: usize = 32;
 
 /// Why no disk cache is available, in the C-H5 `reason` spelling.
@@ -1207,6 +1207,40 @@ pub(crate) fn acquire(
     result
 }
 
+fn adaptive_budget(configured: u64, used: u64, available: u64, volume: u64, reserve_bytes: u64, reserve_percent: u64) -> u64 {
+    let reserve = reserve_bytes.max(volume.saturating_mul(reserve_percent) / 100);
+    configured.min(used.saturating_add(available).saturating_sub(reserve))
+}
+
+pub(crate) fn effective_cache_budget(preferences: sorng_commands_core::origin_browser_authority::NativeHttpCachePreferences) -> Result<u64, Unavailable> {
+    let configured = preferences.total_mb.saturating_mul(MIB);
+    if !preferences.adaptive { return Ok(configured); }
+    let mut disk = disk();
+    let store = open_store(&mut disk)?;
+    let path = store.root.parent().ok_or(Unavailable::Runtime)?;
+    let available = fs2::available_space(path).map_err(|_| Unavailable::Runtime)?;
+    let volume = fs2::total_space(path).map_err(|_| Unavailable::Runtime)?;
+    Ok(adaptive_budget(configured, store.usage(None), available, volume,
+        preferences.min_free_space_mb.saturating_mul(MIB), preferences.free_space_percent))
+}
+
+pub(crate) fn acquire_configured(database: &str, connection: &str, binding: &[u8; 32], preferences: sorng_commands_core::origin_browser_authority::NativeHttpCachePreferences) -> Result<CacheLease, Refusal> {
+    let total = effective_cache_budget(preferences).map_err(Refusal::Unavailable)?;
+    if preferences.adaptive {
+        let mut trash = Vec::new();
+        let trimmed = (|| {
+            let mut disk = disk();
+            let store = open_store(&mut disk).map_err(Refusal::Unavailable)?;
+            store.total_limit = total;
+            store.housekeeping(now_seconds(), &mut trash).map_err(|_| Refusal::Storage)
+        })();
+        empty_trash(trash);
+        trimmed?;
+    }
+    if total < 16 * MIB { return Err(Refusal::Storage); }
+    acquire(database, connection, binding, preferences.per_connection_mb.saturating_mul(MIB).min(total), total)
+}
+
 /// Background tick (about once a second, never on the UI thread): stamps
 /// ended leases, then runs housekeeping at start, after a release or drop,
 /// and hourly.
@@ -1448,6 +1482,9 @@ pub(crate) async fn usage_report(
     })
     .await
     .map_err(|_| DATA_UNAVAILABLE.to_owned())?;
+    let effective = tauri::async_runtime::spawn_blocking(move || effective_cache_budget(global)).await
+        .map_err(|_| DATA_UNAVAILABLE.to_owned())?.map_err(|_| DATA_UNAVAILABLE.to_owned())?;
+    let limit = limit.min(effective);
     let reason = if enabled {
         tauri::async_runtime::spawn_blocking(status)
             .await

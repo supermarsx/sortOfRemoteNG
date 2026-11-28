@@ -345,6 +345,7 @@ tauri-build = { version = "=2.6.3", features = [] }
 sorng-core = { path = "crates/sorng-core" }
 
 [dependencies]
+fs2 = "0.4.3"
 sorng-app-api = { path = "crates/sorng-app-api" }
 sorng-app-auth = { path = "crates/sorng-app-auth" }
 sorng-app-domains = { path = "crates/sorng-app-domains", default-features = false }

@@ -34,6 +34,24 @@ function renderFields(
 }
 
 describe("global page cache fields", () => {
+  it("defaults to 10 GiB and saves adaptive mode without replacing the budget", () => {
+    const onChange = renderFields();
+    expect(screen.getByLabelText("Total page cache size (MB)")).toHaveValue(
+      10240,
+    );
+    expect(
+      screen.getByLabelText("Minimum free disk space (MiB)"),
+    ).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /^Adapt page cache to free disk space/,
+      }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_BROWSER_HTTP_CACHE,
+      adaptive: true,
+    });
+  });
   it("states the device-only, never-synced cache rules", () => {
     renderFields();
     expect(

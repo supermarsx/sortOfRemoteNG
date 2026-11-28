@@ -98,12 +98,41 @@ export default function BrowserHttpCacheFields({
       <BrowserNumberRow
         settingKey="webBrowser.httpCache.totalMb"
         label="Total page cache size (MB)"
-        description="From 128 to 8192 MB across all connections. The least recently used caches are removed first."
+        description="Default: 10 GiB (10240 MiB) across all connections. Unused caches are removed first; active caches stay protected."
         value={value.totalMb}
         min={128}
-        max={8192}
+        max={1048576}
         disabled={!value.enabled}
         onChange={(totalMb) => onChange({ ...value, totalMb })}
+      />
+      <Toggle
+        settingKey="webBrowser.httpCache.adaptive"
+        label="Adapt page cache to free disk space"
+        description="Recalculate the budget when opening a browser cache. The configured total is a ceiling; reserved free space takes priority."
+        checked={value.adaptive}
+        onChange={(adaptive) => onChange({ ...value, adaptive })}
+      />
+      <BrowserNumberRow
+        settingKey="webBrowser.httpCache.minFreeSpaceMb"
+        label="Minimum free disk space (MiB)"
+        description="Keep at least this much free on the cache volume. The larger of this and the percentage reserve applies."
+        value={value.minFreeSpaceMb}
+        min={0}
+        max={1048576}
+        disabled={!value.enabled || !value.adaptive}
+        onChange={(minFreeSpaceMb) => onChange({ ...value, minFreeSpaceMb })}
+      />
+      <BrowserNumberRow
+        settingKey="webBrowser.httpCache.freeSpacePercent"
+        label="Free disk space reserve (%)"
+        description="Reserve this percentage of the cache volume's total capacity."
+        value={value.freeSpacePercent}
+        min={0}
+        max={80}
+        disabled={!value.enabled || !value.adaptive}
+        onChange={(freeSpacePercent) =>
+          onChange({ ...value, freeSpacePercent })
+        }
       />
       <Toggle
         settingKey="webBrowser.httpCache.clearOnDatabaseLock"

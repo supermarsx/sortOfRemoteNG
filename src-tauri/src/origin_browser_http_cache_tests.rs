@@ -841,3 +841,11 @@ fn database_caches_clear_on_the_provisional_root_before_any_runtime() {
     assert!(!entry.exists());
     assert!(!cache_root(&data).join(TAG_NAME).exists(), "pre-runtime never writes");
 }
+
+#[test]
+fn adaptive_budget_preserves_reserve_and_accounts_for_existing_cache() {
+    assert_eq!(super::adaptive_budget(100, 20, 500, 1000, 50, 5), 100);
+    assert_eq!(super::adaptive_budget(100, 20, 50, 1000, 40, 5), 20);
+    assert_eq!(super::adaptive_budget(100, 20, 10, 1000, 40, 5), 0);
+    assert_eq!(super::adaptive_budget(100, 20, 80, 1000, 60, 5), 40);
+}

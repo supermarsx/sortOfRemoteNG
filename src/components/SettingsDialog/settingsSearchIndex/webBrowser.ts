@@ -183,11 +183,26 @@ export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
     section: "webBrowser",
     sectionLabel: "Web Browser",
   },
+  ...(
+    [
+      ["adaptive", "Adapt page cache to free disk space"],
+      ["minFreeSpaceMb", "Minimum free disk space"],
+      ["freeSpacePercent", "Free disk space reserve"],
+    ] as const
+  ).map(([key, label]) => ({
+    key: `webBrowser.httpCache.${key}`,
+    label,
+    description:
+      "Adapt the total page-cache budget to available disk space while preserving a configurable reserve.",
+    tags: ["cache", "adaptive", "disk", "free space", "reserve"],
+    section: "webBrowser",
+    sectionLabel: "Web Browser",
+  })),
   {
     key: "webBrowser.httpCache.totalMb",
     label: "Total page cache size (MB)",
     description:
-      "Limit all page caches together from 128 to 8192 MB; least recently used caches are removed first.",
+      "Limit all page caches together from 128 to 1048576 MiB; least recently used caches are removed first.",
     tags: ["cache", "page cache", "total", "size", "limit", "disk", "storage"],
     section: "webBrowser",
     sectionLabel: "Web Browser",

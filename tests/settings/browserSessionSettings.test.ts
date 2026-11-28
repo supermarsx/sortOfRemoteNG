@@ -340,7 +340,25 @@ describe("browser session contract", () => {
         maximum: 1024,
         default: 128,
       },
-      totalMb: { type: "integer", minimum: 128, maximum: 8192, default: 1024 },
+      totalMb: {
+        type: "integer",
+        minimum: 128,
+        maximum: 1048576,
+        default: 10240,
+      },
+      adaptive: { type: "boolean", default: false },
+      minFreeSpaceMb: {
+        type: "integer",
+        minimum: 0,
+        maximum: 1048576,
+        default: 2048,
+      },
+      freeSpacePercent: {
+        type: "integer",
+        minimum: 0,
+        maximum: 80,
+        default: 5,
+      },
       clearOnDatabaseLock: { type: "boolean", default: false },
     });
     const override = schema.$defs.httpCacheOverride;
@@ -358,7 +376,10 @@ describe("browser session contract", () => {
     expect(DEFAULT_BROWSER_HTTP_CACHE).toEqual({
       enabled: true,
       perConnectionMb: 128,
-      totalMb: 1024,
+      adaptive: false,
+      minFreeSpaceMb: 2048,
+      freeSpacePercent: 5,
+      totalMb: 10240,
       clearOnDatabaseLock: false,
     });
     expect(Object.isFrozen(DEFAULT_BROWSER_HTTP_CACHE)).toBe(true);
@@ -390,7 +411,7 @@ describe("browser session contract", () => {
     { perConnectionMb: 1025 },
     { perConnectionMb: 64.5 },
     { totalMb: 127 },
-    { totalMb: 8193 },
+    { totalMb: 1048577 },
     { clearOnDatabaseLock: 1 },
     { directory: "C:/cache" },
   ])("rejects malformed global page-cache settings %j", (httpCache) => {
@@ -427,6 +448,7 @@ describe("browser session contract", () => {
     expect(
       resolveConnectionBrowserSettings(globals, undefined).httpCache,
     ).toEqual({
+      ...DEFAULT_BROWSER_HTTP_CACHE,
       enabled: false,
       perConnectionMb: 256,
       totalMb: 2048,
@@ -437,6 +459,7 @@ describe("browser session contract", () => {
     expect(
       resolveConnectionBrowserSettings(globals, overrides).httpCache,
     ).toEqual({
+      ...DEFAULT_BROWSER_HTTP_CACHE,
       enabled: true,
       perConnectionMb: 256,
       totalMb: 2048,

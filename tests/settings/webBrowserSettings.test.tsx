@@ -959,6 +959,9 @@ describe("Web Browser settings", () => {
       perConnectionMb: 128,
       totalMb: 2048,
       clearOnDatabaseLock: false,
+      adaptive: false,
+      minFreeSpaceMb: 2048,
+      freeSpacePercent: 5,
     });
     fireEvent.click(
       screen.getByRole("checkbox", { name: /^Clear cache on database lock/ }),

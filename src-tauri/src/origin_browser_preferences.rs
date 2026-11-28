@@ -57,6 +57,9 @@ pub struct NativeHttpCachePreferences {
     pub per_connection_mb: u64,
     /// Global only; a connection override cannot change it.
     pub total_mb: u64,
+    pub adaptive: bool,
+    pub min_free_space_mb: u64,
+    pub free_space_percent: u64,
     /// Global only; a connection override cannot change it.
     pub clear_on_database_lock: bool,
 }
@@ -181,6 +184,9 @@ fn http_cache(global: Option<&Value>, connection: Option<&Value>) -> Result<Nati
         enabled: pick("enabled", true)?.as_bool().ok_or(())?,
         per_connection_mb: pick("perConnectionMb", true)?.as_u64().ok_or(())?,
         total_mb: pick("totalMb", false)?.as_u64().ok_or(())?,
+        adaptive: pick("adaptive", false)?.as_bool().ok_or(())?,
+        min_free_space_mb: pick("minFreeSpaceMb", false)?.as_u64().ok_or(())?,
+        free_space_percent: pick("freeSpacePercent", false)?.as_u64().ok_or(())?,
         clear_on_database_lock: pick("clearOnDatabaseLock", false)?.as_bool().ok_or(())?,
     })
 }
@@ -728,7 +734,8 @@ mod tests {
             NativeHttpCachePreferences {
                 enabled: true,
                 per_connection_mb: 128,
-                total_mb: 1024,
+                total_mb: 10240,
+                adaptive: false, min_free_space_mb: 2048, free_space_percent: 5,
                 clear_on_database_lock: false,
             }
         );
@@ -740,6 +747,7 @@ mod tests {
                 enabled: false,
                 per_connection_mb: 256,
                 total_mb: 2048,
+                adaptive: false, min_free_space_mb: 2048, free_space_percent: 5,
                 clear_on_database_lock: true,
             }
         );
@@ -780,7 +788,7 @@ mod tests {
             json!({"perConnectionMb":"128"}),
             json!({"perConnectionMb":128.5}),
             json!({"totalMb":127}),
-            json!({"totalMb":8193}),
+            json!({"totalMb":1048577}),
             json!({"clearOnDatabaseLock":"no"}),
             json!({"unknown":true}),
         ] {
@@ -824,7 +832,7 @@ mod tests {
         assert_eq!(rules["perConnectionMb"]["minimum"], HTTP_CACHE_MIN_BYTES / MIB);
         assert_eq!(rules["perConnectionMb"]["maximum"], HTTP_CACHE_MAX_BYTES / MIB);
         assert_eq!(rules["totalMb"]["minimum"], 128);
-        assert_eq!(rules["totalMb"]["maximum"], 8192);
+        assert_eq!(rules["totalMb"]["maximum"], 1048576);
         assert_eq!(
             rule_of(&SCHEMA["$defs"]["httpCacheOverride"]["properties"]["perConnectionMb"]),
             &rules["perConnectionMb"]

@@ -55,3 +55,15 @@ reports do not include those header values. Settings includes a searchable
 common-error reference. TLS alert 112 has a specific SNI/hostname explanation
 and `tls-server-name-rejected` code. The pages identify the application internal
 proxy and distinguish a website's own HTTP failure from a forwarding failure.
+
+## Cache budget
+
+The default **total** page-cache budget is 10 GiB (10240 MiB); existing explicit
+saved limits are retained. Per-connection limits remain independent (default
+128 MiB). An optional adaptive mode recalculates the total on cache admission
+and usage reporting from the cache volume's available space plus current cache
+usage. It preserves the larger of a fixed reserve (default 2048 MiB) and a
+percentage of volume capacity (default 5%). The configured total stays a ceiling.
+Admission trims eligible inactive caches to the reduced budget; active leases
+are protected. Too little usable space falls back to the temporary cache.
+This does not continuously resize an already running connection's cache.
