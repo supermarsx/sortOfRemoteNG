@@ -137,7 +137,20 @@ export function classifySshFailure(message: string): SshFailureClassification {
       friendly: trust.summary,
       recoverable: false,
     };
-  const lower = message.toLowerCase();
+  // Negotiation evidence can contain arbitrary banner and algorithm names.
+  // Classify the native error, never words found only in its evidence appendix.
+  const lower = message.split("\nStage:", 1)[0].toLowerCase();
+  if (
+    lower.includes("configured algorithm list has no algorithm supported") ||
+    (lower.includes("invalid ssh ") && lower.includes("preferences"))
+  ) {
+    return {
+      kind: "key_exchange",
+      friendly:
+        "SSH algorithm configuration is unsupported by this client build - review Protocol → Security and the supported algorithms in Details",
+      recoverable: false,
+    };
+  }
   if (
     lower.includes("no matching key exchange") ||
     lower.includes("no matching kex") ||
@@ -279,7 +292,7 @@ export function classifySshFailure(message: string): SshFailureClassification {
     return {
       kind: "key_exchange",
       friendly:
-        "SSH handshake/key exchange failed - the cause is undetermined; run diagnostics and check server SSH logs",
+        "SSH handshake/key exchange failed - the cause is undetermined; review this attempt’s negotiation details and server SSH logs",
       recoverable: false,
     };
   }

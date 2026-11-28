@@ -1,3 +1,4 @@
+import { resolveSshProtocolConfig } from "../../utils/ssh/sshProtocolConfig";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -38,11 +39,7 @@ import { useToastContext } from "../../contexts/ToastContext";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useSessionFullscreen } from "../session/useSessionFullscreen";
 import { debugLog } from "../../utils/core/debugLogger";
-import {
-  mergeSSHTerminalConfig,
-  mergeSSHConnectionConfig,
-  defaultSSHConnectionConfig,
-} from "../../types/settings/settings";
+import { mergeSSHTerminalConfig } from "../../types/settings/settings";
 import { ManagedScript, OSTag } from "../../components/recording/ScriptManager";
 import {
   verifyIdentity,
@@ -437,11 +434,12 @@ export function useWebTerminal(
 
   const sshConnectionConfig = useMemo(
     () =>
-      mergeSSHConnectionConfig(
-        settings.sshConnection ?? defaultSSHConnectionConfig,
-        connection?.sshConnectionConfigOverride,
+      resolveSshProtocolConfig(
+        connection ?? {},
+        settings.sshConnection,
+        settings.sshTerminal,
       ),
-    [settings.sshConnection, connection?.sshConnectionConfigOverride],
+    [settings.sshConnection, settings.sshTerminal, connection],
   );
 
   const initialSessionError = useMemo(() => {
@@ -1806,7 +1804,10 @@ export function useWebTerminal(
         currentSettings.trustPolicy,
       );
       const strictHostKeyChecking =
-        !ignoreHostKey && sshTrustPolicy !== "always-trust";
+        sshTrustPolicy === "strict" ||
+        (!ignoreHostKey &&
+          sshTrustPolicy !== "always-trust" &&
+          sshConnectionConfig.strictHostKeyChecking);
       disconnectIntentRef.current = "none";
       isConnecting.current = true;
       if (!validatingPersistedSession) {
@@ -2072,7 +2073,6 @@ export function useWebTerminal(
         if (await stopIfStale()) return;
         const resolved = runtimePath.transport;
 
-        const tcpOptions = sshTerminalConfig?.tcpOptions;
         proxyCommandPassword = sshConnectionConfig.proxyCommandPassword || null;
 
         const hostKeyPromptId = generateId();
@@ -2211,29 +2211,25 @@ export function useWebTerminal(
           proxy_chain: resolved.proxy_chain,
           mixed_chain: resolved.mixed_chain,
           openvpn_config: resolved.openvpn_config,
-          connect_timeout:
-            tcpOptions?.connectionTimeout ??
-            currentConnection.sshConnectTimeout ??
-            30,
-          keep_alive_interval: tcpOptions?.tcpKeepAlive
-            ? (tcpOptions?.keepAliveInterval ??
-              currentConnection.sshKeepAliveInterval ??
-              30)
-            : null,
+          connect_timeout: sshConnectionConfig.connectTimeout,
+          keep_alive_interval: sshConnectionConfig.keepAliveInterval || null,
           strict_host_key_checking: strictHostKeyChecking,
-          known_hosts_path: currentConnection.sshKnownHostsPath || null,
-          tcp_no_delay: tcpOptions?.tcpNoDelay ?? true,
-          tcp_keepalive: tcpOptions?.soKeepAlive ?? true,
-          keepalive_probes: tcpOptions?.keepAliveProbes ?? 3,
-          ip_protocol: tcpOptions?.ipProtocol ?? "auto",
-          compression: sshTerminalConfig?.enableCompression ?? false,
-          compression_level: sshTerminalConfig?.compressionLevel ?? 6,
-          ssh_version: sshTerminalConfig?.sshVersion ?? "auto",
-          preferred_ciphers: sshTerminalConfig?.preferredCiphers ?? [],
-          preferred_macs: sshTerminalConfig?.preferredMACs ?? [],
-          preferred_kex: sshTerminalConfig?.preferredKeyExchanges ?? [],
+          known_hosts_path:
+            currentConnection.sshKnownHostsPath ||
+            sshConnectionConfig.knownHostsPath ||
+            null,
+          tcp_no_delay: sshConnectionConfig.tcpNoDelay,
+          tcp_keepalive: sshConnectionConfig.tcpKeepAlive,
+          keepalive_probes: sshConnectionConfig.keepAliveProbes,
+          ip_protocol: sshConnectionConfig.ipProtocol,
+          compression: sshConnectionConfig.enableCompression,
+          compression_level: sshConnectionConfig.compressionLevel,
+          ssh_version: sshConnectionConfig.sshVersion,
+          preferred_ciphers: sshConnectionConfig.preferredCiphers,
+          preferred_macs: sshConnectionConfig.preferredMACs,
+          preferred_kex: sshConnectionConfig.preferredKeyExchanges,
           preferred_host_key_algorithms:
-            sshTerminalConfig?.preferredHostKeyAlgorithms ?? [],
+            sshConnectionConfig.preferredHostKeyAlgorithms,
 
           // ── Agent forwarding ──
           agent_forwarding: sshConnectionConfig.agentForwarding ?? false,

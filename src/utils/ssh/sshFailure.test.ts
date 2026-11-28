@@ -60,7 +60,7 @@ describe("SSH failure staging", () => {
     expect(classifySshFailure(sessionMinusFive)).toEqual({
       kind: "key_exchange",
       friendly:
-        "SSH handshake/key exchange failed - the cause is undetermined; run diagnostics and check server SSH logs",
+        "SSH handshake/key exchange failed - the cause is undetermined; review this attempt’s negotiation details and server SSH logs",
       recoverable: false,
     });
   });

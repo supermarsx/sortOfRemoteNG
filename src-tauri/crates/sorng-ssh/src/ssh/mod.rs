@@ -6,6 +6,7 @@ pub mod automation;
 pub mod diagnostics;
 pub mod fido2;
 pub mod highlighting;
+mod handshake;
 #[cfg(windows)]
 mod inline_key;
 #[cfg(windows)]

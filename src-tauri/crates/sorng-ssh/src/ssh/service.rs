@@ -1033,6 +1033,9 @@ pub fn preview_known_hosts(path: Option<String>) -> Result<KnownHostsPreview, St
 }
 
 fn validate_vault_ssh_config(config: &SshConnectionConfig) -> Result<(), String> {
+    if !matches!(config.ssh_version.as_str(), "auto" | "2") {
+        return Err(format!("Unsupported SSH protocol version {}: this ssh2/libssh2 backend supports SSH-2 only. Choose Auto or SSH-2 in Protocol → Connection.", config.ssh_version));
+    }
     if let Some(key) = &config.private_key_content {
         let value = key.expose_secret();
         if value.len() > 65_536
@@ -4903,36 +4906,11 @@ impl SshService {
         // ── Apply full compression configuration ───────────────────────
         self.apply_compression_config(&mut sess, &config)?;
 
-        // ── Apply cipher / KEX / MAC / host-key preferences ────────────
-        if !config.preferred_ciphers.is_empty() {
-            let ciphers = config.preferred_ciphers.join(",");
-            sess.method_pref(MethodType::CryptCs, &ciphers)
-                .map_err(|e| format!("Failed to set client→server ciphers: {}", e))?;
-            sess.method_pref(MethodType::CryptSc, &ciphers)
-                .map_err(|e| format!("Failed to set server→client ciphers: {}", e))?;
-        }
-        if !config.preferred_macs.is_empty() {
-            let macs = config.preferred_macs.join(",");
-            sess.method_pref(MethodType::MacCs, &macs)
-                .map_err(|e| format!("Failed to set client→server MACs: {}", e))?;
-            sess.method_pref(MethodType::MacSc, &macs)
-                .map_err(|e| format!("Failed to set server→client MACs: {}", e))?;
-        }
-        if !config.preferred_kex.is_empty() {
-            let kex = config.preferred_kex.join(",");
-            sess.method_pref(MethodType::Kex, &kex)
-                .map_err(|e| format!("Failed to set KEX preferences: {}", e))?;
-        }
-        if !config.preferred_host_key_algorithms.is_empty() {
-            let host_keys = config.preferred_host_key_algorithms.join(",");
-            sess.method_pref(MethodType::HostKey, &host_keys)
-                .map_err(|e| format!("Failed to set host-key algorithm preferences: {}", e))?;
-        }
+        super::handshake::apply(&mut sess, (&config).into())?;
 
         control.run_blocking_phase("final-ssh-handshake", control.overall_timeout, |phase| {
             phase.configure_session_timeout(&sess)?;
-            sess.handshake()
-                .map_err(|e| format!("SSH handshake failed: {}", e))
+            super::handshake::run(&mut sess, (&config).into(), "Final target over the selected route")
         })?;
 
         if config.strict_host_key_checking {
@@ -5688,12 +5666,11 @@ impl SshService {
         // 2. SSH session on first jump host
         let mut sess =
             Session::new().map_err(|e| format!("Failed to create jump session: {}", e))?;
-        Self::apply_jump_cipher_prefs(&mut sess, first);
+        super::handshake::apply(&mut sess, first.into())?;
         sess.set_tcp_stream(current_stream);
         control.run_blocking_phase("jump-hop-1-handshake", control.overall_timeout, |phase| {
             phase.configure_session_timeout(&sess)?;
-            sess.handshake()
-                .map_err(|e| format!("Jump host {} handshake failed: {}", first.host, e))
+            super::handshake::run(&mut sess, first.into(), "First SSH jump host")
         })?;
         sess = self
             .authenticate_jump_session_isolated(
@@ -5735,7 +5712,7 @@ impl SshService {
             bridge_cleanup.intermediate_sessions.push(sess);
 
             sess = Session::new().map_err(|e| format!("Failed to create jump session: {}", e))?;
-            Self::apply_jump_cipher_prefs(&mut sess, jump);
+            super::handshake::apply(&mut sess, jump.into())?;
             sess.set_tcp_stream(bridged);
             let hop_number = i + 2;
             control.run_blocking_phase(
@@ -5743,8 +5720,7 @@ impl SshService {
                 control.overall_timeout,
                 |phase| {
                     phase.configure_session_timeout(&sess)?;
-                    sess.handshake()
-                        .map_err(|e| format!("Jump host {} handshake failed: {}", jump.host, e))
+                    super::handshake::run(&mut sess, jump.into(), &format!("SSH jump host {hop_number}"))
                 },
             )?;
             sess = self
@@ -5940,12 +5916,11 @@ impl SshService {
 
                     let mut sess =
                         Session::new().map_err(|e| format!("Session::new failed: {}", e))?;
-                    Self::apply_jump_cipher_prefs(&mut sess, jump);
+                    super::handshake::apply(&mut sess, jump.into())?;
                     sess.set_tcp_stream(std_stream);
                     control.run_blocking_phase(&handshake_phase, hop_timeout, |phase| {
                         phase.configure_session_timeout(&sess)?;
-                        sess.handshake()
-                            .map_err(|e| format!("SSH jump {} handshake failed: {}", jump.host, e))
+                        super::handshake::run(&mut sess, jump.into(), &format!("Mixed route SSH hop {}", i + 1))
                     })?;
                     sess = self
                         .authenticate_jump_session_isolated(
@@ -5982,28 +5957,6 @@ impl SshService {
         control.track_blocking_socket(&final_stream, "mixed-chain-final-transport")?;
         let (intermediate_sessions, bridge_handles) = bridge_cleanup.take_parts();
         Ok((final_stream, intermediate_sessions, bridge_handles))
-    }
-
-    /// Apply per-hop cipher / KEX / MAC / host-key preferences.
-    fn apply_jump_cipher_prefs(sess: &mut Session, jump: &JumpHostConfig) {
-        if !jump.preferred_ciphers.is_empty() {
-            let list = jump.preferred_ciphers.join(",");
-            let _ = sess.method_pref(MethodType::CryptCs, &list);
-            let _ = sess.method_pref(MethodType::CryptSc, &list);
-        }
-        if !jump.preferred_macs.is_empty() {
-            let list = jump.preferred_macs.join(",");
-            let _ = sess.method_pref(MethodType::MacCs, &list);
-            let _ = sess.method_pref(MethodType::MacSc, &list);
-        }
-        if !jump.preferred_kex.is_empty() {
-            let list = jump.preferred_kex.join(",");
-            let _ = sess.method_pref(MethodType::Kex, &list);
-        }
-        if !jump.preferred_host_key_algorithms.is_empty() {
-            let list = jump.preferred_host_key_algorithms.join(",");
-            let _ = sess.method_pref(MethodType::HostKey, &list);
-        }
     }
 
     fn authenticate_session(
@@ -7087,10 +7040,11 @@ impl SshService {
         let mut sess =
             Session::new().map_err(|e| format!("Failed to create test session: {}", e))?;
         sess.set_tcp_stream(final_stream);
+        self.apply_compression_config(&mut sess, &config)?;
+        super::handshake::apply(&mut sess, (&config).into())?;
         control.run_blocking_phase("final-ssh-handshake", control.overall_timeout, |phase| {
             phase.configure_session_timeout(&sess)?;
-            sess.handshake()
-                .map_err(|e| format!("SSH handshake failed: {}", e))
+            super::handshake::run(&mut sess, (&config).into(), "Final target over the selected route")
         })?;
 
         if config.strict_host_key_checking {
