@@ -111,7 +111,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $resultRaw = & 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe' -I -B native/windows-arm-full-sdk/compiled_checkpoint.py --upload $env:CEF_FULLSDK_OUTPUT_ROOT $env:CEF_FULLSDK_CONTEXT_SHA
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($LASTEXITCODE -ne 0) { Write-Host $resultRaw; exit $LASTEXITCODE }
           $result = $resultRaw | ConvertFrom-Json -AsHashtable
           if ($result.kind -ceq 'checkpoint') {
             $expectedFile = 'full-sdk-checkpoint-output/checkpoint-seal.json'

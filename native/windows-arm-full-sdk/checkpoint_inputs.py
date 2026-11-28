@@ -77,7 +77,7 @@ def _identity(value):
     # JSON round-trip prevents caller-owned aliases from changing the header.
     return dict(kind='windows-arm-full-sdk-checkpoint-inputs', schemaVersion=1,
                 identity=json.loads(json.dumps(value)), canonicalRoot=name, namespaces=list(NAMESPACES),
-                exclusions=['source-checkout/**/.git', 'source-checkout/src/out', BIDI_BIN],
+                exclusions=['source-checkout/**/.git', 'source-checkout/src/out', BIDI_BIN, CIPD_PKGS],
                 bounds=dict(entries=MAX_ENTRIES, fileBytes=MAX_FILE, rawBytes=MAX_RAW, sidecarBytes=MAX_SIDECAR))
 
 
@@ -212,6 +212,15 @@ PROGRESS = Progress()
 BIDI_BIN = 'source-checkout/src/third_party/chromium-bidi/node_modules/.bin'
 BIDI_BIN_PARENT, BIDI_BIN_CHILD = BIDI_BIN.rsplit('/', 1)
 
+# CIPD client bookkeeping: pkgs/<slot>/<instance id>/.cipdpkg (empty directories) and pkgs/<slot>/_current.txt. The slot
+# number is assigned in install order, so two acquisitions of the same pinned instance ids number their slots differently
+# (runs 45226927056..45253778895: 96 names only on each side, CHECKPOINT_INPUTS_NAME_SET). The package files themselves
+# are copied into the checkout (those paths stay hashed), and a restore never writes the tree, so the fresh acquisition's
+# own self-consistent pkgs directory is left exactly as CIPD wrote it. Never hashed, sealed or restored.
+CIPD_PKGS = 'source-checkout/.cipd/pkgs'
+CIPD_PKGS_PARENT, CIPD_PKGS_CHILD = CIPD_PKGS.rsplit('/', 1)
+CIPD_PKGS_PARTS = CIPD_PKGS.split('/')
+
 AUDIT_CAP = 200
 AUDIT_KIND = 'windows-arm-full-sdk-link-audit'
 # The workflow always() records upload already globs full-sdk-engine-*.json.
@@ -311,7 +320,7 @@ def audit_links(root, check=None, cap=AUDIT_CAP, namespaces=NAMESPACES):
                 excluded(path, name, namespace, child, False)
             elif name == 'source-checkout/src' and child == 'out':
                 excluded(path, name, namespace, child, True)
-            elif name == BIDI_BIN_PARENT and child == BIDI_BIN_CHILD:
+            elif (name == BIDI_BIN_PARENT and child == BIDI_BIN_CHILD) or (name == CIPD_PKGS_PARENT and child == CIPD_PKGS_CHILD):
                 excluded(path, name, namespace, child, True)
             else:
                 visit(path / child, name + '/' + child, namespace)
@@ -537,7 +546,8 @@ def _name(name):
              part.split('.')[0].casefold() not in {'con', 'prn', 'aux', 'nul', *(f'com{i}' for i in range(1, 10)), *(f'lpt{i}' for i in range(1, 10))}, 'PATH')
     need(parts[0] in NAMESPACES and '.git' not in parts and
          not (len(parts) >= 3 and parts[:3] == ['source-checkout', 'src', 'out']) and
-         '/'.join(parts[:len(BIDI_BIN.split('/'))]) != BIDI_BIN, 'NAMESPACE')
+         '/'.join(parts[:len(BIDI_BIN.split('/'))]) != BIDI_BIN and
+         parts[:len(CIPD_PKGS_PARTS)] != CIPD_PKGS_PARTS, 'NAMESPACE')
     return unicodedata.normalize('NFC', name).casefold()
 
 
@@ -569,7 +579,8 @@ def _walk(guard):
                 if child == '.git' and (name == 'source-checkout' or name.startswith('source-checkout/')):
                     _git_metadata(path / child)
                     continue
-                if (name == 'source-checkout/src' and child == 'out') or (name == BIDI_BIN_PARENT and child == BIDI_BIN_CHILD):
+                if ((name == 'source-checkout/src' and child == 'out') or (name == BIDI_BIN_PARENT and child == BIDI_BIN_CHILD) or
+                        (name == CIPD_PKGS_PARENT and child == CIPD_PKGS_CHILD)):
                     _directory((path / child).lstat())
                     continue
                 yield from visit(path / child, name + '/' + child)
